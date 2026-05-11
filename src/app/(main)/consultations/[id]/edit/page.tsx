@@ -24,10 +24,8 @@ import {
     Consultation,
     fetchConsultationById,
     updateConsultation,
-    recentAnalysis,
-    recentLessons,
-    recentTraining,
-    recentScore,
+    fetchRecentActivityByPlayer,
+    fetchRecentScorecardByPlayer,
     fetchConsultations
 } from "@/lib/consultation-sync";
 import { AthleteSearch } from "@/components/ui/AthleteSearch";
@@ -117,14 +115,29 @@ export default function EditConsultationPage() {
     }, [router]);
 
     const [previousConsultations, setPreviousConsultations] = useState<Consultation[]>([]);
+    const [recentAnalysis, setRecentAnalysis] = useState<any[]>([]);
+    const [recentLessons, setRecentLessons] = useState<any[]>([]);
+    const [recentTraining, setRecentTraining] = useState<any[]>([]);
+    const [recentScore, setRecentScore] = useState<any | null>(null);
 
     useEffect(() => {
         if (athleteName) {
+            // Fetch previous consultations
             fetchConsultations().then(data => {
                 setPreviousConsultations(data.filter(c => c.athleteName === athleteName && c.id !== id).slice(0, 5));
             });
+            
+            // Fetch recent activities
+            fetchRecentActivityByPlayer(athleteName, 'analysis').then(setRecentAnalysis);
+            fetchRecentActivityByPlayer(athleteName, 'lesson').then(setRecentLessons);
+            fetchRecentActivityByPlayer(athleteName, 'training').then(setRecentTraining);
+            fetchRecentScorecardByPlayer(athleteName).then(setRecentScore);
         } else {
             setPreviousConsultations([]);
+            setRecentAnalysis([]);
+            setRecentLessons([]);
+            setRecentTraining([]);
+            setRecentScore(null);
         }
     }, [athleteName, id]);
 
@@ -226,10 +239,90 @@ export default function EditConsultationPage() {
                             <section className="h-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-3xl shadow-sm flex flex-col space-y-5">
                                 <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
                                     <Activity size={18} className="text-brand-red" />
-                                    활동 데이터 요약
+                                    최근 활동 요약
                                 </h2>
-                                <div className="flex-1 text-xs text-zinc-400 italic text-center py-10">
-                                    선택된 선수의 최근 데이터를 분석하여 상담에 활용하세요.
+
+                                <div className="space-y-5 flex-1 overflow-y-auto pr-1">
+                                    {/* Shot Analysis */}
+                                    <div className="space-y-2">
+                                        <div className="flex items-center gap-2 text-[11px] font-bold text-zinc-500 uppercase tracking-tighter">
+                                            <Activity size={14} /> 분석 (최근 3건)
+                                        </div>
+                                        <div className="space-y-1.5 font-medium">
+                                            {recentAnalysis.map(a => (
+                                                <Link
+                                                    key={a.id}
+                                                    href={`/analysis/${a.id}`}
+                                                    className="block p-2.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl text-[11px] border border-zinc-100 dark:border-zinc-800 hover:border-brand-navy/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all flex justify-between gap-2"
+                                                >
+                                                    <span className="font-semibold text-zinc-700 dark:text-zinc-300 truncate">{a.title}</span>
+                                                    <span className="text-zinc-400 shrink-0">{a.date.slice(5)}</span>
+                                                </Link>
+                                            ))}
+                                            {recentAnalysis.length === 0 && <div className="text-[10px] text-zinc-400 italic px-2">데이터 없음</div>}
+                                        </div>
+                                    </div>
+
+                                    {/* Lessons */}
+                                    <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                                        <div className="flex items-center gap-2 text-[11px] font-bold text-zinc-500 uppercase tracking-tighter">
+                                            <BookOpen size={14} /> 레슨 (최근 3건)
+                                        </div>
+                                        <div className="space-y-1.5 font-medium">
+                                            {recentLessons.map(l => (
+                                                <Link
+                                                    key={l.id}
+                                                    href={`/lessons/${l.id}`}
+                                                    className="block p-2.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl text-[11px] border border-zinc-100 dark:border-zinc-800 hover:border-brand-navy/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all flex justify-between gap-2"
+                                                >
+                                                    <span className="font-semibold text-zinc-700 dark:text-zinc-300 truncate">{l.title}</span>
+                                                    <span className="text-zinc-400 shrink-0">{l.date.slice(5)}</span>
+                                                </Link>
+                                            ))}
+                                            {recentLessons.length === 0 && <div className="text-[10px] text-zinc-400 italic px-2">데이터 없음</div>}
+                                        </div>
+                                    </div>
+
+                                    {/* Training */}
+                                    <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 font-medium">
+                                        <div className="flex items-center gap-2 text-[11px] font-bold text-zinc-500 uppercase tracking-tighter">
+                                            <Dumbbell size={14} /> 훈련 (최근 3건)
+                                        </div>
+                                        <div className="space-y-1.5 ">
+                                            {recentTraining.map(t => (
+                                                <Link
+                                                    key={t.id}
+                                                    href={`/training/${t.id}`}
+                                                    className="block p-2.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl text-[11px] border border-zinc-100 dark:border-zinc-800 hover:border-brand-navy/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all flex justify-between gap-2"
+                                                >
+                                                    <span className="font-semibold text-zinc-700 dark:text-zinc-300 truncate">{t.title}</span>
+                                                    <span className="text-zinc-400 shrink-0">{t.date.slice(5)}</span>
+                                                </Link>
+                                            ))}
+                                            {recentTraining.length === 0 && <div className="text-[10px] text-zinc-400 italic px-2">데이터 없음</div>}
+                                        </div>
+                                    </div>
+
+                                    {/* Recent Scorecard Summary */}
+                                    <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                                        <div className="flex items-center gap-2 text-[11px] font-bold text-zinc-500 uppercase tracking-tighter mb-2">
+                                            <Flag size={14} /> 최근 스코어
+                                        </div>
+                                        {recentScore ? (
+                                            <Link
+                                                href={`/scores/${recentScore.id}`}
+                                                className="block rounded-xl border border-zinc-100 dark:border-zinc-800/50 bg-zinc-50/50 dark:bg-zinc-800/30 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all p-3 space-y-2"
+                                            >
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-xl font-black text-brand-navy dark:text-white">{recentScore.score}타</span>
+                                                    <span className="text-[10px] text-zinc-400 font-bold">{recentScore.date}</span>
+                                                </div>
+                                                <div className="text-[10px] text-zinc-500 truncate">{recentScore.course}</div>
+                                            </Link>
+                                        ) : (
+                                            <div className="text-[10px] text-zinc-400 italic px-2">데이터 없음</div>
+                                        )}
+                                    </div>
                                 </div>
                             </section>
                         </div>
