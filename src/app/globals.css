@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+
+  /* Level-Up Program Brand Colors */
+  --color-brand-red: #DC2626;
+  --color-brand-red-light: #FEE2E2;
+  --color-brand-red-dark: #991B1B;
+  --color-brand-navy: #1E3A5F;
+  --color-brand-navy-light: #E0E7EF;
+  --color-brand-navy-dark: #0F1F33;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* Brand colors as Tailwind utilities */
+  --color-brand-red: var(--color-brand-red);
+  --color-brand-red-light: var(--color-brand-red-light);
+  --color-brand-red-dark: var(--color-brand-red-dark);
+  --color-brand-navy: var(--color-brand-navy);
+  --color-brand-navy-light: var(--color-brand-navy-light);
+  --color-brand-navy-dark: var(--color-brand-navy-dark);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+@utility scrollbar-hide {
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@utility no-year-date {
+  &::-webkit-datetime-edit {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    padding: 0;
+  }
+
+  &::-webkit-datetime-edit-fields-wrapper {
+    display: flex;
+    justify-content: center;
+    padding: 0;
+  }
+
+  /* Hide calendar picker icon to prevent it from offseting the text */
+  &::-webkit-calendar-picker-indicator {
+    display: none;
+    -webkit-appearance: none;
+  }
+
+  &::-webkit-datetime-edit-year-field,
+  &::-webkit-datetime-edit-year-separator {
+    display: none;
+  }
+}

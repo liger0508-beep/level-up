@@ -1,0 +1,17 @@
+[
+  {
+    "id": "9587e7c6-e627-49dc-aea0-59e0ef2f2cc9",
+    "name": "황정욱",
+    "gender": null,
+    "dob": null,
+    "phone": null,
+    "branch": null,
+    "role": "athlete",
+    "created_at": "2026-04-27T12:35:15.912274+00:00",
+    "status": "등록",
+    "parent_name": null,
+    "parent_phone": null,
+    "coach_name": null,
+    "memo": null
+  }
+]

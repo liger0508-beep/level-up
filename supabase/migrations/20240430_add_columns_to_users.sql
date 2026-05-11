@@ -1,0 +1,10 @@
+-- Add level column for athletes and assigned_athletes for coaches to users table
+ALTER TABLE users ADD COLUMN IF NOT EXISTS level TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS assigned_athletes TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS dob TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS gender TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS parent_name TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS parent_phone TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS coach_name TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS memo TEXT;
