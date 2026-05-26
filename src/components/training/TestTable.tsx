@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { TestData, TEST_TYPE_LABELS, TEST_TYPE_COLORS } from "@/lib/test-sync";
-import { cn } from "@/lib/utils";
+import { cn, formatScore } from "@/lib/utils";
 
 const typeLabelShort: Record<string, string> = {
     ...TEST_TYPE_LABELS,
@@ -12,9 +12,10 @@ const typeLabelShort: Record<string, string> = {
 interface TestTableProps {
     tests: TestData[];
     totalCount?: number;
+    basePath?: string;
 }
 
-export function TestTable({ tests, totalCount = 0 }: TestTableProps) {
+export function TestTable({ tests, totalCount = 0, basePath = "/training/tests" }: TestTableProps) {
     const router = useRouter();
 
     return (
@@ -29,7 +30,7 @@ export function TestTable({ tests, totalCount = 0 }: TestTableProps) {
                     return (
                         <button
                             key={test.id}
-                            onClick={() => router.push(`/training/tests/${test.id}`)}
+                            onClick={() => router.push(`${basePath}/${test.id}`)}
                             className={cn(
                                 "w-full text-left bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 border-l-4 rounded-xl px-4 py-3.5 transition-all active:scale-[0.98] hover:shadow-md hover:-translate-y-px",
                                 colors.border
@@ -46,7 +47,7 @@ export function TestTable({ tests, totalCount = 0 }: TestTableProps) {
                                         "text-[13px] font-black italic tracking-tighter shrink-0 min-w-[3.5rem] text-center",
                                         (test.totalScore || 0) > 0 ? "text-blue-600" : (test.totalScore || 0) < 0 ? "text-brand-red" : "text-zinc-400"
                                     )}>
-                                        {(test.totalScore || 0) > 0 ? `+${test.totalScore?.toFixed(2)}` : test.totalScore?.toFixed(2)}
+                                        {formatScore(test.totalScore)}
                                     </div>
                                     <span className="w-[1px] h-3 bg-zinc-200 dark:bg-zinc-700 shrink-0" />
                                     <span className="text-[14px] font-bold text-zinc-700 dark:text-zinc-100 truncate">
@@ -82,7 +83,7 @@ export function TestTable({ tests, totalCount = 0 }: TestTableProps) {
                             return (
                                 <tr
                                     key={test.id}
-                                    onClick={() => router.push(`/training/tests/${test.id}`)}
+                                    onClick={() => router.push(`${basePath}/${test.id}`)}
                                     className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer"
                                 >
                                     <td className="py-3.5 px-4 text-center text-zinc-500 dark:text-zinc-500">
@@ -101,10 +102,10 @@ export function TestTable({ tests, totalCount = 0 }: TestTableProps) {
                                     <td className="py-3.5 px-4">
                                         <div className="flex justify-center">
                                             <span className={cn(
-                                                "text-lg font-black italic tracking-tighter",
+                                                "text-sm font-black italic tracking-tighter",
                                                 (test.totalScore || 0) > 0 ? "text-blue-600" : (test.totalScore || 0) < 0 ? "text-brand-red" : "text-zinc-400"
                                             )}>
-                                                {(test.totalScore || 0) > 0 ? `+${test.totalScore?.toFixed(2)}` : test.totalScore?.toFixed(2)}
+                                            {formatScore(test.totalScore)}
                                             </span>
                                         </div>
                                     </td>

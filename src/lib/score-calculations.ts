@@ -89,7 +89,16 @@ export async function calculateScorecardAnalysis(scorecardId: string): Promise<H
 
     if (error || !scorecard) throw new Error('Scorecard not found');
 
-    // 2. Fetch baseline and penalty data
+    // 2. Extract and format the holes data
+    const sortedHoles = (scorecard.holes as any[])
+        .filter(h => h.score !== -1)
+        .sort((a, b) => a.hole_number - b.hole_number);
+
+    return await calculateAnalysisFromHoles(sortedHoles);
+}
+
+export async function calculateAnalysisFromHoles(sortedHoles: any[]): Promise<HoleAnalysis[]> {
+    const supabase = createClient();
     const [baselineRes, penaltyRes] = await Promise.all([
         supabase.from('sg_baseline').select('*').order('distance_m'),
         supabase.from('sg_location_penalty').select('*')
@@ -103,7 +112,6 @@ export async function calculateScorecardAnalysis(scorecardId: string): Promise<H
 
     if (!baselines || baselines.length === 0) throw new Error('Reference data not found: sg_baseline is empty');
     if (!penalties || penalties.length === 0) throw new Error('Reference data not found: sg_location_penalty is empty');
-
 
     const penaltyMap = new Map(penalties.map(p => [p.location_code, Number(p.penalty_value)]));
 
@@ -127,8 +135,6 @@ export async function calculateScorecardAnalysis(scorecardId: string): Promise<H
         if (lie === 'FB' || lie === 'GB') return Number(row.on_green);
         return Number(row.tee_p4); // Default to Fairway
     };
-
-    const sortedHoles = (scorecard.holes as any[]).sort((a, b) => a.hole_number - b.hole_number);
 
     return sortedHoles.map(hole => {
         const sortedShots = (hole.shots as any[]).sort((a: any, b: any) => a.shot_number - b.shot_number);
@@ -248,7 +254,7 @@ export async function calculateScorecardAnalysis(scorecardId: string): Promise<H
 
             // 3. Position Result (D99)
             let posRes = 0;
-            if (strokeLandingF === 'GA') posRes = strokeLandingD <= 10 ? 0.1 : strokeLandingD <= 25 ? 0.35 : strokeLandingD <= 30 ? 0.6 : 0;
+            if (strokeLandingF === 'GA') posRes = strokeLandingD <= 10 ? 0.1 : strokeLandingD <= 25 ? 0.35 : strokeLandingD <= 30 ? 0.45 : 0;
             else if (strokeLandingF === 'GB') posRes = strokeLandingD <= 25 ? 0.6 : strokeLandingD <= 30 ? 0.65 : 0;
             else posRes = penaltyMap.get(strokeLandingF) || 0;
 

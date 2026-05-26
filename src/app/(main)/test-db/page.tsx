@@ -16,7 +16,7 @@ export default function TestDBPage() {
                 const supabase = createClient();
 
                 // 1. 단순 연결 테스트 (users 테이블 조회)
-                const { data, error } = await supabase.from('users').select('count', { count: 'exact', head: true });
+                const { error } = await supabase.from('users').select('*', { count: 'exact', head: true });
 
                 if (error) {
                     setStatus("error");

@@ -280,7 +280,7 @@ export default function TrainingsPage() {
             
             let relevantTrainings = records;
             if (role === 'athlete' && user) {
-                relevantTrainings = records.filter(r => (r as any).user_id === user.id);
+                relevantTrainings = records.filter(r => r.user_id === user.id);
             } else if (role === 'coach' && profile?.assigned_athletes) {
                 const assignedNames = profile.assigned_athletes.split(',').map((n: string) => n.trim());
                 relevantTrainings = records.filter(r => assignedNames.includes(r.playerName));

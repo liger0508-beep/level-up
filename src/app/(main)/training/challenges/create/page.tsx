@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo, useEffect, Suspense } from "react";
+import { useState, useMemo, useEffect, Suspense, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, Calendar, Save, Info, ChevronRight, Target, Flag, Crown } from "lucide-react";
+import { ChevronLeft, Calendar, Save, Info, ChevronRight, Target, Flag, Crown, Search, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { AthleteSearch } from "@/components/ui/AthleteSearch";
@@ -20,23 +20,26 @@ interface IronShotResult {
     shotId: number; // 1-4
     proximity: number | ""; // m
 }
-const TEST_GROUPS = [
+const DEFAULT_TEST_GROUPS = [
     { 
-        label: "샷 (Shot)", 
+        categoryId: "shot",
+        label: "샷 종합 챌린지", 
         parts: [
             { key: "driver", label: "드라이버" },
             { key: "iron", label: "아이언" }
         ] 
     },
     { 
-        label: "그린 주변 (Around Green)", 
+        categoryId: "short_game",
+        label: "숏게임 종합 챌린지", 
         parts: [
             { key: "approach", label: "어프로치" },
             { key: "bunker", label: "벙커" }
         ] 
     },
     { 
-        label: "퍼팅 (Putting)", 
+        categoryId: "putting",
+        label: "퍼팅 종합 챌린지", 
         parts: [
             { key: "long_putt", label: "롱퍼팅" },
             { key: "middle_putt", label: "미들퍼팅" },
@@ -46,8 +49,8 @@ const TEST_GROUPS = [
 ];
 
 const SCORING = {
-    fairway: -0.15,
-    rough: 0.3,
+    fairway: -0.17,
+    rough: 0.23,
     penalty: 0.75
 };
 
@@ -71,11 +74,129 @@ const APPROACH_SCORES: Record<number, number> = {
     17: 0.93, 18: 0.95, 19: 0.96, 20: 0.97
 };
 
-const BUNKER_SCORES: Record<number, number> = {
-    0: -0.6, 1: -0.5, 2: -0.25, 3: 0, 4: 0.1, 5: 0.2,
-    6: 0.25, 7: 0.3, 8: 0.35, 9: 0.4, 10: 0.45, 11: 0.5,
-    12: 0.54, 13: 0.58, 14: 0.61, 15: 0.64, 16: 0.66,
-    17: 0.68, 18: 0.7, 19: 0.71, 20: 0.72
+const getShortApproachScore = (prox: number): number => {
+    if (prox <= 0) return -1.1;
+    if (prox === 1) return -0.01;
+    if (prox === 2) return 0.25;
+    if (prox === 3) return 0.5;
+    if (prox === 4) return 0.6;
+    if (prox === 5) return 0.7;
+    if (prox === 6) return 0.75;
+    if (prox === 7) return 0.8;
+    if (prox === 8) return 0.85;
+    if (prox === 9) return 0.9;
+    if (prox === 10) return 0.95;
+    if (prox === 11) return 1.0;
+    if (prox === 12) return 1.04;
+    if (prox === 13) return 1.08;
+    if (prox === 14) return 1.11;
+    if (prox === 15) return 1.14;
+    if (prox === 16) return 1.16;
+    if (prox === 17) return 1.18;
+    if (prox === 18) return 1.2;
+    if (prox === 19) return 1.21;
+    if (prox <= 29) return 1.22;
+    return 1.23;
+};
+
+const getMiddleApproachScore = (prox: number): number => {
+    if (prox <= 0) return -0.34;
+    if (prox === 1) return -0.24;
+    if (prox === 2) return -0.01;
+    if (prox === 3) return 0.25;
+    if (prox === 4) return 0.35;
+    if (prox === 5) return 0.45;
+    if (prox === 6) return 0.5;
+    if (prox === 7) return 0.55;
+    if (prox === 8) return 0.6;
+    if (prox === 9) return 0.65;
+    if (prox === 10) return 0.7;
+    if (prox === 11) return 0.75;
+    if (prox === 12) return 0.79;
+    if (prox === 13) return 0.83;
+    if (prox === 14) return 0.86;
+    if (prox === 15) return 0.89;
+    if (prox === 16) return 0.91;
+    if (prox === 17) return 0.93;
+    if (prox === 18) return 0.95;
+    if (prox === 19) return 0.96;
+    if (prox <= 29) return 0.97;
+    return 0.98;
+};
+
+const getLongApproachScore = (prox: number): number => {
+    if (prox <= 0) return -0.59;
+    if (prox === 1) return -0.49;
+    if (prox === 2) return -0.24;
+    if (prox === 3) return -0.01;
+    if (prox === 4) return 0.1;
+    if (prox === 5) return 0.2;
+    if (prox === 6) return 0.25;
+    if (prox === 7) return 0.3;
+    if (prox === 8) return 0.35;
+    if (prox === 9) return 0.4;
+    if (prox === 10) return 0.45;
+    if (prox === 11) return 0.5;
+    if (prox === 12) return 0.54;
+    if (prox === 13) return 0.58;
+    if (prox === 14) return 0.61;
+    if (prox === 15) return 0.64;
+    if (prox === 16) return 0.66;
+    if (prox === 17) return 0.68;
+    if (prox === 18) return 0.7;
+    if (prox === 19) return 0.71;
+    if (prox <= 29) return 0.72;
+    return 0.73;
+};
+
+const getShortBunkerScore = (prox: number): number => {
+    if (prox <= 0) return -0.59;
+    if (prox === 1) return -0.49;
+    if (prox === 2) return -0.24;
+    if (prox === 3) return -0.01;
+    if (prox === 4) return 0.1;
+    if (prox === 5) return 0.2;
+    if (prox === 6) return 0.25;
+    if (prox === 7) return 0.3;
+    if (prox === 8) return 0.35;
+    if (prox === 9) return 0.4;
+    if (prox === 10) return 0.45;
+    if (prox === 11) return 0.5;
+    if (prox === 12) return 0.54;
+    if (prox === 13) return 0.58;
+    if (prox === 14) return 0.61;
+    if (prox === 15) return 0.64;
+    if (prox === 16) return 0.66;
+    if (prox === 17) return 0.68;
+    if (prox === 18) return 0.7;
+    if (prox === 19) return 0.71;
+    if (prox <= 29) return 0.72;
+    return 0.73;
+};
+
+const getLongBunkerScore = (prox: number): number => {
+    if (prox <= 0) return -0.64;
+    if (prox === 1) return -0.55;
+    if (prox === 2) return -0.29;
+    if (prox === 3) return -0.06;
+    if (prox === 4) return 0.05;
+    if (prox === 5) return 0.15;
+    if (prox === 6) return 0.2;
+    if (prox === 7) return 0.25;
+    if (prox === 8) return 0.3;
+    if (prox === 9) return 0.35;
+    if (prox === 10) return 0.4;
+    if (prox === 11) return 0.45;
+    if (prox === 12) return 0.49;
+    if (prox === 13) return 0.53;
+    if (prox === 14) return 0.56;
+    if (prox === 15) return 0.59;
+    if (prox === 16) return 0.61;
+    if (prox === 17) return 0.63;
+    if (prox === 18) return 0.65;
+    if (prox === 19) return 0.66;
+    if (prox <= 29) return 0.67;
+    return 0.68;
 };
 
 const PUTTING_RESULT_SCORES: Record<number, number> = {
@@ -86,9 +207,36 @@ const PUTTING_RESULT_SCORES: Record<number, number> = {
 };
 
 const PUTTING_ATTEMPT_SCORES = {
-    long_putt: { 1: -0.05, 2: -0.05, 3: -0.24, 4: -0.24 },
-    middle_putt: { 1: 0.3, 2: 0.3, 3: 0.2, 4: 0.2, 5: 0.15, 6: 0.15, 7: 0.1, 8: 0.1 },
-    short_putt: { 1: 0.9, 2: 0.9, 3: 0.65, 4: 0.65, 5: 0.4, 6: 0.4 }
+    long_putt: { 1: -0.06, 2: -0.14, 3: -0.20, 4: -0.26 },
+    middle_putt: { 1: 0.29, 2: 0.3, 3: 0.19, 4: 0.2, 5: 0.12, 6: 0.15, 7: 0.06, 8: 0.1 },
+    short_putt: { 1: 0.89, 2: 0.9, 3: 0.64, 4: 0.65, 5: 0.39, 6: 0.4 }
+};
+
+const LONG_PUTT_LABELS: Record<number, string> = {
+    1: "10m 슬라이스",
+    2: "12m 훅",
+    3: "14m 내리막",
+    4: "16m 오르막"
+};
+
+const MIDDLE_PUTT_LABELS: Record<number, string> = {
+    1: "4m 내리막",
+    2: "4m 오르막",
+    3: "5m 슬라이스",
+    4: "5m 훅",
+    5: "6m 내리막",
+    6: "6m 오르막",
+    7: "7m 슬라이스",
+    8: "7m 훅"
+};
+
+const SHORT_PUTT_LABELS: Record<number, string> = {
+    1: "1m 슬라이스",
+    2: "1m 훅",
+    3: "2m 내리막",
+    4: "2m 오르막",
+    5: "3m 슬라이스",
+    6: "3m 훅"
 };
 
 function CreateTestContent() {
@@ -96,6 +244,11 @@ function CreateTestContent() {
     const searchParams = useSearchParams();
     const editId = searchParams.get("id");
     
+    const formatScore = (val: number) => {
+        if (typeof val !== "number" || isNaN(val)) return "0.00";
+        return val > 0 ? `+${val.toFixed(2)}` : val.toFixed(2);
+    };
+
     const [selectedPlayer, setSelectedPlayer] = useState("");
     const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
     const [testDate, setTestDate] = useState(() => formatLocalDate());
@@ -109,6 +262,86 @@ function CreateTestContent() {
     const [isLoadingRecord, setIsLoadingRecord] = useState(false);
     const [baselines, setBaselines] = useState<any[]>([]);
     
+    const [testGroups, setTestGroups] = useState(DEFAULT_TEST_GROUPS);
+
+    // Fetch dynamic challenge templates
+    useEffect(() => {
+        const fetchTemplates = async () => {
+            const supabase = createClient();
+            const { data } = await supabase.from('challenge_templates').select('categoryId, title').order('sort_order');
+            if (data && data.length > 0) {
+                const newGroups = data.map((t: any) => {
+                    const defaultGroup = DEFAULT_TEST_GROUPS.find(g => g.categoryId === t.categoryId);
+                    return {
+                        categoryId: t.categoryId,
+                        label: t.title,
+                        parts: defaultGroup ? defaultGroup.parts : []
+                    };
+                });
+                setTestGroups(newGroups);
+            }
+        };
+        fetchTemplates();
+    }, []);
+    
+    // Challenge Search States
+    const [challengeQuery, setChallengeQuery] = useState("");
+    const [isChallengeSearchOpen, setIsChallengeSearchOpen] = useState(false);
+    const challengeSearchRef = useRef<HTMLDivElement>(null);
+
+    const scrollRef = useRef<HTMLDivElement>(null);
+
+    const scrollLeft = () => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollBy({ left: -200, behavior: 'smooth' });
+        }
+    };
+
+    const scrollRight = () => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollBy({ left: 200, behavior: 'smooth' });
+        }
+    };
+    
+    // Close challenge search when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (challengeSearchRef.current && !challengeSearchRef.current.contains(e.target as Node)) {
+                setIsChallengeSearchOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    const challengeSuggestions = useMemo(() => {
+        if (!challengeQuery.trim()) return [];
+        const normalizedQuery = challengeQuery.toLowerCase().replace(/\s+/g, '');
+        
+        const suggestions: { title: string, groupLabel: string, partKey?: string }[] = [];
+        
+        testGroups.forEach(group => {
+            const groupMatch = group.label.toLowerCase().replace(/\s+/g, '').includes(normalizedQuery);
+            const partMatch = group.parts.some(part => part.label.toLowerCase().replace(/\s+/g, '').includes(normalizedQuery));
+            
+            if (groupMatch || partMatch) {
+                suggestions.push({ title: group.label, groupLabel: group.label });
+            }
+        });
+        
+        // Remove duplicates by title
+        return suggestions.filter((v, i, a) => a.findIndex(t => t.title === v.title) === i);
+    }, [challengeQuery]);
+
+    const handleChallengeSelect = (suggestion: any) => {
+        setSelectedGroup(suggestion.groupLabel);
+        if (suggestion.partKey) {
+            setSelectedPart(suggestion.partKey);
+        }
+        setChallengeQuery("");
+        setIsChallengeSearchOpen(false);
+    };
+
     // RBAC Check and fetch coach name
     useEffect(() => {
         const supabase = createClient();
@@ -125,8 +358,8 @@ function CreateTestContent() {
                 }
 
                 if (dbUser && dbUser.role !== 'coach' && dbUser.role !== 'admin') {
-                    alert("테스트 작성 권한이 없습니다.");
-                    router.push("/training/tests");
+                    alert("챌린지 작성 권한이 없습니다.");
+                    router.push("/training/challenges");
                 }
             } else {
                 router.push("/login");
@@ -144,18 +377,18 @@ function CreateTestContent() {
                 // Map short types to categories
                 if (typeParam === 'shot') {
                     setSelectedPart('driver');
-                    setSelectedGroup('샷 (Shot)');
+                    setSelectedGroup('샷 종합 챌린지');
                 } else if (typeParam === 'around_green') {
                     setSelectedPart('approach');
-                    setSelectedGroup('그린 주변 (Around Green)');
+                    setSelectedGroup('숏게임 종합 챌린지');
                 } else if (typeParam === 'putting') {
                     setSelectedPart('long_putt');
-                    setSelectedGroup('퍼팅 (Putting)');
+                    setSelectedGroup('퍼팅 종합 챌린지');
                 } else {
                     const partKey = typeParam as TestType;
                     setSelectedPart(partKey);
                     // Find matching group
-                    const group = TEST_GROUPS.find(g => g.parts.some(p => p.key === partKey));
+                    const group = testGroups.find(g => g.parts.some(p => p.key === partKey));
                     if (group) setSelectedGroup(group.label);
                 }
             }
@@ -177,8 +410,8 @@ function CreateTestContent() {
                 setIsLoadingRecord(true);
                 const supabase = createClient();
                 const { data, error } = await supabase
-                    .from("records")
-                    .select("*, users!records_user_id_fkey(name)")
+                    .from("test_sessions")
+                    .select("*, athlete:users!test_sessions_user_id_fkey(name)")
                     .eq("id", editId)
                     .single();
                 
@@ -188,17 +421,17 @@ function CreateTestContent() {
                 }
 
                 // Populate basic info
-                setSelectedPlayer(data.users?.name || "");
+                setSelectedPlayer(data.athlete?.name || "");
                 const createdAt = new Date(data.created_at);
                 setTestDate(data.created_at.split("T")[0]);
                 setTestTime(`${String(createdAt.getHours()).padStart(2, '0')}:${String(createdAt.getMinutes()).padStart(2, '0')}`);
                 
-                const content = data.content;
+                const content = typeof data.raw_shot_data === 'string' ? JSON.parse(data.raw_shot_data) : data.raw_shot_data;
                 const category = data.category;
 
                 if (category === "shot" || category === "driver" || category === "iron") {
                     setSelectedPart("driver");
-                    setSelectedGroup("샷 (Shot)");
+                    setSelectedGroup("샷 종합 챌린지");
                     if (content.driver?.shots) setDriverShots(content.driver.shots);
                     else if (category === "driver" && content.shots) setDriverShots(content.shots);
                     
@@ -209,7 +442,7 @@ function CreateTestContent() {
                     else if (category === "iron" && content.distances) setSelectedIronDistances(content.distances);
                 } else if (category === "around_green" || category === "approach" || category === "bunker") {
                     setSelectedPart("approach");
-                    setSelectedGroup("그린 주변 (Around Green)");
+                    setSelectedGroup("숏게임 종합 챌린지");
                     if (content.approach?.shots) setApproachShots(content.approach.shots);
                     else if (category === "approach" && content.shots) setApproachShots(content.shots);
                     
@@ -217,7 +450,7 @@ function CreateTestContent() {
                     else if (category === "bunker" && content.shots) setBunkerShots(content.shots);
                 } else if (category === "long_putt" || category === "middle_putt" || category === "short_putt" || category === "putting") {
                     setSelectedPart(category === "putting" ? "long_putt" : category);
-                    setSelectedGroup("퍼팅 (Putting)");
+                    setSelectedGroup("퍼팅 종합 챌린지");
                     if (category === "putting") {
                         if (content.long?.shots) setLongPuttShots(content.long.shots);
                         if (content.middle?.shots) setMiddlePuttShots(content.middle.shots);
@@ -253,8 +486,8 @@ function CreateTestContent() {
         Array.from({ length: 12 }, (_, i) => ({ distance: 0, shotId: i + 1, proximity: "" }))
     );
 
-    const [bunkerShots, setBunkerShots] = useState<IronShotResult[]>(
-        Array.from({ length: 6 }, (_, i) => ({ distance: 0, shotId: i + 1, proximity: "" }))
+    const [bunkerShots, setBunkerShots] = useState<any[]>(
+        Array.from({ length: 6 }, (_, i) => ({ distance: i < 3 ? "25m 이내" : "25m 이상", shotId: i + 1, proximity: "" }))
     );
 
     // Putting States
@@ -291,30 +524,33 @@ function CreateTestContent() {
         
         const iron = ironShots.reduce((acc, shot) => {
             if (shot.proximity === "") return acc;
-            const startScore = IRON_START_SCORES[shot.distance] || 0;
+            const startScore = IRON_START_SCORES[shot.distance] ?? 0;
             const prox = Math.min(20, Math.round(Number(shot.proximity)));
-            const resultScore = IRON_RESULT_SCORES[prox] || 0.32;
+            const resultScore = IRON_RESULT_SCORES[prox] ?? 0.32;
             return acc + startScore + resultScore;
         }, 0);
 
         const approach = approachShots.reduce((acc, shot) => {
             if (shot.proximity === "") return acc;
-            const prox = Math.min(20, Math.round(Number(shot.proximity)));
-            return acc + (APPROACH_SCORES[prox] || 0.97);
+            const prox = Math.round(Number(shot.proximity));
+            if (shot.shotId <= 4) return acc + getShortApproachScore(prox);
+            if (shot.shotId <= 8) return acc + getMiddleApproachScore(prox);
+            return acc + getLongApproachScore(prox);
         }, 0);
 
         const bunker = bunkerShots.reduce((acc, shot) => {
             if (shot.proximity === "") return acc;
-            const prox = Math.min(20, Math.round(Number(shot.proximity)));
-            return acc + (BUNKER_SCORES[prox] || 0.72);
+            const prox = Math.round(Number(shot.proximity));
+            if (shot.shotId <= 3) return acc + getShortBunkerScore(prox);
+            return acc + getLongBunkerScore(prox);
         }, 0);
 
         const calcPutting = (shots: IronShotResult[], type: keyof typeof PUTTING_ATTEMPT_SCORES) => {
             return shots.reduce((acc, shot) => {
                 if (shot.proximity === "") return acc;
-                const attemptScore = (PUTTING_ATTEMPT_SCORES[type] as any)[shot.shotId] || 0;
+                const attemptScore = (PUTTING_ATTEMPT_SCORES[type] as any)[shot.shotId] ?? 0;
                 const prox = Math.min(20, Math.round(Number(shot.proximity)));
-                const resultScore = PUTTING_RESULT_SCORES[prox] || 1.55;
+                const resultScore = PUTTING_RESULT_SCORES[prox] ?? 1.55;
                 return acc + attemptScore + resultScore;
             }, 0);
         };
@@ -323,6 +559,37 @@ function CreateTestContent() {
         const middlePutt = calcPutting(middlePuttShots, "middle_putt");
         const shortPutt = calcPutting(shortPuttShots, "short_putt");
 
+        // Detailed 숏게임 breakdowns
+        const shortApproach = approachShots.slice(0, 4).reduce((acc, shot) => {
+            if (shot.proximity === "") return acc;
+            const prox = Math.round(Number(shot.proximity));
+            return acc + getShortApproachScore(prox);
+        }, 0);
+
+        const middleApproach = approachShots.slice(4, 8).reduce((acc, shot) => {
+            if (shot.proximity === "") return acc;
+            const prox = Math.round(Number(shot.proximity));
+            return acc + getMiddleApproachScore(prox);
+        }, 0);
+
+        const longApproach = approachShots.slice(8, 12).reduce((acc, shot) => {
+            if (shot.proximity === "") return acc;
+            const prox = Math.round(Number(shot.proximity));
+            return acc + getLongApproachScore(prox);
+        }, 0);
+
+        const shortBunker = bunkerShots.slice(0, 3).reduce((acc, shot) => {
+            if (shot.proximity === "") return acc;
+            const prox = Math.round(Number(shot.proximity));
+            return acc + getShortBunkerScore(prox);
+        }, 0);
+
+        const longBunker = bunkerShots.slice(3, 6).reduce((acc, shot) => {
+            if (shot.proximity === "") return acc;
+            const prox = Math.round(Number(shot.proximity));
+            return acc + getLongBunkerScore(prox);
+        }, 0);
+
         // Subtotals
         const shotSubtotal = driver + iron;
         const aroundSubtotal = approach + bunker;
@@ -330,6 +597,8 @@ function CreateTestContent() {
         
         return {
             driver, iron, approach, bunker,
+            shortApproach, middleApproach, longApproach,
+            shortBunker, longBunker,
             long_putt: longPutt, middle_putt: middlePutt, short_putt: shortPutt,
             shotSubtotal, aroundSubtotal, puttingSubtotal,
             total: shotSubtotal + aroundSubtotal + puttingSubtotal,
@@ -403,7 +672,7 @@ function CreateTestContent() {
         let isComplete = true;
         let content: any = {};
         let categoryToSave = selectedPart;
-        const partLabel = TEST_GROUPS.flatMap(g => g.parts).find(p => p.key === selectedPart)?.label || selectedPart;
+        const partLabel = testGroups.flatMap(g => g.parts).find(p => p.key === selectedPart)?.label || selectedPart;
         let finalTitle = `${partLabel} 테스트`;
 
         if (selectedPart === "driver" || selectedPart === "iron") {
@@ -417,7 +686,7 @@ function CreateTestContent() {
             
             isComplete = true;
             categoryToSave = "shot";
-            finalTitle = `샷(SHOT) 테스트`;
+            finalTitle = `샷 종합 챌린지`;
             content = {
                 type: "combined_shot",
                 driver: { shots: driverShots, score: scores.driver },
@@ -435,7 +704,7 @@ function CreateTestContent() {
             
             isComplete = true;
             categoryToSave = "around_green";
-            finalTitle = `그린 주변(AROUND GREEN) 테스트`;
+            finalTitle = `숏게임 종합 챌린지`;
             content = {
                 type: "combined_around_green",
                 approach: { shots: approachShots, score: scores.approach },
@@ -443,13 +712,18 @@ function CreateTestContent() {
                 totalScore: scores.approach + scores.bunker
             };
         } else if (selectedPart === "long_putt" || selectedPart === "middle_putt" || selectedPart === "short_putt") {
-            // Check if ALL putting parts are complete
-            isComplete = longPuttShots.every(s => s.proximity !== "") && 
-                         middlePuttShots.every(s => s.proximity !== "") && 
-                         shortPuttShots.every(s => s.proximity !== "");
+            const longComplete = longPuttShots.every(s => s.proximity !== "");
+            const middleComplete = middlePuttShots.every(s => s.proximity !== "");
+            const shortComplete = shortPuttShots.every(s => s.proximity !== "");
             
+            if (!longComplete || !middleComplete || !shortComplete) {
+                alert("롱퍼팅(4회), 미들퍼팅(8회), 숏퍼팅(6회) 기록을 모두 완료해주세요.");
+                return;
+            }
+            
+            isComplete = true;
             categoryToSave = "putting";
-            finalTitle = `퍼팅(PUTTING) 테스트`;
+            finalTitle = `퍼팅 종합 챌린지`;
             content = {
                 type: "combined_putting",
                 long: { shots: longPuttShots, score: scores.long_putt },
@@ -478,8 +752,8 @@ function CreateTestContent() {
                 time: testTime
             });
 
-            alert(editId ? "테스트 기록이 수정되었습니다." : "테스트 기록이 저장되었습니다.");
-            router.push("/training/tests");
+            alert(editId ? "챌린지 기록이 수정되었습니다." : "챌린지 기록이 저장되었습니다.");
+            router.push("/training/challenges");
         } catch (err: any) {
             console.error("Test save error details:", {
                 message: err.message,
@@ -504,7 +778,7 @@ function CreateTestContent() {
                         <ChevronLeft size={24} />
                     </button>
                     <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-                        {editId ? "테스트 수정" : "테스트 작성"}
+                        {editId ? "챌린지 수정" : "챌린지 작성"}
                     </h1>
                 </div>
 
@@ -520,7 +794,7 @@ function CreateTestContent() {
                                 <>기존에 작성된 <span className="font-bold underline">
                                     {(selectedPart === 'driver' || selectedPart === 'iron') ? '샷(드라이버/아이언)' : 
                                      (selectedPart === 'approach' || selectedPart === 'bunker') ? '그린 주변(어프로치/벙커)' :
-                                     TEST_GROUPS.flatMap(g => g.parts).find(p => p.key === selectedPart)?.label}
+                                     testGroups.flatMap(g => g.parts).find(p => p.key === selectedPart)?.label}
                                 </span> 테스트를 수정 중입니다.</>
                             )}
                         </p>
@@ -545,7 +819,7 @@ function CreateTestContent() {
 
                         <div className="space-y-4">
                             <label className="block text-sm font-bold text-zinc-800 dark:text-zinc-200">
-                                테스트 일자 <span className="text-brand-red">*</span>
+                                챌린지 일자 <span className="text-brand-red">*</span>
                             </label>
                             <div className="relative">
                                 <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
@@ -562,32 +836,118 @@ function CreateTestContent() {
                     {/* ── 2. Two-Step Category Selection ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-[2.5rem] shadow-sm">
 
+                        {/* Title & Search Button */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3">
+                            <h2 className="text-sm font-bold text-zinc-800 dark:text-zinc-200">챌린지 선택</h2>
+                            
+                            <div className="relative w-full sm:w-64" ref={challengeSearchRef}>
+                                <div className="relative group">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-brand-navy transition-colors" size={16} />
+                                    <input
+                                        type="text"
+                                        value={challengeQuery}
+                                        onChange={(e) => {
+                                            setChallengeQuery(e.target.value);
+                                            setIsChallengeSearchOpen(true);
+                                        }}
+                                        onFocus={() => {
+                                            if (challengeQuery.trim()) setIsChallengeSearchOpen(true);
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" && challengeSuggestions.length > 0) {
+                                                e.preventDefault();
+                                                handleChallengeSelect(challengeSuggestions[0]);
+                                            }
+                                        }}
+                                        placeholder="챌린지 검색..."
+                                        disabled={editId !== null}
+                                        className="w-full pl-9 pr-4 py-2 rounded-full border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 text-sm focus:outline-none focus:ring-2 focus:ring-brand-navy/30 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                    />
+                                </div>
+
+                                {/* Dropdown suggestions */}
+                                {isChallengeSearchOpen && challengeQuery.trim() !== "" && (
+                                    <div className="absolute z-[60] mt-1.5 w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-xl max-h-56 overflow-y-auto overflow-x-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                                        <div className="p-1 px-1.5 py-1.5">
+                                            {challengeSuggestions.length > 0 ? (
+                                                challengeSuggestions.map((suggestion) => {
+                                                    const isSelected = selectedGroup === suggestion.groupLabel && (!suggestion.partKey || selectedPart === suggestion.partKey);
+                                                    return (
+                                                        <button
+                                                            key={suggestion.title}
+                                                            type="button"
+                                                            onClick={() => handleChallengeSelect(suggestion)}
+                                                            className={cn(
+                                                                "w-full text-left px-3 py-2.5 rounded-xl text-[12px] font-bold transition-all flex items-center justify-between",
+                                                                isSelected
+                                                                    ? "bg-brand-navy/10 text-brand-navy"
+                                                                    : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                                                            )}
+                                                        >
+                                                            {suggestion.title}
+                                                            {isSelected && <Check size={14} className="text-brand-navy shrink-0" />}
+                                                        </button>
+                                                    );
+                                                })
+                                            ) : (
+                                                <div className="px-3 py-4 text-xs text-center text-zinc-500 font-medium">
+                                                    "{challengeQuery}" 검색 결과가 없습니다.
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
 
                         {/* Main Group Selection */}
-                        <div className="grid grid-cols-3 gap-3 mb-6">
-                            {TEST_GROUPS.map((group) => {
-                                const isSelected = selectedGroup === group.label;
-                                return (
-                                    <button
-                                        key={group.label}
-                                        type="button"
-                                        disabled={editId !== null}
-                                        onClick={() => setSelectedGroup(group.label)}
-                                        className={cn(
-                                            "flex flex-col items-center justify-center py-5 rounded-[2rem] border-2 transition-all gap-2",
-                                            isSelected 
-                                                ? "bg-brand-navy text-white border-brand-navy shadow-xl shadow-brand-navy/20 scale-[1.02]" 
-                                                : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-100 dark:border-zinc-800 text-zinc-400 hover:border-zinc-200",
-                                            editId !== null && !isSelected && "opacity-30 grayscale cursor-not-allowed"
-                                        )}
-                                    >
-                                        <div className={cn("p-2.5 rounded-2xl", isSelected ? "bg-white/20" : "bg-white dark:bg-zinc-900 shadow-sm")}>
-                                            {group.label.includes("샷") ? <Target size={22} /> : group.label.includes("그린") ? <Flag size={22} /> : <Crown size={22} />}
-                                        </div>
-                                        <span className="text-[11px] font-black uppercase tracking-tighter whitespace-nowrap">{group.label.split(' (')[0]}</span>
-                                    </button>
-                                );
-                            })}
+                        <div className="relative group/scroll mb-6">
+                            {/* Left Arrow */}
+                            <button 
+                                type="button" 
+                                onClick={scrollLeft}
+                                className="absolute left-0 top-1/2 -translate-y-1/2 -ml-4 z-10 p-2 bg-white dark:bg-zinc-800 shadow-md border border-zinc-200 dark:border-zinc-700 rounded-full opacity-0 group-hover/scroll:opacity-100 transition-opacity hidden md:flex items-center justify-center hover:bg-zinc-50 dark:hover:bg-zinc-700"
+                            >
+                                <ChevronLeft size={20} className="text-zinc-600 dark:text-zinc-300" />
+                            </button>
+
+                            <div 
+                                ref={scrollRef} 
+                                className="flex overflow-x-auto gap-3 pb-2 snap-x snap-mandatory [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+                            >
+                                {testGroups.map((group) => {
+                                    const isSelected = selectedGroup === group.label;
+                                    return (
+                                        <button
+                                            key={group.label}
+                                            type="button"
+                                            disabled={editId !== null}
+                                            onClick={() => setSelectedGroup(isSelected ? null : group.label)}
+                                            className={cn(
+                                                "flex-none w-[31%] min-w-[110px] max-w-[150px] snap-center flex flex-col items-center justify-center py-5 rounded-[2rem] border-2 transition-all gap-2",
+                                                isSelected 
+                                                    ? "bg-brand-navy text-white border-brand-navy shadow-xl shadow-brand-navy/20 scale-[1.02]" 
+                                                    : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-100 dark:border-zinc-800 text-zinc-400 hover:border-zinc-200",
+                                                editId !== null && !isSelected && "opacity-30 grayscale cursor-not-allowed"
+                                            )}
+                                        >
+                                            <div className={cn("p-2.5 rounded-2xl", isSelected ? "bg-white/20" : "bg-white dark:bg-zinc-900 shadow-sm")}>
+                                                {group.label.includes("샷") ? <Target size={22} /> : group.label.includes("숏게임") ? <Flag size={22} /> : <Crown size={22} />}
+                                            </div>
+                                            <span className="text-[11px] font-black uppercase tracking-tighter whitespace-nowrap">{group.label}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Right Arrow */}
+                            <button 
+                                type="button" 
+                                onClick={scrollRight}
+                                className="absolute right-0 top-1/2 -translate-y-1/2 -mr-4 z-10 p-2 bg-white dark:bg-zinc-800 shadow-md border border-zinc-200 dark:border-zinc-700 rounded-full opacity-0 group-hover/scroll:opacity-100 transition-opacity hidden md:flex items-center justify-center hover:bg-zinc-50 dark:hover:bg-zinc-700"
+                            >
+                                <ChevronRight size={20} className="text-zinc-600 dark:text-zinc-300" />
+                            </button>
                         </div>
 
                         {/* Sub-Part Selection (Conditional Reveal) */}
@@ -595,7 +955,7 @@ function CreateTestContent() {
                             <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
                                 <div className="h-[1px] bg-zinc-100 dark:bg-zinc-800 w-full mb-2" />
                                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                                    {TEST_GROUPS.find(g => g.label === selectedGroup)?.parts.map((opt) => (
+                                    {testGroups.find(g => g.label === selectedGroup)?.parts.map((opt) => (
                                         <button
                                             key={opt.key}
                                             type="button"
@@ -725,11 +1085,31 @@ function CreateTestContent() {
                             </section>
 
                             {/* Shot Inputs per Distance */}
-                            {selectedIronDistances.map((dist) => (
+                            {selectedIronDistances.map((dist) => {
+                                const distScore = ironShots.filter(s => s.distance === dist).reduce((acc, shot) => {
+                                    if (shot.proximity === "") return acc;
+                                    const startScore = IRON_START_SCORES[shot.distance] ?? 0;
+                                    const prox = Math.min(20, Math.round(Number(shot.proximity)));
+                                    const resultScore = IRON_RESULT_SCORES[prox] ?? 0.32;
+                                    return acc + startScore + resultScore;
+                                }, 0);
+
+                                return (
                                 <section key={dist} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-[2rem] shadow-sm">
-                                    <h3 className="text-lg font-black text-brand-navy dark:text-brand-navy-light italic mb-4">
-                                        {dist}m <span className="text-xs not-italic font-bold text-zinc-400 ml-1">Iron Test</span>
-                                    </h3>
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-lg font-black text-brand-navy dark:text-brand-navy-light italic">
+                                            {dist}m <span className="text-xs not-italic font-bold text-zinc-400 ml-1">Iron Test</span>
+                                        </h3>
+                                        <div className="text-right">
+                                            <span className="text-xs text-zinc-400 block mb-1">합계 점수</span>
+                                            <span className={cn(
+                                                "text-xl font-black italic",
+                                                distScore < 0 ? "text-brand-red" : distScore > 0 ? "text-blue-600" : "text-zinc-400"
+                                            )}>
+                                                {distScore > 0 ? `+${distScore.toFixed(2)}` : distScore.toFixed(2)}
+                                            </span>
+                                        </div>
+                                    </div>
                                     <div className="space-y-2">
                                         {ironShots.filter(s => s.distance === dist).map((shot) => (
                                             <div key={`${dist}-${shot.shotId}`} className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
@@ -755,7 +1135,8 @@ function CreateTestContent() {
                                         ))}
                                     </div>
                                 </section>
-                            ))}
+                                );
+                            })}
 
                             {/* Total Score for Iron */}
                             {selectedIronDistances.length > 0 && (
@@ -779,33 +1160,54 @@ function CreateTestContent() {
 
                     {selectedPart === "approach" && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-300">
-                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-[2rem] shadow-sm">
-                                <h3 className="text-lg font-black text-brand-navy italic mb-4">어프로치 테스트 (12회)</h3>
-                                <div className="space-y-2">
-                                    {approachShots.map((shot) => (
-                                        <div key={shot.shotId} className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100">
-                                            <div className="flex items-center gap-3">
-                                                <span className="w-8 h-8 flex items-center justify-center bg-white dark:bg-zinc-900 rounded-full text-xs font-black text-zinc-400 border border-zinc-200">
-                                                    {shot.shotId}
-                                                </span>
-                                                <span className="text-sm font-bold text-zinc-600">Approach Shot</span>
-                                            </div>
-                                            <div className="relative w-24">
-                                                <input
-                                                    type="number"
-                                                    placeholder="0"
-                                                    min={0}
-                                                    step={1}
-                                                    value={shot.proximity}
-                                                    onChange={(e) => updateApproachShot(shot.shotId, e.target.value)}
-                                                    className="w-full pl-3 pr-8 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-brand-navy/40"
-                                                />
-                                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-400 font-bold">m</span>
-                                            </div>
+                            <h3 className="text-lg font-black text-brand-navy dark:text-brand-navy-light italic pl-2">어프로치 테스트 (12회)</h3>
+                            {[
+                                { title: "숏 어프로치 테스트", shots: approachShots.slice(0, 4), labelMap: { 1: "5~10m", 2: "5~10m", 3: "5~10m", 4: "5~10m" }, scoreKey: 'shortApproach' },
+                                { title: "미들 어프로치 테스트", shots: approachShots.slice(4, 8), labelMap: { 5: "15m", 6: "15m", 7: "20m", 8: "20m" }, scoreKey: 'middleApproach' },
+                                { title: "롱 어프로치 테스트", shots: approachShots.slice(8, 12), labelMap: { 9: "25m", 10: "25m", 11: "30m", 12: "30m" }, scoreKey: 'longApproach' }
+                            ].map((group, gIdx) => {
+                                const distScore = (scores as any)[group.scoreKey];
+                                return (
+                                <section key={gIdx} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-[2rem] shadow-sm">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h4 className="text-sm font-bold text-zinc-400 dark:text-zinc-500">{group.title}</h4>
+                                        <div className="text-right">
+                                            <span className="text-[10px] text-zinc-400 block mb-0.5">합계 점수</span>
+                                            <span className={cn(
+                                                "text-lg font-black italic",
+                                                distScore < 0 ? "text-brand-red" : distScore > 0 ? "text-blue-600" : "text-zinc-400"
+                                            )}>
+                                                {distScore > 0 ? `+${distScore.toFixed(2)}` : distScore.toFixed(2)}
+                                            </span>
                                         </div>
-                                    ))}
-                                </div>
-                            </section>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {group.shots.map((shot) => (
+                                            <div key={shot.shotId} className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="w-8 h-8 flex items-center justify-center bg-white dark:bg-zinc-900 rounded-full text-xs font-black text-zinc-400 border border-zinc-200 dark:border-zinc-700">
+                                                        {shot.shotId}
+                                                    </span>
+                                                    <span className="text-sm font-bold text-zinc-600 dark:text-zinc-400">{(group.labelMap as any)[shot.shotId]}</span>
+                                                </div>
+                                                <div className="relative w-24">
+                                                    <input
+                                                        type="number"
+                                                        placeholder="0"
+                                                        min={0}
+                                                        step={1}
+                                                        value={shot.proximity}
+                                                        onChange={(e) => updateApproachShot(shot.shotId, e.target.value)}
+                                                        className="w-full pl-3 pr-8 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-brand-navy/40"
+                                                    />
+                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-400 font-bold">m</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </section>
+                                );
+                            })}
 
                             <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-white/10 p-6 rounded-[2rem] shadow-sm flex items-center justify-between">
                                 <div>
@@ -844,33 +1246,53 @@ function CreateTestContent() {
 
                     {selectedPart === "bunker" && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-300">
-                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-[2rem] shadow-sm">
-                                <h3 className="text-lg font-black text-brand-navy italic mb-4">벙커 테스트 (6회)</h3>
-                                <div className="space-y-2">
-                                    {bunkerShots.map((shot) => (
-                                        <div key={shot.shotId} className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100">
-                                            <div className="flex items-center gap-3">
-                                                <span className="w-8 h-8 flex items-center justify-center bg-white dark:bg-zinc-900 rounded-full text-xs font-black text-zinc-400 border border-zinc-200">
-                                                    {shot.shotId}
-                                                </span>
-                                                <span className="text-sm font-bold text-zinc-600">Bunker Shot</span>
-                                            </div>
-                                            <div className="relative w-24">
-                                                <input
-                                                    type="number"
-                                                    placeholder="0"
-                                                    min={0}
-                                                    step={1}
-                                                    value={shot.proximity}
-                                                    onChange={(e) => updateBunkerShot(shot.shotId, e.target.value)}
-                                                    className="w-full pl-3 pr-8 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-brand-navy/40"
-                                                />
-                                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-400 font-bold">m</span>
-                                            </div>
+                            <h3 className="text-lg font-black text-brand-navy dark:text-brand-navy-light italic pl-2">벙커 테스트 (6회)</h3>
+                            {[
+                                { title: "숏 벙커 테스트", shots: bunkerShots.slice(0, 3), label: "25m 이내", scoreKey: 'shortBunker' },
+                                { title: "롱 벙커 테스트", shots: bunkerShots.slice(3, 6), label: "25m 이상", scoreKey: 'longBunker' }
+                            ].map((group, gIdx) => {
+                                const distScore = (scores as any)[group.scoreKey];
+                                return (
+                                <section key={gIdx} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-[2rem] shadow-sm">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h4 className="text-sm font-bold text-zinc-400 dark:text-zinc-500">{group.title}</h4>
+                                        <div className="text-right">
+                                            <span className="text-[10px] text-zinc-400 block mb-0.5">합계 점수</span>
+                                            <span className={cn(
+                                                "text-lg font-black italic",
+                                                distScore < 0 ? "text-brand-red" : distScore > 0 ? "text-blue-600" : "text-zinc-400"
+                                            )}>
+                                                {distScore > 0 ? `+${distScore.toFixed(2)}` : distScore.toFixed(2)}
+                                            </span>
                                         </div>
-                                    ))}
-                                </div>
-                            </section>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {group.shots.map((shot) => (
+                                            <div key={shot.shotId} className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="w-8 h-8 flex items-center justify-center bg-white dark:bg-zinc-900 rounded-full text-xs font-black text-zinc-400 border border-zinc-200 dark:border-zinc-700">
+                                                        {shot.shotId}
+                                                    </span>
+                                                    <span className="text-sm font-bold text-zinc-600 dark:text-zinc-400">{group.label}</span>
+                                                </div>
+                                                <div className="relative w-24">
+                                                    <input
+                                                        type="number"
+                                                        placeholder="0"
+                                                        min={0}
+                                                        step={1}
+                                                        value={shot.proximity}
+                                                        onChange={(e) => updateBunkerShot(shot.shotId, e.target.value)}
+                                                        className="w-full pl-3 pr-8 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm text-zinc-900 dark:text-zinc-50 focus:outline-none focus:ring-2 focus:ring-brand-navy/40"
+                                                    />
+                                                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-zinc-400 font-bold">m</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </section>
+                                );
+                            })}
 
                             <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-white/10 p-6 rounded-[2rem] shadow-sm flex items-center justify-between">
                                 <div>
@@ -892,15 +1314,26 @@ function CreateTestContent() {
                     {selectedPart === "long_putt" && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-300">
                             <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-[2rem] shadow-sm">
-                                <h3 className="text-lg font-black text-brand-navy italic mb-4">롱퍼팅 테스트 (4회)</h3>
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-lg font-black text-brand-navy italic">롱퍼팅 테스트 (4회)</h3>
+                                    <div className="text-right">
+                                        <span className="text-xs text-zinc-400 block mb-1">합계 점수</span>
+                                        <span className={cn(
+                                            "text-xl font-black italic",
+                                            scores.long_putt < 0 ? "text-brand-red" : scores.long_putt > 0 ? "text-blue-600" : "text-zinc-400"
+                                        )}>
+                                            {scores.long_putt > 0 ? `+${scores.long_putt.toFixed(2)}` : scores.long_putt.toFixed(2)}
+                                        </span>
+                                    </div>
+                                </div>
                                 <div className="space-y-2">
                                     {longPuttShots.map((shot) => (
-                                        <div key={shot.shotId} className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100">
+                                        <div key={shot.shotId} className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
                                             <div className="flex items-center gap-3">
-                                                <span className="w-8 h-8 flex items-center justify-center bg-white dark:bg-zinc-900 rounded-full text-xs font-black text-zinc-400 border border-zinc-200">
+                                                <span className="w-8 h-8 flex items-center justify-center bg-white dark:bg-zinc-900 rounded-full text-xs font-black text-zinc-400 border border-zinc-200 dark:border-zinc-700">
                                                     {shot.shotId}
                                                 </span>
-                                                <span className="text-sm font-bold text-zinc-600">Long Putt</span>
+                                                <span className="text-sm font-bold text-zinc-600 dark:text-zinc-400">{LONG_PUTT_LABELS[shot.shotId]}</span>
                                             </div>
                                             <div className="relative w-24">
                                                 <input
@@ -957,15 +1390,26 @@ function CreateTestContent() {
                     {selectedPart === "middle_putt" && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-300">
                             <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-[2rem] shadow-sm">
-                                <h3 className="text-lg font-black text-brand-navy italic mb-4">미들퍼팅 테스트 (8회)</h3>
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-lg font-black text-brand-navy italic">미들퍼팅 테스트 (8회)</h3>
+                                    <div className="text-right">
+                                        <span className="text-xs text-zinc-400 block mb-1">합계 점수</span>
+                                        <span className={cn(
+                                            "text-xl font-black italic",
+                                            scores.middle_putt < 0 ? "text-brand-red" : scores.middle_putt > 0 ? "text-blue-600" : "text-zinc-400"
+                                        )}>
+                                            {scores.middle_putt > 0 ? `+${scores.middle_putt.toFixed(2)}` : scores.middle_putt.toFixed(2)}
+                                        </span>
+                                    </div>
+                                </div>
                                 <div className="space-y-2">
                                     {middlePuttShots.map((shot) => (
-                                        <div key={shot.shotId} className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100">
+                                        <div key={shot.shotId} className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
                                             <div className="flex items-center gap-3">
-                                                <span className="w-8 h-8 flex items-center justify-center bg-white dark:bg-zinc-900 rounded-full text-xs font-black text-zinc-400 border border-zinc-200">
+                                                <span className="w-8 h-8 flex items-center justify-center bg-white dark:bg-zinc-900 rounded-full text-xs font-black text-zinc-400 border border-zinc-200 dark:border-zinc-700">
                                                     {shot.shotId}
                                                 </span>
-                                                <span className="text-sm font-bold text-zinc-600">Middle Putt</span>
+                                                <span className="text-sm font-bold text-zinc-600 dark:text-zinc-400">{MIDDLE_PUTT_LABELS[shot.shotId]}</span>
                                             </div>
                                             <div className="relative w-24">
                                                 <input
@@ -1022,15 +1466,26 @@ function CreateTestContent() {
                     {selectedPart === "short_putt" && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-300">
                             <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-[2rem] shadow-sm">
-                                <h3 className="text-lg font-black text-brand-navy italic mb-4">숏퍼팅 테스트 (6회)</h3>
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-lg font-black text-brand-navy italic">숏퍼팅 테스트 (6회)</h3>
+                                    <div className="text-right">
+                                        <span className="text-xs text-zinc-400 block mb-1">합계 점수</span>
+                                        <span className={cn(
+                                            "text-xl font-black italic",
+                                            scores.short_putt < 0 ? "text-brand-red" : scores.short_putt > 0 ? "text-blue-600" : "text-zinc-400"
+                                        )}>
+                                            {scores.short_putt > 0 ? `+${scores.short_putt.toFixed(2)}` : scores.short_putt.toFixed(2)}
+                                        </span>
+                                    </div>
+                                </div>
                                 <div className="space-y-2">
                                     {shortPuttShots.map((shot) => (
-                                        <div key={shot.shotId} className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100">
+                                        <div key={shot.shotId} className="flex items-center justify-between p-3 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
                                             <div className="flex items-center gap-3">
-                                                <span className="w-8 h-8 flex items-center justify-center bg-white dark:bg-zinc-900 rounded-full text-xs font-black text-zinc-400 border border-zinc-200">
+                                                <span className="w-8 h-8 flex items-center justify-center bg-white dark:bg-zinc-900 rounded-full text-xs font-black text-zinc-400 border border-zinc-200 dark:border-zinc-700">
                                                     {shot.shotId}
                                                 </span>
-                                                <span className="text-sm font-bold text-zinc-600">Short Putt</span>
+                                                <span className="text-sm font-bold text-zinc-600 dark:text-zinc-400">{SHORT_PUTT_LABELS[shot.shotId]}</span>
                                             </div>
                                             <div className="relative w-24">
                                                 <input
@@ -1065,64 +1520,6 @@ function CreateTestContent() {
                             </div>
                         </div>
                     )}
-
-                    {selectedPart && !["driver", "iron", "approach", "bunker", "long_putt", "middle_putt", "short_putt"].includes(selectedPart) && (
-                        <div className="py-20 text-center bg-white dark:bg-zinc-900 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-[2rem]">
-                            <p className="text-zinc-400 text-sm font-medium">
-                                {TEST_GROUPS.flatMap(g => g.parts).find(p => p.key === selectedPart)?.label} 상세 입력 기능은 준비 중입니다.
-                            </p>
-                        </div>
-                    )}
-
-                    {/* ── 4. Summary Dashboard (Light Theme) ── */}
-                    <section className="bg-white dark:bg-zinc-900 border-2 border-brand-navy/10 dark:border-white/10 p-8 rounded-[2.5rem] shadow-xl relative overflow-hidden">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-brand-navy/5 rounded-full -mr-16 -mt-16" />
-                        
-                        <div className="relative z-10 space-y-6">
-                            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-white/5 pb-4">
-                                <h3 className="text-lg font-black italic tracking-tight text-brand-navy">SESSION SUMMARY</h3>
-                                <div className="text-right">
-                                    <p className="text-[10px] font-black text-zinc-400 uppercase tracking-[0.2em] mb-1">TOTAL SCORE</p>
-                                    <p className={cn(
-                                        "text-3xl font-black italic",
-                                        scores.total < 0 ? "text-brand-red" : scores.total > 0 ? "text-blue-600" : "text-zinc-900"
-                                    )}>
-                                        {scores.total > 0 ? `+${scores.total.toFixed(2)}` : scores.total.toFixed(2)}
-                                    </p>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-3 gap-4">
-                                <div className="space-y-1">
-                                    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">샷 (Shot)</p>
-                                    <p className={cn(
-                                        "text-sm font-black italic",
-                                        scores.shotSubtotal < 0 ? "text-brand-red" : scores.shotSubtotal > 0 ? "text-blue-600" : "text-zinc-900"
-                                    )}>
-                                        {scores.shotSubtotal > 0 ? `+${scores.shotSubtotal.toFixed(2)}` : scores.shotSubtotal.toFixed(2)}
-                                    </p>
-                                </div>
-                                <div className="space-y-1 border-l border-zinc-100 dark:border-white/5 pl-4">
-                                    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">그린 주변</p>
-                                    <p className={cn(
-                                        "text-sm font-black italic",
-                                        scores.aroundSubtotal < 0 ? "text-brand-red" : scores.aroundSubtotal > 0 ? "text-blue-600" : "text-zinc-900"
-                                    )}>
-                                        {scores.aroundSubtotal > 0 ? `+${scores.aroundSubtotal.toFixed(2)}` : scores.aroundSubtotal.toFixed(2)}
-                                    </p>
-                                </div>
-                                <div className="space-y-1 border-l border-zinc-100 dark:border-white/5 pl-4">
-                                    <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">퍼팅</p>
-                                    <p className={cn(
-                                        "text-sm font-black italic",
-                                        scores.puttingSubtotal < 0 ? "text-brand-red" : scores.puttingSubtotal > 0 ? "text-blue-600" : "text-zinc-900"
-                                    )}>
-                                        {scores.puttingSubtotal > 0 ? `+${scores.puttingSubtotal.toFixed(2)}` : scores.puttingSubtotal.toFixed(2)}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </section>
 
                     {/* ── Actions ── */}
                     <div className="flex items-center justify-end gap-3 pt-6 border-t border-zinc-200 dark:border-zinc-800">

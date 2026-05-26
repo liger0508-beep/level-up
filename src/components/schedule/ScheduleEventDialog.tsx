@@ -219,13 +219,22 @@ export function ScheduleEventDialog({
 
     return (
         <>
-            <div className="fixed inset-0 bg-black/40 z-50" onClick={onClose} />
+            <div className="fixed inset-0 bg-black/40 z-50 animate-in fade-in duration-300" onClick={onClose} />
 
-            <div className="fixed inset-x-0 bottom-16 z-50 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:max-w-md sm:w-full sm:max-h-[85vh]">
-                <div className="bg-white dark:bg-zinc-900 rounded-t-2xl sm:rounded-2xl shadow-xl border border-zinc-200 dark:border-zinc-800 max-h-[85vh] flex flex-col">
+            <div className={cn(
+                "fixed z-50",
+                "inset-x-0 bottom-0 sm:inset-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:max-w-md sm:w-full sm:max-h-[90vh]",
+                "animate-slide-up sm:animate-in sm:fade-in sm:duration-300"
+            )}>
+                <div className="bg-white dark:bg-zinc-900 rounded-t-[2.5rem] sm:rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 max-h-[90vh] sm:max-h-[85vh] flex flex-col">
+
+                    {/* Handle bar (mobile) */}
+                    <div className="flex justify-center pt-4 pb-1 sm:hidden">
+                        <div className="w-12 h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800" />
+                    </div>
 
                     {/* Header */}
-                    <div className="flex-shrink-0 flex items-center justify-between px-5 py-3 border-b border-zinc-100 dark:border-zinc-800">
+                    <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
                         <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
                             {editEvent ? "일정 수정" : "일정 등록"}
                         </h2>

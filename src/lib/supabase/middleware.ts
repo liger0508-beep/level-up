@@ -6,9 +6,12 @@ export async function updateSession(request: NextRequest) {
         request,
     })
 
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key';
+
     const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        url,
+        key,
         {
             cookies: {
                 getAll() {
@@ -34,7 +37,13 @@ export async function updateSession(request: NextRequest) {
     } = await supabase.auth.getUser()
 
     // Route Protection
-    if (!user && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/signup') && !request.nextUrl.pathname.startsWith('/auth') && !request.nextUrl.pathname.startsWith('/api/debug-records')) {
+    if (!user && 
+        !request.nextUrl.pathname.startsWith('/login') && 
+        !request.nextUrl.pathname.startsWith('/signup') && 
+        !request.nextUrl.pathname.startsWith('/find-id') && 
+        !request.nextUrl.pathname.startsWith('/forgot-password') && 
+        !request.nextUrl.pathname.startsWith('/auth') && 
+        !request.nextUrl.pathname.startsWith('/api/debug-records')) {
         const url = request.nextUrl.clone()
         url.pathname = '/login'
         return NextResponse.redirect(url)

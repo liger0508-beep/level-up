@@ -1,12 +1,14 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useMemo, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, Trophy, Medal, Crown, Star, Calendar, Target, Flag, Search } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { TestData, TestType, TestRecord } from "@/lib/test-sync";
-import { cn } from "@/lib/utils";
+import { cn, formatScore } from "@/lib/utils";
 
 type RankingPeriod = "daily" | "weekly" | "monthly";
 type RankingCategory = "overall" | "shot" | "around_green" | "putting";
@@ -272,7 +274,7 @@ function RankingsContent() {
                         {/* Date range */}
                         <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                             <label className="w-20 shrink-0 text-sm font-bold text-zinc-500 dark:text-zinc-400">
-                                테스트 일자
+                                챌린지 일자
                             </label>
                             <div className="flex items-center gap-2 flex-1">
                                 <DatePickerInput
@@ -370,7 +372,7 @@ function RankingsContent() {
                                             "text-3xl font-black italic tracking-tighter",
                                             (t.totalScore || 0) > 0 ? "text-blue-600" : (t.totalScore || 0) < 0 ? "text-brand-red" : "text-zinc-400"
                                         )}>
-                                            {(t.totalScore || 0) > 0 ? `+${t.totalScore?.toFixed(2)}` : t.totalScore?.toFixed(2)}
+                                            {formatScore(t.totalScore)}
                                         </p>
                                         <p className="text-[10px] font-black text-zinc-300 uppercase tracking-widest mt-[-2px]">pts</p>
                                     </div>

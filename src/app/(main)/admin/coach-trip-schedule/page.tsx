@@ -230,55 +230,69 @@ export default function CoachTripAdminPage() {
                         style={{ zIndex: monthTrips.length - index }}
                     >
                         {/* Row 1: Category / Date / Venue / Remarks / Delete */}
-                        <div className="flex items-center gap-3 px-5 py-3 border-b border-zinc-100 dark:border-zinc-800 rounded-t-2xl">
-                            <select
-                                className={cn(
-                                    "text-xs font-bold px-3 py-1.5 rounded-lg border cursor-pointer focus:outline-none appearance-none text-center shrink-0 min-w-[100px]",
-                                    CATEGORY_COLORS[t.category]
-                                )}
-                                value={t.category}
-                                onChange={(e) => handleUpdate(t.id, "category", e.target.value as CoachTripCategory)}
-                            >
-                                {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                            </select>
+                        <div className="flex items-end gap-3 px-5 py-3 border-b border-zinc-100 dark:border-zinc-800 rounded-t-2xl">
+                            <div className="flex flex-col gap-1 shrink-0">
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-1">구분</span>
+                                <select
+                                    className={cn(
+                                        "h-[34px] text-xs font-bold px-3 rounded-lg border cursor-pointer focus:outline-none appearance-none text-center min-w-[100px]",
+                                        CATEGORY_COLORS[t.category]
+                                    )}
+                                    value={t.category}
+                                    onChange={(e) => handleUpdate(t.id, "category", e.target.value as CoachTripCategory)}
+                                >
+                                    {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                </select>
+                            </div>
 
-                            <div className="flex items-center gap-1.5 shrink-0">
-                                <DatePickerInput
-                                    className="w-[110px] px-2 py-1.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs text-center"
-                                    value={getStartInputDate(t)}
-                                    onChange={(e) => handleDateChange(t.id, "start", e.target.value)}
-                                />
-                                <span className="text-zinc-400 text-xs">~</span>
-                                <DatePickerInput
-                                    ref={el => { endInputRefs.current[t.id] = el; }}
-                                    className="w-[110px] px-2 py-1.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs text-center"
-                                    value={getEndInputDate(t)}
-                                    onChange={(e) => handleDateChange(t.id, "end", e.target.value)}
+                            <div className="flex flex-col gap-1 shrink-0">
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-1">일정</span>
+                                <div className="flex items-center gap-1.5">
+                                    <DatePickerInput
+                                        className="h-[34px] min-h-[34px] w-[110px] px-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs text-center"
+                                        value={getStartInputDate(t)}
+                                        onChange={(e) => handleDateChange(t.id, "start", e.target.value)}
+                                    />
+                                    <span className="text-zinc-400 text-xs">~</span>
+                                    <DatePickerInput
+                                        ref={el => { endInputRefs.current[t.id] = el; }}
+                                        className="h-[34px] min-h-[34px] w-[110px] px-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs text-center"
+                                        value={getEndInputDate(t)}
+                                        onChange={(e) => handleDateChange(t.id, "end", e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-1">출장지</span>
+                                <input
+                                    type="text"
+                                    placeholder="출장 장소"
+                                    className="h-[34px] w-full px-3 bg-transparent dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs"
+                                    value={t.venue}
+                                    onChange={(e) => handleUpdate(t.id, "venue", e.target.value)}
                                 />
                             </div>
 
-                            <input
-                                type="text"
-                                placeholder="출장 장소"
-                                className="flex-1 min-w-[120px] px-3 py-1.5 bg-transparent dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs"
-                                value={t.venue}
-                                onChange={(e) => handleUpdate(t.id, "venue", e.target.value)}
-                            />
+                            <div className="flex flex-col gap-1 flex-[1.5] min-w-[150px]">
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-1">내용</span>
+                                <input
+                                    type="text"
+                                    placeholder="내용"
+                                    className="h-[34px] w-full px-3 bg-transparent dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs"
+                                    value={t.remarks}
+                                    onChange={(e) => handleUpdate(t.id, "remarks", e.target.value)}
+                                />
+                            </div>
 
-                            <input
-                                type="text"
-                                placeholder="비고"
-                                className="flex-[1.5] min-w-[150px] px-3 py-1.5 bg-transparent dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs"
-                                value={t.remarks}
-                                onChange={(e) => handleUpdate(t.id, "remarks", e.target.value)}
-                            />
-
-                            <button
-                                onClick={() => handleDelete(t.id, t.venue)}
-                                className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all shrink-0"
-                            >
-                                <Trash2 size={16} />
-                            </button>
+                            <div className="flex flex-col justify-end pb-1.5 shrink-0">
+                                <button
+                                    onClick={() => handleDelete(t.id, t.venue)}
+                                    className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            </div>
                         </div>
 
                         {/* Row 2: Participants */}
@@ -362,7 +376,7 @@ export default function CoachTripAdminPage() {
                             </div>
 
                             <div className="flex flex-col gap-1">
-                                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">출장 장소</label>
+                                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">출장지</label>
                                 <input
                                     type="text"
                                     className="w-full px-3 py-2 bg-transparent dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-[13px]"
@@ -389,13 +403,13 @@ export default function CoachTripAdminPage() {
                             </div>
 
                             <div className="flex flex-col gap-1">
-                                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">비고</label>
+                                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">내용</label>
                                 <input
                                     type="text"
                                     className="w-full px-3 py-2 bg-transparent dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-[13px]"
                                     value={t.remarks}
                                     onChange={(e) => handleUpdate(t.id, "remarks", e.target.value)}
-                                    placeholder="비고 입력"
+                                    placeholder="내용 입력"
                                 />
                             </div>
                         </div>

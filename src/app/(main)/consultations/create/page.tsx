@@ -1,8 +1,10 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import dynamic from "next/dynamic";
+import nextDynamic from "next/dynamic";
 import Link from "next/link";
 import {
     ChevronLeft,
@@ -33,7 +35,7 @@ import {
 import { AthleteSearch } from "@/components/ui/AthleteSearch";
 
 // Load ReactQuill dynamically to avoid SSR issues
-const ReactQuill = dynamic(() => import("react-quill-new"), {
+const ReactQuill = nextDynamic(() => import("react-quill-new"), {
     ssr: false,
     loading: () => <div className="h-64 bg-zinc-50 dark:bg-zinc-900 rounded-xl animate-pulse flex items-center justify-center text-zinc-400">에디터 로딩 중...</div>
 });
@@ -76,8 +78,21 @@ function CreateConsultationContent() {
         const player = searchParams.get("player");
         if (player) {
             setAthleteName(player);
+        } else {
+            const saved = sessionStorage.getItem("draftConsultationAthlete");
+            if (saved) {
+                setAthleteName(saved);
+            }
         }
     }, [searchParams]);
+
+    useEffect(() => {
+        if (athleteName) {
+            sessionStorage.setItem("draftConsultationAthlete", athleteName);
+        } else {
+            sessionStorage.removeItem("draftConsultationAthlete");
+        }
+    }, [athleteName]);
 
     // RBAC and User Info
     useEffect(() => {
@@ -174,7 +189,7 @@ function CreateConsultationContent() {
                     type: "consultation"
                 });
 
-                const start = new Date(today.getTime());
+                const start = new Date(new Date().getTime());
                 start.setMinutes(0, 0, 0);
                 const end = new Date(start.getTime() + 60 * 60000);
 
@@ -190,6 +205,7 @@ function CreateConsultationContent() {
             }
 
             alert("상담 일지가 등록되었습니다.");
+            sessionStorage.removeItem("draftConsultationAthlete");
             router.push("/consultations");
         } catch (err) {
             console.error(err);

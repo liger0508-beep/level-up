@@ -41,37 +41,52 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
-@utility scrollbar-hide {
-  &::-webkit-scrollbar {
-    display: none;
-  }
+@layer utilities {
+  .scrollbar-hide {
+    &::-webkit-scrollbar {
+      display: none;
+    }
 
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
 }
 
-@utility no-year-date {
-  &::-webkit-datetime-edit {
-    display: flex;
-    justify-content: center;
-    width: 100%;
-    padding: 0;
-  }
+@layer utilities {
+  .no-year-date {
+    &::-webkit-datetime-edit {
+      display: flex;
+      justify-content: center;
+      width: 100%;
+      padding: 0;
+    }
 
-  &::-webkit-datetime-edit-fields-wrapper {
-    display: flex;
-    justify-content: center;
-    padding: 0;
-  }
+    &::-webkit-datetime-edit-fields-wrapper {
+      display: flex;
+      justify-content: center;
+      padding: 0;
+    }
 
-  /* Hide calendar picker icon to prevent it from offseting the text */
-  &::-webkit-calendar-picker-indicator {
-    display: none;
-    -webkit-appearance: none;
-  }
+    /* Hide calendar picker icon to prevent it from offseting the text */
+    &::-webkit-calendar-picker-indicator {
+      display: none;
+      -webkit-appearance: none;
+    }
 
-  &::-webkit-datetime-edit-year-field,
-  &::-webkit-datetime-edit-year-separator {
-    display: none;
+    &::-webkit-datetime-edit-year-field,
+    &::-webkit-datetime-edit-year-separator {
+      display: none;
+    }
+  }
+}
+
+@keyframes slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@layer utilities {
+  .animate-slide-up {
+    animation: slide-up 0.3s ease-out forwards;
   }
 }

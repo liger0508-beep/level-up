@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { calculateScorecardAnalysis, HoleAnalysis } from "@/lib/score-calculations";
+import { fetchComments, saveComment, updateComment, deleteComment, AnalysisComment } from "@/lib/analysis-sync";
 import {
     ChevronLeft,
     MoreHorizontal,
@@ -23,10 +24,30 @@ import {
     Trash2,
     Search,
     Loader2,
-    X
+    X,
+    MessageSquare,
+    Send,
+    Edit2,
+    Paperclip
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChevronDown, ChevronUp } from "lucide-react";
+
+const CODE_TO_LOCATION: Record<string, string> = {
+    "TE": "티박스",
+    "FW": "페어웨이",
+    "RU": "러프",
+    "FB": "페어웨이 벙커",
+    "GA": "그린 주변 어프로치",
+    "GB": "그린 주변 벙커",
+    "GR": "그린",
+    "HI": "홀인",
+    "PA": "패널티구역",
+    "OB": "오비",
+    "PS": "벌타",
+    "FO": "숲속",
+    "-": "-",
+};
 
 const CATEGORY_TO_FIELD: Record<string, string> = {
     "티샷 비거리": "distSG_DriverDist",
@@ -144,8 +165,22 @@ export default function ScoreDetailPage() {
     const [summary, setSummary] = useState<any>(null);
     const [isMoreOpen, setIsMoreOpen] = useState(false);
     const [userRole, setUserRole] = useState<string | null>(null);
+    const [userName, setUserName] = useState<string | null>(null);
     const [selectedPlanLabel, setSelectedPlanLabel] = useState<string | null>(null);
     const [selectedHoleDetails, setSelectedHoleDetails] = useState<{ holeNumber: number, label: string } | null>(null);
+
+    const [comments, setComments] = useState<AnalysisComment[]>([]);
+    const [currentUser, setCurrentUser] = useState<{ id: string; name: string } | null>(null);
+
+    const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+    const [editingCommentText, setEditingCommentText] = useState("");
+    const [isUpdatingComment, setIsUpdatingComment] = useState(false);
+
+    const [newComment, setNewComment] = useState("");
+    const [isSubmittingComment, setIsSubmittingComment] = useState(false);
+    const [commentFile, setCommentFile] = useState<File | null>(null);
+    const [commentPreviewUrl, setCommentPreviewUrl] = useState<string | null>(null);
+    const commentFileRef = useRef<HTMLInputElement>(null);
 
     const roundToTwo = (num: number | undefined) => {
         if (num === undefined || num === null) return "0";
@@ -204,15 +239,114 @@ export default function ScoreDetailPage() {
         }
     };
 
+    const handleCommentFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0] ?? null;
+        setCommentFile(file);
+        setCommentPreviewUrl(file ? URL.createObjectURL(file) : null);
+        e.target.value = "";
+    };
+
+    const handleEditComment = async (commentId: string) => {
+        if (!editingCommentText.trim() || isUpdatingComment) return;
+        setIsUpdatingComment(true);
+        try {
+            await updateComment(commentId, editingCommentText.trim());
+            setComments(comments.map(c => c.id === commentId ? { ...c, text: editingCommentText.trim() } : c));
+            setEditingCommentId(null);
+        } catch (err) {
+            alert("댓글 수정에 실패했습니다.");
+        } finally {
+            setIsUpdatingComment(false);
+        }
+    };
+
+    const handleDeleteComment = async (commentId: string) => {
+        if (!confirm("이 댓글을 삭제하시겠습니까?")) return;
+        try {
+            await deleteComment(commentId);
+            setComments(comments.filter(c => c.id !== commentId));
+        } catch (err) {
+            alert("댓글 삭제에 실패했습니다.");
+        }
+    };
+
+    const handleCommentSubmit = async (e?: React.FormEvent | React.KeyboardEvent) => {
+        if (e) e.preventDefault();
+        if (!newComment.trim() && !commentFile) return;
+
+        try {
+            setIsSubmittingComment(true);
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) return;
+
+            const id = (Array.isArray(params.id) ? params.id[0] : params.id) as string;
+
+            // Ensure the records row exists for this scorecard
+            const { data: existingRecord } = await supabase.from("records").select("id").eq("id", id).maybeSingle();
+            
+            if (!existingRecord) {
+                const { data: sc } = await supabase.from("scorecards").select("athlete_id, coach_id, course_name, total_score").eq("id", id).single();
+                if (sc) {
+                    const { error: insertError } = await supabase.from("records").insert({
+                        id: id,
+                        user_id: sc.athlete_id,
+                        coach_id: sc.coach_id,
+                        type: "analysis",
+                        title: `${sc.course_name} 분석 기록`,
+                        category: "field",
+                        content: `${sc.total_score || 0}타 기록`
+                    });
+                    
+                    if (insertError) {
+                        alert("연결된 기록 자동 생성에 실패했습니다: " + insertError.message);
+                        setIsSubmittingComment(false);
+                        return;
+                    }
+                }
+            }
+
+            let fileUrl = undefined;
+            let fileType = undefined;
+
+            if (commentFile) {
+                const { uploadFile } = await import("@/lib/storage-sync");
+                fileUrl = await uploadFile(commentFile, 'records', `comments/${id}`);
+                fileType = commentFile.type;
+            }
+
+            await saveComment({
+                recordId: id,
+                userId: user.id,
+                content: newComment.trim(),
+                mediaUrl: fileUrl,
+                mediaType: fileType
+            });
+
+            // Refresh comments
+            const updatedComments = await fetchComments(id);
+            setComments(updatedComments);
+
+            setNewComment("");
+            setCommentFile(null);
+            setCommentPreviewUrl(null);
+        } catch (err) {
+            console.error("Failed to save comment:", err);
+            alert("댓글 저장에 실패했습니다.");
+        } finally {
+            setIsSubmittingComment(false);
+        }
+    };
+
     useEffect(() => {
         const fetchData = async () => {
-            const id = Array.isArray(params.id) ? params.id[0] : params.id;
+            const id = (Array.isArray(params.id) ? params.id[0] : params.id) as string;
             const supabase = createClient();
             
             const { data: sc } = await supabase
                 .from("scorecards")
                 .select(`
-                    id, round_date, course_name, total_score, distance_unit,
+                    id, round_date, course_name, total_score, distance_unit, athlete_id, coach_id,
                     athlete:users!scorecards_athlete_id_fkey(name),
                     coach:users!scorecards_coach_id_fkey(name),
                     holes:scorecard_holes(
@@ -405,6 +539,9 @@ export default function ScoreDetailPage() {
                             const fieldName = CATEGORY_TO_FIELD[c.name];
                             const holeNumbers = result
                                 .filter(h => (h.summary as any)[fieldName] > 0)
+                                .sort((a, b) => (b.summary as any)[fieldName] - (a.summary as any)[fieldName])
+                                .slice(0, 5)
+                                .sort((a, b) => a.holeNumber - b.holeNumber)
                                 .map(h => h.holeNumber);
 
                             return {
@@ -428,11 +565,38 @@ export default function ScoreDetailPage() {
             if (user) {
                 const { data: profile } = await supabase
                     .from("users")
-                    .select("role")
+                    .select("role, name")
                     .eq("id", user.id)
                     .single();
-                if (profile) setUserRole(profile.role);
+                if (profile) {
+                    setUserRole(profile.role);
+                    setUserName(profile.name);
+                    setCurrentUser({ id: user.id, name: profile.name || 'User' });
+                }
             }
+
+            // Ensure a matching records row exists so we can display/fetch comments.
+            // If it doesn't exist, create it with the same ID as the scorecard.
+            const { data: existingRecord } = await supabase
+                .from("records")
+                .select("id")
+                .eq("id", id)
+                .maybeSingle();
+
+            if (!existingRecord && sc) {
+                await supabase.from("records").insert({
+                    id: id,
+                    user_id: sc.athlete_id,
+                    coach_id: sc.coach_id,
+                    type: "analysis",
+                    title: `${sc.course_name} 분석 기록`,
+                    category: "field",
+                    content: `${sc.total_score || 0}타 기록`
+                });
+            }
+
+            const commentsData = await fetchComments(id);
+            setComments(commentsData);
 
             setLoading(false);
         };
@@ -475,6 +639,26 @@ export default function ScoreDetailPage() {
         contributions: summary.contributions,
         trainingPlan: summary.trainingPlan,
         avgRemainingDists: summary.avgRemainingDists,
+        notes: (scorecard.holes || [])
+            .sort((a: any, b: any) => a.hole_number - b.hole_number)
+            .flatMap((h: any) => {
+                const sortedShots = (h.shots || []).sort((a: any, b: any) => a.shot_number - b.shot_number);
+                return sortedShots
+                    .filter((s: any) => s.memo && s.memo.trim() !== "")
+                    .map((s: any) => {
+                        const sIdx = sortedShots.findIndex((x: any) => x.shot_number === s.shot_number);
+                        const nextShot = sortedShots[sIdx + 1];
+                        return {
+                            hole: h.hole_number,
+                            shotNumber: s.shot_number,
+                            attemptPos: CODE_TO_LOCATION[s.location_code] || s.location_code || "-",
+                            attemptDist: s.distance || "",
+                            resultPos: nextShot ? (CODE_TO_LOCATION[nextShot.location_code] || nextShot.location_code || "-") : "홀인",
+                            resultDist: nextShot ? (nextShot.distance || "") : "",
+                            memo: s.memo
+                        };
+                    });
+            }),
         holes: analysis.map(h => ({
             hole: h.holeNumber,
             par: h.par,
@@ -503,15 +687,6 @@ export default function ScoreDetailPage() {
                         <div className="flex items-center gap-2">
                             <BarChart3 size={20} className="text-brand-navy dark:text-brand-navy-light shrink-0" />
                             <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">스코어 상세</h1>
-                            {userRole === "admin" && (
-                                <button
-                                    onClick={() => router.push(`/scores/review/${params.id}`)}
-                                    className="ml-2 px-3 py-1.5 rounded-full bg-brand-navy text-white text-[11px] font-bold hover:bg-brand-navy/90 transition-all shadow-sm flex items-center gap-1.5"
-                                >
-                                    <Search size={14} />
-                                    상세 분석
-                                </button>
-                            )}
                         </div>
                     </div>
                     <div className="relative">
@@ -526,6 +701,15 @@ export default function ScoreDetailPage() {
                             <>
                                 <div className="fixed inset-0 z-40" onClick={() => setIsMoreOpen(false)} />
                                 <div className="absolute right-0 mt-2 w-32 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in zoom-in duration-200">
+                                    {userName === "슈퍼관리자" && (
+                                        <button
+                                            onClick={() => router.push(`/scores/review/${params.id}`)}
+                                            className="w-full px-4 py-3 text-sm font-bold text-brand-navy hover:bg-zinc-50 dark:hover:bg-zinc-800 flex items-center gap-2 transition-colors border-b border-zinc-100 dark:border-zinc-800"
+                                        >
+                                            <Search size={16} />
+                                            상세 분석
+                                        </button>
+                                    )}
                                     <button
                                         onClick={() => router.push(`/scores/create?id=${params.id}`)}
                                         className="w-full px-4 py-3 text-sm font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 flex items-center gap-2 transition-colors border-b border-zinc-100 dark:border-zinc-800"
@@ -608,15 +792,6 @@ export default function ScoreDetailPage() {
                     <SummaryBox label={<>롱게임<br />대비<br />숏게임</>} value={data.summary.longVsShort} icon={Zap} />
                 </div>
 
-                {/* 주요 평균 지표 */}
-                <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60">
-                    <SectionHeader title="주요 평균 지표" icon={TrendingDown} />
-                    <div className="grid grid-cols-2 gap-4">
-                        {data.avgMetrics.map((m, idx) => (
-                            <IndicatorCard key={idx} label={m.label} value={m.value} unit={m.unit} icon={Activity} />
-                        ))}
-                    </div>
-                </section>
 
                 {/* 부문별 스코어 */}
                 <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60">
@@ -635,172 +810,13 @@ export default function ScoreDetailPage() {
                     </div>
                 </section>
 
-
-                {/* 부문별 분석 지수 (Diverging Bar Chart) */}
-                <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-7 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60">
-                    <div className="flex items-center justify-between mb-8">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-400">
-                                <BarChart3 size={18} />
-                            </div>
-                            <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-50">부문별 세부 항목</h2>
-                        </div>
-                        <div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl shrink-0">
-                            <button
-                                onClick={() => setMode("score")}
-                                className={cn(
-                                    "px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all",
-                                    mode === "score" ? "bg-white dark:bg-zinc-700 shadow-sm text-zinc-900 dark:text-zinc-50" : "text-zinc-400 hover:text-zinc-600"
-                                )}
-                            >
-                                점수
-                            </button>
-                            <button
-                                onClick={() => setMode("contribution")}
-                                className={cn(
-                                    "px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all",
-                                    mode === "contribution" ? "bg-white dark:bg-zinc-700 shadow-sm text-zinc-900 dark:text-zinc-50" : "text-zinc-400 hover:text-zinc-600"
-                                )}
-                            >
-                                기여도
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="space-y-4 pt-2 relative">
-                        {/* Center vertical line for Score mode or Left line for Contribution mode */}
-                        {mode === "score" ? (
-                            <div className="absolute top-0 bottom-0 left-[64%] w-[2px] bg-zinc-200 dark:bg-zinc-700 z-0" />
-                        ) : (
-                            <div className="absolute top-0 bottom-0 left-[28%] w-[2px] bg-zinc-200 dark:bg-zinc-700 z-0" />
-                        )}
-
-                        {[...data.contributions].sort((a: any, b: any) => {
-                            if (mode === "score") return a.sg - b.sg;
-                            return a.percent - b.percent;
-                        }).map((item: any, idx: number) => {
-                            const val = mode === "score" ? item.sg : item.percent;
-                            const absVal = Math.abs(val);
-                            const maxVal = mode === "score" ? 2.0 : 40; // Scale
-                            const widthPct = Math.min((absVal / maxVal) * 45, 45);
-
-                            return (
-                                <div key={idx} className="relative z-10 flex items-center h-8">
-                                    <div className="w-[28%] flex justify-end pr-2 sm:pr-4">
-                                        <span className="text-[11px] sm:text-[13px] font-bold text-zinc-600 dark:text-zinc-400 truncate bg-white dark:bg-zinc-900">{item.name}</span>
-                                    </div>
-
-                                    <div className="flex-1 relative h-full flex items-center">
-                                        <div className="w-full h-full flex items-center relative">
-                                            {mode === "score" ? (
-                                                item.sg < 0 ? (
-                                                    <>
-                                                        <div className="absolute top-0 bottom-0 flex items-center right-[50%]" style={{ width: `${widthPct}%` }}>
-                                                            <div className="h-6 bg-red-500 rounded-sm w-full" />
-                                                        </div>
-                                                        <span className="absolute left-[52%] text-[11px] font-black text-red-500 whitespace-nowrap z-30">
-                                                            {roundToTwo(item.sg)}
-                                                        </span>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <div className="absolute top-0 bottom-0 flex items-center left-[50%]" style={{ width: `${widthPct}%` }}>
-                                                            <div className="h-6 bg-blue-500 rounded-sm w-full" />
-                                                        </div>
-                                                        <span className="absolute right-[52%] text-[11px] font-black text-blue-500 whitespace-nowrap z-30 text-right">
-                                                            +{roundToTwo(item.sg)}
-                                                        </span>
-                                                    </>
-                                                )
-                                            ) : (
-                                                /* Contribution Mode: Left Aligned */
-                                                <div className="absolute top-0 bottom-0 flex items-center left-0" style={{ width: "100%" }}>
-                                                    <div className={cn("h-6 rounded-sm shadow-sm", item.sg < 0 ? "bg-red-500" : "bg-blue-500")} style={{ width: `${item.percent * 2.2}%` }} />
-                                                    <span className={cn("ml-3 text-[11px] font-black whitespace-nowrap", item.sg < 0 ? "text-red-500" : "text-blue-500")}>
-                                                        {Math.round(item.percent * 10) / 10}%
-                                                    </span>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </section>
-
-                {/* ── 4. Segment & Par Type Scores (New) ── */}
+                {/* 주요 평균 지표 */}
                 <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60">
-                    <div className="flex items-center gap-2 mb-6">
-                        <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-400">
-                            <Activity size={18} />
-                        </div>
-                        <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-50">구간/타입별 스코어</h2>
-                    </div>
-
+                    <SectionHeader title="주요 평균 지표" icon={TrendingDown} />
                     <div className="grid grid-cols-2 gap-4">
-                        {/* Left Column: Segments */}
-                        <div className="space-y-4">
-                            {[
-                                { label: "1~3홀", value: summary.score1_3 },
-                                { label: "4~15홀", value: summary.score4_15 },
-                                { label: "16~18홀", value: summary.score16_18 },
-                            ].map((item, idx) => {
-                                const valNum = parseInt(item.value);
-                                const colorClass = valNum > 0 ? "text-blue-500" : valNum < 0 ? "text-red-500" : "text-zinc-900 dark:text-zinc-100";
-                                return (
-                                    <div key={idx} className="bg-zinc-50/50 dark:bg-zinc-900/50 p-5 rounded-[2rem] border border-zinc-100 dark:border-zinc-800/50 flex flex-col justify-between min-h-[110px]">
-                                        <p className="text-[12px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-tight">{item.label}</p>
-                                        <div className="text-right pr-4 pb-2">
-                                            <p className={cn("text-2xl font-black tracking-tighter", colorClass)}>{item.value}</p>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                        {/* Right Column: Par Types */}
-                        <div className="space-y-4">
-                            {[
-                                { label: "PAR 3", value: summary.scorePar3 },
-                                { label: "PAR 4", value: summary.scorePar4 },
-                                { label: "PAR 5", value: summary.scorePar5 },
-                            ].map((item, idx) => {
-                                const valNum = parseInt(item.value);
-                                const colorClass = valNum > 0 ? "text-blue-500" : valNum < 0 ? "text-red-500" : "text-zinc-900 dark:text-zinc-100";
-                                return (
-                                    <div key={idx} className="bg-zinc-50/50 dark:bg-zinc-900/50 p-5 rounded-[2rem] border border-zinc-100 dark:border-zinc-800/50 flex flex-col justify-between min-h-[110px]">
-                                        <p className="text-[12px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-tight">{item.label}</p>
-                                        <div className="text-right pr-4 pb-2">
-                                            <p className={cn("text-2xl font-black tracking-tighter", colorClass)}>{item.value}</p>
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                </section>
-
-                {/* ── 5. 평균 남은 거리 (New) ── */}
-                <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60">
-                    <div className="flex items-center gap-2 mb-6">
-                        <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-400">
-                            <Target size={18} />
-                        </div>
-                        <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-50">평균 남은 거리 (m)</h2>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                        {data.avgRemainingDists.map((item: any, idx: number) => (
-                            <div key={idx} className="bg-zinc-50/50 dark:bg-zinc-900/50 p-5 rounded-[2rem] border border-zinc-100 dark:border-zinc-800/50 flex flex-col justify-between min-h-[110px]">
-                                <p className="text-[12px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-tight">{item.label}</p>
-                                <div className="text-right pb-2">
-                                    <p className="text-2xl font-black text-brand-navy dark:text-brand-navy-light tracking-tighter">{item.value}</p>
-                                </div>
-                            </div>
+                        {data.avgMetrics.map((m, idx) => (
+                            <IndicatorCard key={idx} label={m.label} value={m.value} unit={m.unit} icon={Activity} />
                         ))}
-                    </div>
-                    <div className="mt-4 text-right">
-                        <span className="text-[10px] font-bold text-zinc-400">* 티샷은 PAR4만 적용</span>
                     </div>
                 </section>
 
@@ -867,12 +883,12 @@ export default function ScoreDetailPage() {
                                         <div className="flex items-center gap-3 w-20">
                                             <span className={cn("text-[11px] font-black px-2 py-0.5 rounded text-white tracking-tight shrink-0", item.color, isBig && "text-[12px] px-3 py-1")}>{item.rank}</span>
                                         </div>
-                                        <div className="flex-1 text-center flex flex-col items-center">
-                                            <span className={cn("font-black text-zinc-800 dark:text-zinc-200", isBig ? "text-[17px]" : "text-[14px]")}>{item.label}</span>
+                                        <div className="flex-1 text-center min-w-0 px-2">
+                                            <span className={cn("font-black text-zinc-800 dark:text-zinc-200 block truncate whitespace-nowrap", isBig ? "text-[15px] sm:text-[17px]" : "text-[13px] sm:text-[14px]")}>{item.label}</span>
                                         </div>
                                         <div className="flex items-center justify-end gap-2 w-20">
                                             <div className="flex items-baseline gap-0.5">
-                                                <span className={cn("font-black text-zinc-900 dark:text-zinc-50 tracking-tighter", isBig ? "text-2xl" : "text-lg")}>{item.time}</span>
+                                                <span className={cn("font-black text-zinc-900 dark:text-zinc-50 tracking-tighter", isBig ? "text-[15px] sm:text-[17px]" : "text-[13px] sm:text-[14px]")}>{item.time}</span>
                                                 <span className="text-[10px] font-bold text-zinc-400">분</span>
                                             </div>
                                             {isExpanded ? <ChevronUp size={16} className="text-zinc-400" /> : <ChevronDown size={16} className="text-zinc-400" />}
@@ -884,7 +900,7 @@ export default function ScoreDetailPage() {
                                             <div className="mb-2">
                                                 <span className="text-[11px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-tighter">집중 관리 홀</span>
                                             </div>
-                                            <div className="flex flex-wrap gap-2">
+                                            <div className="grid grid-cols-5 gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
                                                 {item.holeNumbers.map((hn: number) => {
                                                     const isSelected = selectedHoleDetails?.holeNumber === hn && selectedHoleDetails?.label === item.label;
                                                     return (
@@ -936,7 +952,7 @@ export default function ScoreDetailPage() {
                                                                             <span className="text-[10px] font-bold text-zinc-400 uppercase">시도</span>
                                                                         </div>
                                                                         <p className="text-xs font-black text-zinc-800 dark:text-zinc-200">
-                                                                            {POS_MAP[attemptPos] || attemptPos} {shot.attemptDistance > 0 ? `/ ${shot.attemptDistance}${unit}` : ""}
+                                                                            {(POS_MAP[attemptPos] || attemptPos).replace('그린 주변 어프로치', '어프로치').replace('그린 주변 벙커', '벙커')} {shot.attemptDistance > 0 ? `/ ${shot.attemptDistance}${unit}` : ""}
                                                                         </p>
                                                                     </div>
                                                                     <div className="flex items-center gap-4">
@@ -947,7 +963,7 @@ export default function ScoreDetailPage() {
                                                                             </span>
                                                                         </div>
                                                                         <p className={cn("text-xs font-black", isPenalty ? "text-red-600 dark:text-red-400" : "text-zinc-800 dark:text-zinc-200")}>
-                                                                            {isPenalty ? "패널티" : (POS_MAP[landingPos] || landingPos)} {shot.remainingDistance > 0 ? `/ ${shot.remainingDistance}${unit}` : ""}
+                                                                            {isPenalty ? "패널티" : (POS_MAP[landingPos] || landingPos).replace('그린 주변 어프로치', '어프로치').replace('그린 주변 벙커', '벙커')} {shot.remainingDistance > 0 ? `/ ${shot.remainingDistance}${unit}` : ""}
                                                                         </p>
                                                                     </div>
                                                                 </div>
@@ -980,20 +996,24 @@ export default function ScoreDetailPage() {
                         {/* Legend */}
                         <div className="flex flex-wrap items-center justify-end gap-3 text-[10px] font-bold">
                             <div className="flex items-center gap-1">
-                                <div className="w-3 h-3 rounded-full border-2 border-yellow-400" />
-                                <span className="text-zinc-400">이글 이하</span>
+                                <div className="relative w-3.5 h-3.5 flex items-center justify-center rounded-full border-[1.5px] border-orange-400">
+                                    <div className="w-2.5 h-2.5 rounded-full border-[1.5px] border-orange-400"></div>
+                                </div>
+                                <span className="text-zinc-500 dark:text-zinc-400">이글 이하</span>
                             </div>
                             <div className="flex items-center gap-1">
-                                <div className="w-3 h-3 rounded-full border-2 border-orange-400" />
-                                <span className="text-zinc-400">버디</span>
+                                <div className="w-3.5 h-3.5 rounded-full border-[1.5px] border-yellow-400" />
+                                <span className="text-zinc-500 dark:text-zinc-400">버디</span>
                             </div>
                             <div className="flex items-center gap-1">
-                                <div className="w-3 h-3 border-2 border-blue-500" />
-                                <span className="text-zinc-400">보기</span>
+                                <div className="w-3.5 h-3.5 border-[1.5px] border-sky-400" />
+                                <span className="text-zinc-500 dark:text-zinc-400">보기</span>
                             </div>
                             <div className="flex items-center gap-1">
-                                <div className="w-3 h-3 border-2 border-blue-300" />
-                                <span className="text-zinc-400">더블보기 이상</span>
+                                <div className="relative w-3.5 h-3.5 flex items-center justify-center border-[1.5px] border-sky-400">
+                                    <div className="w-2.5 h-2.5 border-[1.5px] border-sky-400"></div>
+                                </div>
+                                <span className="text-zinc-500 dark:text-zinc-400">더블보기 이상</span>
                             </div>
                         </div>
                     </div>
@@ -1041,17 +1061,42 @@ export default function ScoreDetailPage() {
                                         const fieldName = selectedPlanLabel ? CATEGORY_TO_FIELD[selectedPlanLabel] : null;
                                         const isHighlighted = fieldName && (h.summary as any)[fieldName] > 0;
                                         const diff = h.score - h.par;
-                                        const shape = diff <= -1 ? "rounded-full bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400" :
-                                                      diff === 1 ? "border-2 border-zinc-200 dark:border-zinc-700 rounded-sm" :
-                                                      diff >= 2 ? "border-2 border-zinc-200 dark:border-zinc-700 rounded-sm bg-zinc-50 dark:bg-zinc-800" : "";
 
                                         return (
                                             <td key={h.hole} className={cn(
                                                 "py-2 px-0 border-b border-zinc-50 dark:border-zinc-800/50 transition-colors",
                                                 isHighlighted ? "bg-orange-100 dark:bg-orange-900/40" : "bg-white dark:bg-zinc-950"
                                             )}>
-                                                <div className={cn("inline-flex items-center justify-center w-5 h-5 sm:w-6 sm:h-6 font-black", shape)}>
-                                                    {h.score}
+                                                <div className="relative inline-flex items-center justify-center w-6 h-6 sm:w-7 sm:h-7 font-black mx-auto">
+                                                    {diff <= -2 && (
+                                                        <div className="absolute inset-0 flex items-center justify-center">
+                                                            <div className="w-full h-full rounded-full border-[1.5px] border-orange-400 absolute" />
+                                                            <div className="w-[75%] h-[75%] rounded-full border-[1.5px] border-orange-400 absolute" />
+                                                        </div>
+                                                    )}
+                                                    {diff === -1 && (
+                                                        <div className="absolute inset-0 flex items-center justify-center">
+                                                            <div className="w-[90%] h-[90%] rounded-full border-[1.5px] border-yellow-400 absolute" />
+                                                        </div>
+                                                    )}
+                                                    {diff === 1 && (
+                                                        <div className="absolute inset-0 flex items-center justify-center">
+                                                            <div className="w-[85%] h-[85%] border-[1.5px] border-sky-400 absolute" />
+                                                        </div>
+                                                    )}
+                                                    {diff >= 2 && (
+                                                        <div className="absolute inset-0 flex items-center justify-center">
+                                                            <div className="w-[85%] h-[85%] border-[1.5px] border-sky-400 absolute" />
+                                                            <div className="w-[70%] h-[70%] border-[1.5px] border-sky-400 absolute" />
+                                                        </div>
+                                                    )}
+                                                    <span className={cn(
+                                                        "relative z-10 text-[11px] sm:text-[12px]", 
+                                                        diff <= -2 ? "text-orange-500" : 
+                                                        diff === -1 ? "text-yellow-600 dark:text-yellow-500" : 
+                                                        diff > 0 ? "text-sky-600 dark:text-sky-500" : 
+                                                        "text-zinc-900 dark:text-zinc-100"
+                                                    )}>{h.score}</span>
                                                 </div>
                                             </td>
                                         );
@@ -1196,6 +1241,162 @@ export default function ScoreDetailPage() {
                                 </tr>
                             </tbody>
                         </table>
+                    </div>
+                </section>
+
+                {/* 샷 노트 */}
+                {data.notes && data.notes.length > 0 && (
+                    <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60 overflow-hidden mt-6">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-400">
+                                    <MessageSquare size={18} />
+                                </div>
+                                <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-50">샷 노트</h2>
+                            </div>
+                        </div>
+
+                        <div className="space-y-4">
+                            {data.notes.map((note: any, idx: number) => {
+                                const unit = "m";
+                                return (
+                                    <div key={idx} className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800/50">
+                                        <div className="flex items-center gap-2 mb-3 border-b border-zinc-100 dark:border-zinc-800/50 pb-2">
+                                            <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">{note.hole}번 홀</span>
+                                            <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 uppercase">
+                                                {note.shotNumber}번째 샷
+                                            </span>
+                                        </div>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex items-center gap-1.5 w-12 shrink-0">
+                                                    <div className="w-1 h-3 bg-zinc-300 rounded-full" />
+                                                    <span className="text-[10px] font-bold text-zinc-400 uppercase">시도</span>
+                                                </div>
+                                                <p className="text-xs font-black text-zinc-800 dark:text-zinc-200">
+                                                    {note.attemptPos} {note.attemptDist ? `/ ${note.attemptDist}${unit}` : ""}
+                                                </p>
+                                            </div>
+                                            <div className="flex items-center gap-3">
+                                                <div className="flex items-center gap-1.5 w-12 shrink-0">
+                                                    <div className="w-1 h-3 bg-orange-400 rounded-full" />
+                                                    <span className="text-[10px] font-bold text-zinc-400 uppercase">결과</span>
+                                                </div>
+                                                <p className="text-xs font-black text-zinc-800 dark:text-zinc-200">
+                                                    {note.resultPos} {note.resultDist ? `/ ${note.resultDist}${unit}` : ""}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800">
+                                            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap leading-relaxed">{note.memo}</p>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </section>
+                )}
+
+                {/* ── Comments Section ── */}
+                <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden mb-8 mt-6">
+                    <div className="flex items-center gap-2 px-5 pt-4 pb-3 border-b border-zinc-100 dark:border-zinc-800">
+                        <MessageSquare size={14} className="text-zinc-400" />
+                        <h3 className="text-[11px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">댓글 {comments.length}건</h3>
+                    </div>
+
+                    <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                        {comments.map(c => (
+                            <div key={c.id} className="px-5 py-4 space-y-1 group">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">{c.author}</span>
+                                        <span className="text-[10px] bg-zinc-100 dark:bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded leading-none">{c.role}</span>
+                                        {currentUser?.id === c.userId && (
+                                            <div className="hidden group-hover:flex items-center gap-1 ml-2">
+                                                <button onClick={() => { setEditingCommentId(c.id); setEditingCommentText(c.text); }} className="p-1 text-zinc-400 hover:text-brand-navy"><Edit2 size={12} /></button>
+                                                <button onClick={() => handleDeleteComment(c.id)} className="p-1 text-zinc-400 hover:text-brand-red"><Trash2 size={12} /></button>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <span className="text-[11px] text-zinc-400 font-medium">{c.time}</span>
+                                </div>
+                                {editingCommentId === c.id ? (
+                                    <div className="mt-2 space-y-2">
+                                        <textarea
+                                            rows={2}
+                                            value={editingCommentText}
+                                            onChange={(e) => setEditingCommentText(e.target.value)}
+                                            className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all resize-none"
+                                        />
+                                        <div className="flex justify-end gap-2">
+                                            <button onClick={() => setEditingCommentId(null)} className="px-3 py-1.5 text-xs text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors">취소</button>
+                                            <button onClick={() => handleEditComment(c.id)} disabled={isUpdatingComment} className="px-3 py-1.5 text-xs bg-brand-navy text-white rounded-lg hover:bg-brand-navy/90 transition-colors disabled:opacity-50">저장</button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    c.text && <p className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">{c.text}</p>
+                                )}
+                                {c.fileUrl && c.fileType?.startsWith("image/") && (
+                                    <img src={c.fileUrl} className="mt-2 rounded-xl max-h-60 w-auto object-contain bg-white border border-zinc-200 dark:border-zinc-700" alt="첨부" />
+                                )}
+                                {c.fileUrl && c.fileType?.startsWith("video/") && (
+                                    <video src={c.fileUrl} controls className="mt-2 rounded-xl max-h-60 w-full border border-zinc-200 dark:border-zinc-700" />
+                                )}
+                            </div>
+                        ))}
+                        {comments.length === 0 && (
+                            <p className="text-sm text-zinc-400 text-center py-8">아직 댓글이 없습니다.</p>
+                        )}
+                    </div>
+
+                    <div className="border-t border-zinc-100 dark:border-zinc-800 px-4 py-3 space-y-2 bg-zinc-50/50 dark:bg-zinc-900/50">
+                        <textarea
+                            rows={2}
+                            value={newComment}
+                            onChange={(e) => setNewComment(e.target.value)}
+                            placeholder="댓글이나 질문을 남겨보세요..."
+                            disabled={isSubmittingComment}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter" && !e.shiftKey) {
+                                    e.preventDefault();
+                                    handleCommentSubmit(e);
+                                }
+                            }}
+                            className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all resize-none disabled:opacity-50"
+                        />
+                        {commentFile && (
+                            <div className="rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 relative group">
+                                {commentFile.type.startsWith("image/") && commentPreviewUrl ? (
+                                    <img src={commentPreviewUrl} className="w-full max-h-48 object-cover" alt="미리보기" />
+                                ) : (
+                                    <div className="px-3 py-2 bg-zinc-50 dark:bg-zinc-800 text-xs text-zinc-500 truncate">{commentFile.name}</div>
+                                )}
+                                <button onClick={() => { setCommentFile(null); setCommentPreviewUrl(null); }} className="absolute top-2 right-2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1"><X size={12} /></button>
+                            </div>
+                        )}
+                        <div className="flex items-center justify-between">
+                            <button
+                                type="button"
+                                disabled={isSubmittingComment}
+                                onClick={() => commentFileRef.current?.click()}
+                                className="flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-brand-navy transition-colors disabled:opacity-50"
+                            >
+                                <Paperclip size={14} /> 파일 첨부
+                            </button>
+                            <input ref={commentFileRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleCommentFileChange} />
+                            <button
+                                onClick={handleCommentSubmit}
+                                disabled={(!newComment.trim() && !commentFile) || isSubmittingComment}
+                                className={cn(
+                                    "flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-all",
+                                    (newComment.trim() || commentFile) && !isSubmittingComment
+                                        ? "bg-brand-navy text-white hover:bg-brand-navy/90 active:scale-95"
+                                        : "bg-zinc-200 dark:bg-zinc-700 text-zinc-400 cursor-not-allowed"
+                                )}
+                            >
+                                <Send size={12} /> {isSubmittingComment ? "저장 중..." : "등록"}
+                            </button>
+                        </div>
                     </div>
                 </section>
             </main>

@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+export const dynamic = "force-dynamic";
+
+import { useState, useMemo, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, Calendar, FileText, Upload, Flag, Search, X, Paperclip } from "lucide-react";
@@ -39,6 +41,14 @@ const partOptions: { key: AnalysisType; label: string }[] = [
 ];
 
 export default function CreateAnalysisPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center text-zinc-400">페이지 로딩 중...</div>}>
+            <CreateAnalysisContent />
+        </Suspense>
+    );
+}
+
+function CreateAnalysisContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [searchQuery, setSearchQuery] = useState("");
@@ -360,11 +370,11 @@ export default function CreateAnalysisPage() {
                                 <div className="flex bg-transparent border border-zinc-200 dark:bg-zinc-800 rounded-lg p-0.5 w-fit mb-3">
                                     <button type="button" onClick={() => setPeriod("am")}
                                         className={cn("px-4 py-1.5 rounded-md text-xs font-semibold transition-all",
-                                            period === "am" ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-50 shadow-sm" : "text-zinc-500 dark:text-zinc-400"
+                                            period === "am" ? "bg-brand-navy text-white shadow-sm" : "text-zinc-500 dark:text-zinc-400"
                                         )}>오전</button>
                                     <button type="button" onClick={() => setPeriod("pm")}
                                         className={cn("px-4 py-1.5 rounded-md text-xs font-semibold transition-all",
-                                            period === "pm" ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-50 shadow-sm" : "text-zinc-500 dark:text-zinc-400"
+                                            period === "pm" ? "bg-brand-navy text-white shadow-sm" : "text-zinc-500 dark:text-zinc-400"
                                         )}>오후</button>
                                 </div>
 

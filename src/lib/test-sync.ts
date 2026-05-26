@@ -11,7 +11,7 @@ export type TestType =
     | "long_putt" 
     | "middle_putt" 
     | "short_putt"
-    | "shot" | "around_green" | "putting" | "physical";
+    | "shot" | "around_green" | "putting" | "physical" | "short_game" | "etc";
 
 export interface TestData {
     id: string;
@@ -26,19 +26,21 @@ export interface TestData {
 }
 
 export const TEST_TYPE_LABELS: Record<TestType, string> = {
-    driver: "샷",
-    iron: "샷",
+    driver: "샷 종합",
+    iron: "샷 종합",
     wood_iron: "우드/아이언",
     pitch: "피치샷",
-    approach: "어프로치",
-    bunker: "벙커",
-    long_putt: "롱퍼팅",
-    middle_putt: "미들퍼팅",
-    short_putt: "숏퍼팅",
-    shot: "샷",
-    around_green: "그린 주변",
-    putting: "퍼팅",
-    physical: "피지컬"
+    approach: "숏게임 종합",
+    bunker: "숏게임 종합",
+    long_putt: "퍼팅 종합",
+    middle_putt: "퍼팅 종합",
+    short_putt: "퍼팅 종합",
+    shot: "샷 종합",
+    around_green: "숏게임 종합",
+    putting: "퍼팅 종합",
+    physical: "피지컬",
+    short_game: "숏게임 종합",
+    etc: "기타"
 };
 
 export const TEST_TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
@@ -90,6 +92,7 @@ export interface TestRecord {
     category: TestType;
     title: string;
     content: any; // Storing results as JSON
+    score?: number;
     media_urls?: string[];
     created_at: string;
     playerName: string;
@@ -131,38 +134,46 @@ export async function saveTestRecord(record: {
         const payload = {
             user_id: userRes.data.id,
             coach_id: coachRes.data?.id || null,
-            type: "test",
             category: record.category,
             title: record.title,
-            content: record.content,
-            score: record.content?.totalScore || 0,
-            media_urls: record.media_urls || [],
-            created_at: createdAt
+            raw_shot_data: record.content,
+            total_score: record.content?.totalScore || 0,
+            driver_score: record.content?.driver?.score ?? null,
+            iron_score: record.content?.iron?.score ?? null,
+            short_putt_score: record.content?.short?.score ?? null,
+            middle_putt_score: record.content?.middle?.score ?? null,
+            long_putt_score: record.content?.long?.score ?? null,
+            created_at: createdAt,
+            updated_at: new Date().toISOString()
         };
 
         // 3. Insert or Update
         if (record.id) {
             console.log("5. Updating record ID:", record.id);
             const { data, error } = await supabase
-                .from("records")
+                .from("test_sessions")
                 .update(payload)
                 .eq("id", record.id)
-                .select()
-                .single();
-            if (error) throw error;
-            return data;
+                .select();
+            if (error) {
+                console.error("Supabase update error:", error);
+                throw new Error(error.message || JSON.stringify(error));
+            }
+            return data?.[0] || null;
         } else {
             console.log("5. Inserting record into DB...");
             const { data, error } = await supabase
-                .from("records")
+                .from("test_sessions")
                 .insert(payload)
-                .select()
-                .single();
-            if (error) throw error;
-            return data;
+                .select();
+            if (error) {
+                console.error("Supabase insert error:", error);
+                throw new Error(error.message || JSON.stringify(error));
+            }
+            return data?.[0] || null;
         }
     } catch (err: any) {
-        console.error("Save error:", err);
+        console.error("Save error:", err.message, err.details, err.hint, err);
         throw err;
     }
 }
@@ -180,33 +191,34 @@ export async function fetchTestsByPlayer(playerName: string): Promise<TestRecord
         if (!userRes) return [];
         
         const { data, error } = await supabase
-            .from("records")
+            .from("test_sessions")
             .select(`
                 id,
-                type,
                 category,
                 title,
-                content,
-                media_urls,
+                raw_shot_data,
+                total_score,
                 created_at,
-                users!records_user_id_fkey(name),
-                coach:users!records_coach_id_fkey(name)
+                athlete:users!test_sessions_user_id_fkey(name),
+                coach:users!test_sessions_coach_id_fkey(name)
             `)
             .eq("user_id", userRes.id)
-            .eq("type", "test")
             .order("created_at", { ascending: false });
             
-        if (error) return [];
+        if (error) {
+            console.error("fetchTests error:", error);
+            return [];
+        }
         
         return (data || []).map((r: any) => ({
             id: r.id,
             type: "test",
             category: r.category as TestType,
             title: r.title || "",
-            content: r.content,
-            media_urls: r.media_urls || [],
+            content: r.raw_shot_data, // mapped back to content for UI compatibility
+            score: r.total_score,
             created_at: r.created_at,
-            playerName: r.users?.name || "Unknown",
+            playerName: r.athlete?.name || "Unknown",
             coachName: r.coach?.name || "Unknown"
         }));
     } catch (err) {

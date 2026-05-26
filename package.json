@@ -16,10 +16,13 @@
     "date-fns": "^4.1.0",
     "lucide-react": "^1.11.0",
     "next": "16.1.6",
+    "pg": "^8.20.0",
+    "qrcode.react": "^4.2.0",
     "react": "19.2.3",
     "react-big-calendar": "^1.19.4",
     "react-dom": "19.2.3",
     "react-quill-new": "^3.8.3",
+    "recharts": "^3.8.1",
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {

@@ -253,7 +253,7 @@ export async function fetchComments(recordId: string): Promise<AnalysisComment[]
                 user_id,
                 user:users!comments_user_id_fkey(name, role)
             `)
-            .eq("record_id", recordId)
+            .eq("record_id", recordId.trim())
             .order("created_at", { ascending: true });
 
         if (error) {
@@ -330,6 +330,20 @@ export async function deleteComment(id: string) {
         if (error) throw error;
     } catch (err) {
         console.error("Error in deleteComment:", err);
+        throw err;
+    }
+}
+
+export async function deleteAnalysisRecord(id: string) {
+    try {
+        const supabase = createClient();
+        const { error } = await supabase
+            .from("records")
+            .delete()
+            .eq("id", id);
+        if (error) throw error;
+    } catch (err) {
+        console.error("Error in deleteAnalysisRecord:", err);
         throw err;
     }
 }

@@ -13,6 +13,9 @@ export interface Journal {
     isImportant: boolean;
     keywords?: string[];
     media_urls?: string[];
+    fieldScore?: number;
+    fieldCourse?: string;
+    fieldHoleCount?: number;
 }
 
 export const JOURNAL_TYPE_LABELS: Record<JournalType, string> = {
@@ -37,20 +40,91 @@ export function getPlainText(html: string) {
 }
 
 export function calculateShotRatio(journals: Journal[]) {
-    const total = journals.length;
-    if (total === 0) return { good: 0, miss: 0, total: 0, goodPct: 0, missPct: 0 };
     const good = journals.filter((j) => j.type === "good").length;
     const miss = journals.filter((j) => j.type === "miss").length;
+    const total = good + miss;
+    
+    if (total === 0) return { good: 0, miss: 0, total: 0, goodPct: 0, missPct: 0 };
+    
+    const goodPct = Math.round((good / total) * 100);
+    const missPct = 100 - goodPct;
+
     return {
         good,
         miss,
         total,
-        goodPct: Math.round((good / total) * 100),
-        missPct: Math.round((miss / total) * 100),
+        goodPct,
+        missPct,
     };
 }
 
 // ── Database Operations ──────────────────────────────────────────
+
+export async function fetchJournalsByAthlete(athleteName: string): Promise<Journal[]> {
+    try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+            .from("records")
+            .select(`
+                id,
+                title,
+                content,
+                category,
+                media_urls,
+                training_start,
+                is_important,
+                keywords,
+                user:users!records_user_id_fkey(name),
+                coach:users!records_coach_id_fkey(name)
+            `)
+            .eq("type", "journal")
+            .eq("users.name", athleteName)
+            .order("training_start", { ascending: false });
+
+        if (error) throw error;
+
+        const parsedJournals = (data || []).map((item: any) => ({
+            id: item.id,
+            type: (item.category as JournalType) || "good",
+            title: item.title,
+            content: item.content,
+            date: item.training_start,
+            author: (Array.isArray(item.coach) ? (item.coach as any)[0]?.name : (item.coach as any)?.name) || "알 수 없음",
+            athleteName: (Array.isArray(item.user) ? (item.user as any)[0]?.name : (item.user as any)?.name) || "알 수 없음",
+            isImportant: item.is_important || false,
+            keywords: item.keywords || [],
+            media_urls: item.media_urls || [],
+        }));
+
+        const fieldJournals = parsedJournals.filter(j => j.type === 'field');
+        if (fieldJournals.length > 0) {
+            const { data: users } = await supabase.from("users").select("id").eq("name", athleteName).limit(1).single();
+            if (users) {
+                const { data: scorecards } = await supabase
+                    .from("scorecards")
+                    .select("total_score, course_name, round_date, hole_count")
+                    .eq("athlete_id", users.id)
+                    .order("round_date", { ascending: false });
+
+                if (scorecards) {
+                    fieldJournals.forEach(j => {
+                        const sc = scorecards.find(s => s.round_date <= j.date);
+                        if (sc) {
+                            (j as any).fieldScore = sc.total_score;
+                            (j as any).fieldCourse = sc.course_name;
+                            (j as any).fieldHoleCount = sc.hole_count;
+                        }
+                    });
+                }
+            }
+        }
+
+        return parsedJournals;
+    } catch (err: any) {
+        console.error("Error fetching journals by athlete:", err?.message || err);
+        return [];
+    }
+}
 
 export async function fetchJournals(): Promise<Journal[]> {
     try {
@@ -77,7 +151,7 @@ export async function fetchJournals(): Promise<Journal[]> {
             throw error;
         }
 
-        return (data || []).map((item: any) => ({
+        const parsedJournals = (data || []).map((item: any) => ({
             id: item.id,
             type: (item.category as JournalType) || "good",
             title: item.title,
@@ -89,6 +163,35 @@ export async function fetchJournals(): Promise<Journal[]> {
             keywords: item.keywords || [],
             media_urls: item.media_urls || [],
         }));
+
+        const fieldJournals = parsedJournals.filter(j => j.type === 'field');
+        if (fieldJournals.length > 0) {
+            const athleteNames = [...new Set(fieldJournals.map(j => j.athleteName))];
+            const { data: users } = await supabase.from("users").select("id, name").in("name", athleteNames);
+            const userMap = users?.reduce((acc: any, u: any) => { acc[u.name] = u.id; return acc; }, {});
+
+            if (userMap && Object.keys(userMap).length > 0) {
+                const { data: scorecards } = await supabase
+                    .from("scorecards")
+                    .select("total_score, course_name, round_date, athlete_id, hole_count")
+                    .in("athlete_id", Object.values(userMap))
+                    .order("round_date", { ascending: false });
+
+                if (scorecards) {
+                    fieldJournals.forEach(j => {
+                        const userId = userMap[j.athleteName];
+                        const sc = scorecards.find(s => s.athlete_id === userId && s.round_date <= j.date);
+                        if (sc) {
+                            (j as any).fieldScore = sc.total_score;
+                            (j as any).fieldCourse = sc.course_name;
+                            (j as any).fieldHoleCount = sc.hole_count;
+                        }
+                    });
+                }
+            }
+        }
+
+        return parsedJournals;
     } catch (err: any) {
         console.error("Error fetching journals:", err?.message || err);
         return [];

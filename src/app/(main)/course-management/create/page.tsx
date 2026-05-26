@@ -32,7 +32,13 @@ export default function CreateCourseManagementPage() {
     const [keywords, setKeywords] = useState<string[]>([]);
     const [keywordInput, setKeywordInput] = useState("");
     const [content, setContent] = useState("");
-    const [date, setDate] = useState(() => new Date().toISOString().split("T")[0]);
+    const [date, setDate] = useState(() => {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    });
     const [videoUrl, setVideoUrl] = useState("");
     const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
 

@@ -66,31 +66,61 @@ const defaultPermissions: MenuPermission[] = [
         menuKey: "scores", label: "스코어", section: "스코어",
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
     },
-
-    // 운영/관리
+    
+    // 라운지
     {
-        menuKey: "community", label: "공지사항", section: "운영/관리",
+        menuKey: "community", label: "공지사항", section: "라운지",
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     {
-        menuKey: "training-journal", label: "훈련일지", section: "운영/관리",
+        menuKey: "polls", label: "투표", section: "라운지",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: true } }
+    },
+    {
+        menuKey: "consultations", label: "상담", section: "라운지",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: true } }
+    },
+    {
+        menuKey: "training-journal", label: "훈련일지", section: "라운지",
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
     },
     {
-        menuKey: "course-management", label: "골프IQ", section: "운영/관리",
+        menuKey: "attendance", label: "출석 체크", section: "라운지",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
+    },
+    {
+        menuKey: "todo-list", label: "To-Do 리스트", section: "라운지",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: false, write: false } }
+    },
+    {
+        menuKey: "course-management", label: "골프IQ", section: "라운지",
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
-        menuKey: "polls", label: "투표", section: "운영/관리",
-        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: true } }
+        menuKey: "reports", label: "선수 레포트", section: "라운지",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+    },
+
+    // 운영/관리
+    {
+        menuKey: "assigned-athletes", label: "담임 선수 배정", section: "운영/관리",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
-        menuKey: "consultations", label: "상담", section: "운영/관리",
-        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: true } }
+        menuKey: "statistics", label: "운영 통계", section: "운영/관리",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
-        menuKey: "todo-list", label: "To-Do 리스트", section: "운영/관리",
-        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: false, write: false } }
+        menuKey: "tournament-results", label: "대회 성적 관리", section: "운영/관리",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+    },
+    {
+        menuKey: "lesson-list", label: "스윙 오류 관리", section: "운영/관리",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+    },
+    {
+        menuKey: "training-list", label: "훈련 리스트 관리", section: "운영/관리",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
 
     // 시스템 관리
@@ -125,6 +155,7 @@ const sectionColors: Record<string, string> = {
     "메인": "border-l-blue-500",
     "스케쥴": "border-l-cyan-500",
     "스코어": "border-l-emerald-500",
+    "라운지": "border-l-indigo-500",
     "운영/관리": "border-l-amber-500",
     "시스템 관리": "border-l-purple-500",
 };
@@ -133,6 +164,7 @@ const sectionBadgeColors: Record<string, string> = {
     "메인": "bg-blue-500/10 text-blue-600 dark:text-blue-400",
     "스케쥴": "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",
     "스코어": "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    "라운지": "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
     "운영/관리": "bg-amber-500/10 text-amber-600 dark:text-amber-400",
     "시스템 관리": "bg-purple-500/10 text-purple-600 dark:text-purple-400",
 };

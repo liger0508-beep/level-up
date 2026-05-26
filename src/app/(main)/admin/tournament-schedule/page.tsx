@@ -172,24 +172,47 @@ export default function TournamentAdminPage() {
     };
 
     const handleSave = async () => {
-        // Final validation
+        // 1. Required field validation (Name, Date)
+        for (const t of monthTournaments) {
+            if (!t.name.trim()) {
+                alert("대회명을 입력해 주세요.");
+                return;
+            }
+            if (!t.date.trim()) {
+                alert(`"${t.name}"의 대회 일정을 입력해 주세요.`);
+                return;
+            }
+        }
+
+        // 2. Athlete validation (only for currently visible tournaments)
         const errors: Record<string, string> = {};
+        const invalidDetails: string[] = [];
         let hasError = false;
-        allTournaments.forEach(t => {
+
+        const normalizedAthletes = athletes.map(a => a.normalize("NFC"));
+
+        monthTournaments.forEach(t => {
             const raw = playerInput[t.id] ?? "";
-            const names = raw.split(",").map(s => s.trim()).filter(Boolean);
-            if (athletes.length > 0) {
-                const invalid = names.filter(name => !athletes.includes(name));
+            const names = raw.split(",").map(s => s.trim().normalize("NFC")).filter(Boolean);
+            
+            if (normalizedAthletes.length > 0) {
+                const invalid = names.filter(name => !normalizedAthletes.includes(name));
                 if (invalid.length > 0) {
-                    errors[t.id] = `등록되지 않은 선수: ${invalid.join(", ")}`;
+                    const msg = `등록되지 않은 선수: ${invalid.join(", ")}`;
+                    errors[t.id] = msg;
+                    invalidDetails.push(`[${t.date}] ${t.name} : ${invalid.join(", ")}`);
                     hasError = true;
                 }
             }
         });
-        setPlayerErrors(errors);
-        if (hasError) return;
 
-        // Commit latest playerInput to actual players array before saving
+        setPlayerErrors(errors);
+        if (hasError) {
+            alert(`선수 명단에 등록되지 않은 이름이 있습니다.\n\n${invalidDetails.join("\n")}\n\n선수 관리에서 이름을 확인해 주세요.`);
+            return;
+        }
+
+        // 3. Commit latest playerInput to actual players array before saving
         const toSave = allTournaments.map(t => ({
             ...t,
             players: (playerInput[t.id] ?? "").split(",").map((s: string) => s.trim()).filter(Boolean),
@@ -199,8 +222,8 @@ export default function TournamentAdminPage() {
             await saveAllTournaments(toSave, deletedIds);
             setDeletedIds([]); // Clear deleted tracking after successful save
             
-            // Sort local state descending after save
-            setAllTournaments(prev => [...prev].sort((a, b) => {
+            // Re-fetch or update local state to ensure consistency
+            setAllTournaments(toSave.sort((a, b) => {
                 const aDate = a.date.split("~")[0].trim();
                 const bDate = b.date.split("~")[0].trim();
                 return bDate.localeCompare(aDate);
@@ -210,7 +233,7 @@ export default function TournamentAdminPage() {
             setTimeout(() => setSavedOk(false), 2500);
         } catch (err) {
             console.error("Save failed:", err);
-            alert("저장에 실패했습니다.");
+            alert("저장에 실패했습니다. 다시 시도해 주세요.");
         }
     };
 
@@ -280,57 +303,71 @@ export default function TournamentAdminPage() {
                         style={{ zIndex: monthTournaments.length - index }}
                     >
                         {/* Row 1: 대회 구분 / 일정 / 대회명 / 장소 / 삭제 */}
-                        <div className="flex items-center gap-3 px-5 py-3 border-b border-zinc-100 dark:border-zinc-800 rounded-t-2xl">
-                            <select
-                                className={cn(
-                                    "text-xs font-bold px-3 py-1.5 rounded-lg border cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-navy appearance-none text-center shrink-0 min-w-[80px]",
-                                    CATEGORY_COLORS[t.category]
-                                )}
-                                value={t.category}
-                                onChange={(e) => handleUpdate(t.id, "category", e.target.value as TournamentCategory)}
-                            >
-                                {CATEGORIES.map(cat => (
-                                    <option key={cat} value={cat}>{cat}</option>
-                                ))}
-                            </select>
+                        <div className="flex items-end gap-3 px-5 py-3 border-b border-zinc-100 dark:border-zinc-800 rounded-t-2xl">
+                            <div className="flex flex-col gap-1 shrink-0">
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-1">구분</span>
+                                <select
+                                    className={cn(
+                                        "h-[34px] text-xs font-bold px-3 rounded-lg border cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-navy appearance-none text-center min-w-[80px]",
+                                        CATEGORY_COLORS[t.category]
+                                    )}
+                                    value={t.category}
+                                    onChange={(e) => handleUpdate(t.id, "category", e.target.value as TournamentCategory)}
+                                >
+                                    {CATEGORIES.map(cat => (
+                                        <option key={cat} value={cat}>{cat}</option>
+                                    ))}
+                                </select>
+                            </div>
 
-                            <div className="flex items-center gap-1.5 shrink-0">
-                                <DatePickerInput
-                                    className="w-[110px] px-2 py-1.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:border-brand-navy focus:ring-1 focus:ring-brand-navy outline-none text-xs transition-all text-zinc-600 dark:text-zinc-300 text-center"
-                                    value={getStartInputDate(t)}
-                                    onChange={(e) => handleDateChange(t.id, "start", e.target.value)}
-                                />
-                                <span className="text-zinc-400 text-xs">~</span>
-                                <DatePickerInput
-                                    ref={el => { endInputRefs.current[t.id] = el; }}
-                                    className="w-[110px] px-2 py-1.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:border-brand-navy focus:ring-1 focus:ring-brand-navy outline-none text-xs transition-all text-zinc-600 dark:text-zinc-300 text-center"
-                                    value={getEndInputDate(t)}
-                                    onChange={(e) => handleDateChange(t.id, "end", e.target.value)}
+                            <div className="flex flex-col gap-1 shrink-0">
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-1">일정</span>
+                                <div className="flex items-center gap-1.5">
+                                    <DatePickerInput
+                                        className="h-[34px] min-h-[34px] w-[110px] px-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:border-brand-navy focus:ring-1 focus:ring-brand-navy outline-none text-xs transition-all text-zinc-600 dark:text-zinc-300 text-center"
+                                        value={getStartInputDate(t)}
+                                        onChange={(e) => handleDateChange(t.id, "start", e.target.value)}
+                                    />
+                                    <span className="text-zinc-400 text-xs">~</span>
+                                    <DatePickerInput
+                                        ref={el => { endInputRefs.current[t.id] = el; }}
+                                        className="h-[34px] min-h-[34px] w-[110px] px-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:border-brand-navy focus:ring-1 focus:ring-brand-navy outline-none text-xs transition-all text-zinc-600 dark:text-zinc-300 text-center"
+                                        value={getEndInputDate(t)}
+                                        onChange={(e) => handleDateChange(t.id, "end", e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-1 flex-1 min-w-[140px]">
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-1">대회명</span>
+                                <input
+                                    type="text"
+                                    placeholder="대회명"
+                                    className="h-[34px] w-full px-3 bg-transparent dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:border-brand-navy focus:ring-1 focus:ring-brand-navy outline-none text-xs font-medium transition-all"
+                                    value={t.name}
+                                    onChange={(e) => handleUpdate(t.id, "name", e.target.value)}
                                 />
                             </div>
 
-                            <input
-                                type="text"
-                                placeholder="대회명"
-                                className="flex-1 min-w-[140px] px-3 py-1.5 bg-transparent dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:border-brand-navy focus:ring-1 focus:ring-brand-navy outline-none text-xs font-medium transition-all"
-                                value={t.name}
-                                onChange={(e) => handleUpdate(t.id, "name", e.target.value)}
-                            />
+                            <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-1">대회 장소</span>
+                                <input
+                                    type="text"
+                                    placeholder="장소"
+                                    className="h-[34px] w-full px-3 bg-transparent dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:border-brand-navy focus:ring-1 focus:ring-brand-navy outline-none text-xs transition-all"
+                                    value={t.venue}
+                                    onChange={(e) => handleUpdate(t.id, "venue", e.target.value)}
+                                />
+                            </div>
 
-                            <input
-                                type="text"
-                                placeholder="장소"
-                                className="flex-1 min-w-[120px] px-3 py-1.5 bg-transparent dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:border-brand-navy focus:ring-1 focus:ring-brand-navy outline-none text-xs transition-all"
-                                value={t.venue}
-                                onChange={(e) => handleUpdate(t.id, "venue", e.target.value)}
-                            />
-
-                            <button
-                                onClick={() => handleDelete(t.id, t.name)}
-                                className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all shrink-0"
-                            >
-                                <Trash2 size={16} />
-                            </button>
+                            <div className="flex flex-col justify-end pb-1.5 shrink-0">
+                                <button
+                                    onClick={() => handleDelete(t.id, t.name)}
+                                    className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            </div>
                         </div>
 
                         {/* Row 2: 선수명 + 선수 추가 */}

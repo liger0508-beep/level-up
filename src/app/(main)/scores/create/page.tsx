@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-    ChevronLeft, ChevronRight, Search, X, Calendar, ChevronDown, Check
+    ChevronLeft, ChevronRight, Search, X, Calendar, ChevronDown, Check, MessageSquare
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { AthleteSearch } from "@/components/ui/AthleteSearch";
 import { createClient } from "@/lib/supabase/client";
 import { formatLocalDate } from "@/lib/utils";
+import { calculateAnalysisFromHoles, HoleAnalysis } from "@/lib/score-calculations";
 
 // ── 위치명 → 약어 매핑 (이미지1 기반)
 const LOCATION_ABBR: Record<string, string> = {
@@ -74,6 +75,7 @@ const BALL_LOCATIONS = [
 interface Shot {
     location: string;
     distance: string;
+    memo?: string;
 }
 
 interface HoleData {
@@ -132,8 +134,8 @@ function BottomSheetPicker({ isOpen, onClose, options, value, onSelect, title }:
                     </div>
                 )}
 
-                {/* Options — no scroll */}
-                <div className="flex-1 flex flex-col py-1 overflow-hidden">
+                {/* Options */}
+                <div className="flex-1 flex flex-col py-1 overflow-y-auto">
                     {options.map(opt => (
                         <button key={opt} type="button" onClick={() => { onSelect(opt); onClose(); }} className={rowCls(value === opt)}>
                             {opt}
@@ -214,6 +216,14 @@ function calcHoleScore(shots: Shot[], par: number): number {
 // ── Page Component ────────────────────────────────────────────
 
 export default function ScoreCreatePage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center"><div className="w-8 h-8 border-4 border-brand-navy/20 border-t-brand-navy rounded-full animate-spin" /></div>}>
+            <ScoreCreateContent />
+        </Suspense>
+    );
+}
+
+function ScoreCreateContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const editId = searchParams.get("id");
@@ -233,7 +243,7 @@ export default function ScoreCreatePage() {
     const [currentHole, setCurrentHole] = useState(1);
     const [holes, setHoles] = useState<HoleData[]>(
         Array.from({ length: 18 }, () => ({
-            par: 4,
+            par: 0,
             shots: buildDefaultShots(),
         }))
     );
@@ -350,7 +360,8 @@ export default function ScoreCreatePage() {
                                 
                                 return {
                                     location: locName,
-                                    distance: s.distance?.toString() || ""
+                                    distance: s.distance?.toString() || "",
+                                    memo: s.memo || ""
                                 };
                             })
                         };
@@ -405,53 +416,50 @@ export default function ScoreCreatePage() {
         return checkDistanceRequired(idx, shot, holeData.shots, holeData.par);
     };
 
-    const copyFrontToBack = () => {
-        // 1. Check if any data exists in the first 9 holes (other than default "TE")
+    const submitFrontNine = (e: React.MouseEvent) => {
+        e.preventDefault();
         const hasFrontData = holes.slice(0, 9).some(h => 
-            h.shots.some(s => s.location !== "" && s.location !== "\ud2f0\ubc15\uc2a4")
+            h.shots.some(s => s.location !== "" && s.location !== "티박스")
         );
         
         if (!hasFrontData) {
-            alert("\uc804\ubc18(1~9\ud640)\uc5d0 \ubcf5\uc0ac\ud560 \uc2a4\ucf54\uc5b4 \ub370\uc774\ud130\uac00 \uc5c6\uc2b5\ub2c8\ub2e4.");
+            alert("전반(1~9홀)에 등록할 스코어 데이터가 없습니다.");
             return;
         }
 
-        if (!confirm("\uc804\ubc18(1~9\ud640) \uc2a4\ucf54\uc5b4\ub97c \ud6c4\ubc18(10~18\ud640)\uc73c\ub85c \ubcf5\uc0ac\ud558\uc2dc\uac20\uc2b5\ub2c8\ub2e4\uae4c?\n\uae30\uc874\uc5d0 \uc785\ub825\ub41c \ud6c4\ubc18 \ub370\uc774\ud130\ub294 \ubaa8\ub450 \ub36e\uc5b4\uc5bc\uc6cc\uc9d1\ub2c8\ub2e4.")) return;
+        if (!confirm("전반(1~9홀) 스코어만 등록하시겠습니까?")) return;
         
-        setHoles(prev => {
-            const next = [...prev];
-            for (let i = 0; i < 9; i++) {
-                const sourceHole = prev[i];
-                next[i + 9] = {
-                    par: sourceHole.par,
-                    shots: sourceHole.shots.map(s => ({ ...s }))
-                };
-            }
-            return next;
-        });
-        
-        setHasSaveOccurred(true);
-        alert("\uc804\ubc18 \uc2a4\ucf54\uc5b4\uac00 \ud6c4\ubc18(10~18\ud640)\uc73c\ub85c \ubcf5\uc0ac\ub418\uc5c8\uc2b5\ub2c8\ub2e4.");
+        handleSubmit(e as any, 9);
     };
+
+    const [showSgTable, setShowSgTable] = useState(false);
+    const [holeAnalyses, setHoleAnalyses] = useState<HoleAnalysis[]>([]);
 
     const isAllHolesCompleted = useMemo(() => {
         return holes.every(h => {
-            const hasHoleIn = h.shots.some(s => s.location === "\ud640\uc778");
+            if (h.par === 0) return false;
+            const hasHoleIn = h.shots.some(s => s.location === "홀인");
             if (!hasHoleIn) return false;
             return !h.shots.some((s, idx) => checkDistanceRequired(idx, s, h.shots, h.par) && s.distance.trim() === "");
         });
     }, [holes]);
 
-    const saveCurrentAndNext = (forced: boolean = false) => {
+    const saveCurrentAndNext = (forced: boolean = false, isNext: boolean = true) => {
         const currentHoleData = holes[currentHole - 1];
         if (!currentHoleData) return;
 
         // If not forced (top button / swipe) and no save has occurred yet, allow skip
         if (!forced && !hasSaveOccurred) {
-            if (currentHole < 18) {
+            if (isNext && currentHole < 18) {
                 setCurrentHole(h => h + 1);
+                setShowSgTable(false);
                 setDistanceErrors(new Set());
             }
+            return;
+        }
+
+        if (currentHoleData.par === 0) {
+            setValidationError("Par를 선택해주세요.");
             return;
         }
 
@@ -486,8 +494,8 @@ export default function ScoreCreatePage() {
                     break;
                 }
                 
-                // 그린주변(GA, GB)인데 30m를 초과한 경우 (사용자 요청)
-                if (distVal > 30 && (code === "GA" || code === "GB")) {
+                // 그린(GR), 그린주변(GA, GB)인데 30m를 초과한 경우 (사용자 요청)
+                if (distVal > 30 && (code === "GA" || code === "GB" || code === "GR")) {
                     isInvalid30mOver = true;
                     break;
                 }
@@ -500,7 +508,7 @@ export default function ScoreCreatePage() {
         }
 
         if (isInvalid30mOver) {
-            setValidationError("그린주변 어프로치 혹은 그린주변 벙커는 30미터 이내로 작성해 주세요");
+            setValidationError("그린, 그린주변 어프로치 혹은 그린주변 벙커는 30미터 이내로 작성해 주세요");
             return;
         }
 
@@ -508,13 +516,40 @@ export default function ScoreCreatePage() {
 
         if (forced) setHasSaveOccurred(true);
         setDistanceErrors(new Set());
-        if (currentHole < 18) {
-            setCurrentHole(h => h + 1);
+        
+        if (isNext) {
+            if (currentHole < 18) {
+                setCurrentHole(h => h + 1);
+                setShowSgTable(false); // 다음 홀로 넘어가면 SG 테이블 숨김
+            }
+        } else {
+            // 샷별 점수 확인 클릭 시 현재 홀에 머물며 로컬 SG 계산 후 테이블 표시
+            try {
+                const dbHoles = holes.map((h, i) => ({
+                    hole_number: i + 1,
+                    par: h.par,
+                    score: calcHoleScore(h.shots, h.par) + h.par,
+                    shots: h.shots.map((s, idx) => ({
+                        shot_number: idx + 1,
+                        shot_value: encodeShotValue(s.location, s.distance || "", h.par, idx),
+                        distance: s.distance ? parseInt(s.distance, 10) : 0
+                    }))
+                }));
+                calculateAnalysisFromHoles(dbHoles).then(res => {
+                    setHoleAnalyses(res);
+                }).catch(err => {
+                    console.error("Local SG calc error", err);
+                });
+            } catch (err) {}
+            setShowSgTable(true);
         }
     };
 
     // Bottom sheet state: which shot index is open (-1 = none)
     const [openPickerShotIndex, setOpenPickerShotIndex] = useState(-1);
+    
+    // Memo modal state
+    const [editingMemoIndex, setEditingMemoIndex] = useState<number | null>(null);
 
     // Info section collapse
     const [isInfoExpanded, setIsInfoExpanded] = useState(true);
@@ -599,13 +634,26 @@ export default function ScoreCreatePage() {
         });
     };
 
-    const holeScore = calcHoleScore(holeData.shots, holeData.par);
-    // 합산 스코어 = 각 홀 이번홀 합산 + 72
-    const totalScore = holes.reduce((acc, h) => acc + calcHoleScore(h.shots, h.par), 0) + 72;
+    const updateShotMemo = (shotIndex: number, memo: string) => {
+        setHoles(prev => {
+            const next = [...prev];
+            const shots = [...next[currentHole - 1].shots];
+            shots[shotIndex] = { ...shots[shotIndex], memo };
+            next[currentHole - 1] = { ...next[currentHole - 1], shots };
+            return next;
+        });
+    };
+
+    const holeScore = holeData.par > 0 ? calcHoleScore(holeData.shots, holeData.par) : 0;
+    // 합산 스코어 = 완료된 홀의 실제 타수 합산
+    const totalScore = holes.reduce((acc, h) => {
+        const idx = h.shots.findIndex(s => s.location === "홀인" || s.location === "HI");
+        return acc + (idx > 0 ? idx : 0);
+    }, 0);
     const unitSymbol = distanceUnit.includes("미터") ? "m" : "y";
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSubmit = async (e: React.FormEvent, submitHolesCount: number = 18) => {
+        if (e && e.preventDefault) e.preventDefault();
         if (!selectedPlayer) {
             alert("선수를 선택해 주세요.");
             return;
@@ -618,7 +666,7 @@ export default function ScoreCreatePage() {
 
         // Global validation for 30m rule across all holes
         const allowedCodesAt30m = ["GR", "GB", "GA", "HI", "-"];
-        for (let i = 0; i < 18; i++) {
+        for (let i = 0; i < submitHolesCount; i++) {
             const h = holes[i];
             let errorMsg: string | null = null;
             
@@ -634,9 +682,9 @@ export default function ScoreCreatePage() {
                         break;
                     }
                     
-                    // 30m 초과 그린주변 위치
-                    if (distVal > 30 && (code === "GA" || code === "GB")) {
-                        errorMsg = "그린주변 어프로치 혹은 그린주변 벙커는 30미터 이내로 작성해 주세요";
+                    // 30m 초과 그린 혹은 그린주변 위치
+                    if (distVal > 30 && (code === "GA" || code === "GB" || code === "GR")) {
+                        errorMsg = "그린, 그린주변 어프로치 혹은 그린주변 벙커는 30미터 이내로 작성해 주세요";
                         break;
                     }
                 }
@@ -649,6 +697,11 @@ export default function ScoreCreatePage() {
                 return;
             }
         }
+
+        const computedTotalScore = holes.slice(0, submitHolesCount).reduce((acc, h) => {
+            const idx = h.shots.findIndex(s => s.location === "홀인" || s.location === "HI");
+            return acc + (idx > 0 ? idx : 0);
+        }, 0);
 
         setIsSaving(true);
         try {
@@ -674,7 +727,7 @@ export default function ScoreCreatePage() {
                 const { error: scErr } = await supabase
                     .from("scorecards")
                     .update({
-                        total_score: totalScore
+                        total_score: computedTotalScore
                     })
                     .eq("id", editId);
                 if (scErr) throw new Error(`스코어카드 업데이트 실패: ${scErr.message}`);
@@ -687,7 +740,7 @@ export default function ScoreCreatePage() {
                         round_date:    roundDate,
                         course_name:   golfCourse,
                         weather:       category,
-                        total_score:   totalScore,
+                        total_score:   computedTotalScore,
                         distance_unit: distanceUnit.includes("야드") ? "yard" : "meter"
                     })
                     .select("id")
@@ -697,7 +750,7 @@ export default function ScoreCreatePage() {
             }
 
             // 4. 모든 홀 데이터를 배열로 준비 (Batch Insert용)
-            const holesToInsert = holes.map((h, idx) => ({
+            const holesToInsert = holes.slice(0, submitHolesCount).map((h, idx) => ({
                 scorecard_id: scorecardId,
                 hole_number:  idx + 1,
                 par:          h.par,
@@ -724,7 +777,7 @@ export default function ScoreCreatePage() {
             const isYard = distanceUnit.includes("야드");
             
             const shotsToInsert: any[] = [];
-            holes.forEach((h, hIdx) => {
+            holes.slice(0, submitHolesCount).forEach((h, hIdx) => {
                 const holeNumber = hIdx + 1;
                 const holeId = holeIdMap.get(holeNumber);
                 if (!holeId) return;
@@ -749,6 +802,7 @@ export default function ScoreCreatePage() {
                         shot_value:    shotValue,
                         location_code: code,
                         distance:      (!isNaN(distMeter) && distMeter > 0) ? distMeter : null,
+                        memo:          shot.memo || null,
                     });
                 });
             });
@@ -769,7 +823,7 @@ export default function ScoreCreatePage() {
                     type: "analysis",
                     title: `${golfCourse} 분석 기록`,
                     category: category,
-                    content: `${totalScore}타 기록`,
+                    content: `${computedTotalScore}타 기록`,
                     related_id: scorecardId
                 });
             }
@@ -1016,9 +1070,10 @@ export default function ScoreCreatePage() {
                         </div>
 
                         {/* Shots Table */}
-                        <div className="overflow-hidden rounded-xl border border-zinc-100 dark:border-zinc-800">
+                        {holeData.par > 0 && (
+                            <div className="overflow-hidden rounded-xl border border-zinc-100 dark:border-zinc-800">
                             {/* Header */}
-                            <div className="grid grid-cols-[44px_1fr_1fr] bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-100 dark:border-zinc-800 py-2.5 text-xs font-semibold text-zinc-500 text-center">
+                            <div className="grid grid-cols-[36px_minmax(0,1fr)_90px] gap-2 bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-100 dark:border-zinc-800 px-2 py-2.5 text-xs font-semibold text-zinc-500 text-center items-center">
                                 <div>샷</div>
                                 <div>볼 위치</div>
                                 <div>홀까지 남은거리</div>
@@ -1027,101 +1082,113 @@ export default function ScoreCreatePage() {
                             {/* Rows */}
                             <div className="divide-y divide-zinc-50 dark:divide-zinc-800/60">
                                 {holeData.shots.map((shot, idx) => (
-                                    <div key={idx} className="grid grid-cols-[44px_1fr_1fr] items-center px-2 py-2 gap-2">
-                                        {/* Shot index */}
-                                        <div className="flex items-center justify-center text-sm font-semibold text-zinc-400">{idx}</div>
+                                    <div key={idx} className="flex flex-col px-2 py-2 gap-2 border-b border-zinc-50 dark:border-zinc-800/60 last:border-0">
+                                        <div className="grid grid-cols-[36px_minmax(0,1fr)_90px] items-center gap-2">
+                                            {/* Shot index */}
+                                            <div className="flex items-center justify-center text-sm font-semibold text-zinc-400">{idx}</div>
 
-                                        {/* Ball location — native select on desktop, bottom sheet on mobile */}
-                                        {idx === 0 ? (
-                                            <div className="px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-sm font-medium text-zinc-500 text-center border border-zinc-200 dark:border-zinc-700">
-                                                티박스
-                                            </div>
-                                        ) : (() => {
-                                            const prevLoc = holeData.shots[idx - 1]?.location;
-                                            const isLocLocked = prevLoc === "\uc624\ube44" || prevLoc === "\ud328\ub110\ud2f0\uad6c\uc5ed";
-
-                                            if (isLocLocked) {
-                                                // 회색 고정 셀 (수정 불가)
-                                                return (
-                                                    <div className="px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-sm font-medium text-zinc-400 text-center border border-zinc-100 dark:border-zinc-800">
-                                                        {shot.location || "-"}
-                                                    </div>
-                                                );
-                                            }
-                                            return (
-                                                <>
-                                                    {/* Desktop: native select */}
-                                                    <div className="relative hidden md:block">
-                                                        <select
-                                                            value={shot.location}
-                                                            onChange={(e) => updateShotLocation(idx, e.target.value)}
-                                                            className="w-full pl-3 pr-7 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm font-medium text-zinc-900 dark:text-zinc-100 text-center focus:outline-none focus:ring-2 focus:ring-brand-navy/30 transition-all appearance-none"
-                                                            style={{ textAlignLast: "center" }}
-                                                        >
-                                                            <option value="">-</option>
-                                                            {BALL_LOCATIONS.map(loc => (
-                                                                <option key={loc} value={loc}>{loc}</option>
-                                                            ))}
-                                                        </select>
-                                                        <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
-                                                    </div>
-
-                                                    {/* Mobile: custom button → bottom sheet */}
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setOpenPickerShotIndex(idx)}
-                                                        className="md:hidden w-full flex items-center justify-between pl-3 pr-2 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm font-medium text-zinc-900 dark:text-zinc-100 hover:border-brand-navy/40 transition-colors"
-                                                    >
-                                                        <span className="flex-1 text-center truncate">{shot.location || "-"}</span>
-                                                        <ChevronDown size={13} className="text-zinc-400 shrink-0 ml-1" />
-                                                    </button>
-                                                </>
-                                            );
-                                        })()}
-
-                                        {/* Distance */}
-                                        <div className="relative">
-                                            {(() => {
+                                            {/* Ball location — native select on desktop, bottom sheet on mobile */}
+                                            {idx === 0 ? (
+                                                <div className="px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-sm font-medium text-zinc-500 text-center border border-zinc-200 dark:border-zinc-700">
+                                                    티박스
+                                                </div>
+                                            ) : (() => {
                                                 const prevLoc = holeData.shots[idx - 1]?.location;
-                                                const isDisabled =
-                                                    shot.location === "\ud640\uc778" ||
-                                                    (idx === 0 && holeData.par !== 3) ||
-                                                    shot.location === "\uc624\ube44" ||
-                                                    shot.location === "\ud328\ub110\ud2f0\uad6c\uc5ed" ||
-                                                    prevLoc === "\uc624\ube44";
-                                                const hasError = !isDisabled && distanceErrors.has(idx);
+                                                const isLocLocked = prevLoc === "오비" || prevLoc === "패널티구역";
+
+                                                if (isLocLocked) {
+                                                    // 회색 고정 셀 (수정 불가)
+                                                    return (
+                                                        <div className="px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-sm font-medium text-zinc-400 text-center border border-zinc-100 dark:border-zinc-800">
+                                                            {shot.location || "-"}
+                                                        </div>
+                                                    );
+                                                }
                                                 return (
-                                                    <input
-                                                        type="number"
-                                                        value={shot.distance}
-                                                        onChange={(e) => {
-                                                            updateShotDistance(idx, e.target.value);
-                                                            if (e.target.value.trim() !== "") {
-                                                                setDistanceErrors(prev => {
-                                                                    const next = new Set(prev);
-                                                                    next.delete(idx);
-                                                                    return next;
-                                                                });
-                                                            }
-                                                        }}
-                                                        disabled={isDisabled}
-                                                        className={cn(
-                                                            "w-full pl-3 pr-8 py-2 rounded-lg border text-sm font-medium text-right focus:outline-none focus:ring-2 transition-all",
-                                                            isDisabled
-                                                                ? "bg-zinc-50 dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 text-zinc-300"
-                                                                : hasError
-                                                                    ? "bg-red-50 dark:bg-red-900/20 border-red-400 dark:border-red-500 text-zinc-900 dark:text-zinc-100 focus:ring-red-300"
-                                                                    : "bg-transparent dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:ring-brand-navy/30"
-                                                        )}
-                                                    />
+                                                    <>
+                                                        {/* Desktop: native select */}
+                                                        <div className="relative hidden md:block">
+                                                            <select
+                                                                value={shot.location}
+                                                                onChange={(e) => updateShotLocation(idx, e.target.value)}
+                                                                className="w-full pl-3 pr-7 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm font-medium text-zinc-900 dark:text-zinc-100 text-center focus:outline-none focus:ring-2 focus:ring-brand-navy/30 transition-all appearance-none"
+                                                                style={{ textAlignLast: "center" }}
+                                                            >
+                                                                <option value="">-</option>
+                                                                {BALL_LOCATIONS.map(loc => (
+                                                                    <option key={loc} value={loc}>{loc}</option>
+                                                                ))}
+                                                            </select>
+                                                            <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                                                        </div>
+
+                                                        {/* Mobile: custom button → bottom sheet */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setOpenPickerShotIndex(idx)}
+                                                            className="md:hidden w-full flex items-center justify-between pl-3 pr-2 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm font-medium text-zinc-900 dark:text-zinc-100 hover:border-brand-navy/40 transition-colors"
+                                                        >
+                                                            <span className="flex-1 text-center truncate">{shot.location || "-"}</span>
+                                                            <ChevronDown size={13} className="text-zinc-400 shrink-0 ml-1" />
+                                                        </button>
+                                                    </>
                                                 );
                                             })()}
-                                            <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-medium text-zinc-400">{unitSymbol}</span>
+
+                                            {/* Distance Input */}
+                                            <div className="relative w-full">
+                                                {(() => {
+                                                    const prevLoc = holeData.shots[idx - 1]?.location;
+                                                    const isDisabled =
+                                                        shot.location === "홀인" ||
+                                                        (idx === 0 && holeData.par !== 3) ||
+                                                        shot.location === "오비" ||
+                                                        shot.location === "패널티구역" ||
+                                                        prevLoc === "오비";
+                                                    
+                                                    // Find if this is the very first empty required field
+                                                    const isCurrentTarget = holeData.shots.findIndex((s, i) => {
+                                                        const pLoc = holeData.shots[i - 1]?.location;
+                                                        const isDis = s.location === "홀인" || (i === 0 && holeData.par !== 3) || s.location === "오비" || s.location === "패널티구역" || pLoc === "오비";
+                                                        return !isDis && (!s.distance || s.distance.trim() === "");
+                                                    }) === idx;
+
+                                                    const hasError = !isDisabled && distanceErrors.has(idx);
+                                                    const shouldHighlight = hasError || isCurrentTarget;
+                                                    return (
+                                                        <input
+                                                            type="number"
+                                                            value={shot.distance}
+                                                            onChange={(e) => {
+                                                                updateShotDistance(idx, e.target.value);
+                                                                if (e.target.value.trim() !== "") {
+                                                                    setDistanceErrors(prev => {
+                                                                        const next = new Set(prev);
+                                                                        next.delete(idx);
+                                                                        return next;
+                                                                    });
+                                                                }
+                                                            }}
+                                                            disabled={isDisabled}
+                                                            className={cn(
+                                                                "w-full pl-2 pr-6 py-2 rounded-lg border text-sm font-medium text-right focus:outline-none focus:ring-2 transition-all",
+                                                                isDisabled
+                                                                    ? "bg-zinc-50 dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 text-zinc-300"
+                                                                    : shouldHighlight
+                                                                        ? "bg-red-50 dark:bg-red-900/20 border-red-400 dark:border-red-500 text-zinc-900 dark:text-zinc-100 focus:ring-red-300"
+                                                                        : "bg-transparent dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:ring-brand-navy/30"
+                                                            )}
+                                                        />
+                                                    );
+                                                })()}
+                                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[11px] font-medium text-zinc-400">{unitSymbol}</span>
+                                            </div>
                                         </div>
                                     </div>
                                 ))}
                             </div>
                         </div>
+                        )}
 
                         {/* Validation Error Message */}
                         {validationError && (
@@ -1134,28 +1201,128 @@ export default function ScoreCreatePage() {
                             </div>
                         )}
 
-                        {/* 저장 & 다음홀 버튼 */}
-                        <div className="flex justify-end pt-1">
+                        {/* Strokes Gained Table (Dynamic Display) will be moved below */}
+                        {/* 샷별 점수 확인 & 다음홀 버튼 */}
+                        <div className="flex justify-end gap-3 pt-1">
                             <button
                                 type="button"
-                                onClick={() => saveCurrentAndNext(true)}
+                                onClick={() => saveCurrentAndNext(true, false)}
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border border-brand-navy text-brand-navy hover:bg-brand-navy/5 transition-colors shadow-sm"
+                            >
+                                샷별 점수 확인
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => saveCurrentAndNext(true, true)}
                                 disabled={currentHole === 18}
                                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-brand-navy text-white hover:bg-brand-navy/90 disabled:opacity-40 transition-colors shadow-sm"
                             >
-                                저장 &amp; 다음홀 <ChevronRight size={16} />
+                                저장 & 다음홀 <ChevronRight size={16} />
                             </button>
                         </div>
 
                         </section>
 
+                    {/* Strokes Gained Table (Moved here) */}
+                    {(() => {
+                        const currentAnalysis = holeAnalyses.find(a => a.holeNumber === currentHole);
+                        if (!showSgTable || !currentAnalysis || currentAnalysis.shots.length === 0) return null;
+                        
+                        return (
+                            <div className="mt-4 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm">
+                                <div className="grid grid-cols-[40px_1.5fr_1fr] bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-800">
+                                    <div className="px-2 py-2.5 text-sm font-bold text-zinc-700 dark:text-zinc-300 text-center">샷</div>
+                                    <div className="px-4 py-2.5 text-sm font-bold text-zinc-700 dark:text-zinc-300 text-center border-l border-zinc-200 dark:border-zinc-800">내용</div>
+                                    <div className="px-4 py-2.5 text-sm font-bold text-zinc-900 dark:text-white border-l border-zinc-200 dark:border-zinc-800 text-center flex items-center justify-center">점수</div>
+                                </div>
+                                
+                                {/* Shot 0 (Attempt) */}
+                                {currentAnalysis.shots.length > 0 && (
+                                    <div className="grid grid-cols-[40px_1.5fr_1fr] border-b border-zinc-100 dark:border-zinc-800/60 items-stretch">
+                                        <div className="px-2 py-2 text-sm font-bold text-zinc-500 dark:text-zinc-400 text-center flex items-center justify-center bg-zinc-50/30 dark:bg-zinc-800/20">
+                                            0
+                                        </div>
+                                        <div className="px-4 py-2 flex flex-col justify-center pl-6 sm:pl-8 border-l border-zinc-100 dark:border-zinc-800/60">
+                                            <div className="flex items-center gap-2">
+                                                <span className="w-1 h-3 bg-zinc-300 dark:bg-zinc-600 rounded-full shrink-0"></span>
+                                                <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300 truncate">
+                                                    {(holeData.shots[0]?.location || "-").replace('그린 주변 어프로치', '어프로치').replace('그린 주변 벙커', '벙커')} {holeData.shots[0]?.distance ? `/ ${holeData.shots[0].distance}${unitSymbol}` : ""}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="px-4 py-2 text-sm font-bold border-l border-zinc-100 dark:border-zinc-800/60 text-center flex items-center justify-center text-zinc-400">
+                                            -
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Shot-by-shot SG */}
+                                {currentAnalysis.shots.map((shot: any, i: number) => (
+                                    <div key={i} className="grid grid-cols-[40px_1.5fr_1fr] border-b border-zinc-100 dark:border-zinc-800/60 items-stretch">
+                                        <div className="px-2 py-2 text-sm font-bold text-zinc-500 dark:text-zinc-400 text-center flex items-center justify-center bg-zinc-50/30 dark:bg-zinc-800/20">
+                                            {i + 1}
+                                        </div>
+                                        <div className="px-4 py-2 flex flex-col justify-center pl-6 sm:pl-8 border-l border-zinc-100 dark:border-zinc-800/60">
+                                            <div className="flex items-center gap-2">
+                                                <span className="w-1 h-3 bg-orange-500 rounded-full shrink-0"></span>
+                                                <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300 truncate">
+                                                    {(holeData.shots[i+1]?.location || "홀인").replace('그린 주변 어프로치', '어프로치').replace('그린 주변 벙커', '벙커')} {holeData.shots[i+1]?.distance && holeData.shots[i+1]?.location !== "홀인" ? `/ ${holeData.shots[i+1].distance}${unitSymbol}` : ""}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div className="relative px-3 py-2 text-sm font-bold border-l border-zinc-100 dark:border-zinc-800/60 text-center flex items-center justify-center">
+                                            <span className={shot.shotSG < 0 ? 'text-red-500' : shot.shotSG > 0 ? 'text-blue-500' : 'text-zinc-600 dark:text-zinc-400'}>
+                                                {shot.shotSG === 0 ? "0.0" : shot.shotSG.toFixed(1)}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditingMemoIndex(i)}
+                                                className={cn(
+                                                    "absolute right-2 p-1.5 rounded-lg transition-colors border",
+                                                    holeData.shots[i]?.memo 
+                                                        ? "bg-brand-navy/5 border-brand-navy/30 text-brand-navy dark:bg-brand-navy/20 dark:border-brand-navy/50 dark:text-brand-navy-light" 
+                                                        : "bg-transparent border-transparent text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                                                )}
+                                            >
+                                                <MessageSquare size={14} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                ))}
+
+                                {/* 총계 (Total SG) */}
+                                <div className="grid grid-cols-[40px_1.5fr_1fr] border-t border-zinc-100 dark:border-zinc-800/60 items-stretch bg-zinc-50/50 dark:bg-zinc-800/30">
+                                    <div className="col-span-2 px-4 py-2.5 text-sm font-bold text-zinc-700 dark:text-zinc-300 text-center flex items-center justify-center">총계</div>
+                                    <div className="px-4 py-2.5 text-sm font-bold border-l border-zinc-100 dark:border-zinc-800/60 text-center flex items-center justify-center">
+                                        <span className={currentAnalysis.totalSG < 0 ? 'text-red-500' : currentAnalysis.totalSG > 0 ? 'text-blue-500' : 'text-zinc-600 dark:text-zinc-400'}>
+                                            {currentAnalysis.totalSG === 0 ? "0.0" : currentAnalysis.totalSG.toFixed(1)}
+                                        </span>
+                                    </div>
+                                </div>
+                                
+                                {/* 하단 '저장 & 다음홀' 버튼 (표 아래) */}
+                                <div className="p-3 border-t border-zinc-100 dark:border-zinc-800/60 bg-white dark:bg-zinc-900 flex justify-end">
+                                    <button
+                                        type="button"
+                                        onClick={() => saveCurrentAndNext(true, true)}
+                                        disabled={currentHole === 18}
+                                        className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-brand-navy text-white hover:bg-brand-navy/90 disabled:opacity-40 transition-colors shadow-sm"
+                                    >
+                                        저장 & 다음홀 <ChevronRight size={16} />
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
                     {/* ── Footer Actions ── */}
                     <div className="flex items-center justify-end gap-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
                         <button
                             type="button"
-                            onClick={copyFrontToBack}
+                            onClick={submitFrontNine}
                             className="mr-auto px-4 py-2.5 rounded-xl text-sm font-semibold border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                         >
-                            전반 스코어 복사
+                            전반 스코어만 등록
                         </button>
 
                         <button
@@ -1190,6 +1357,40 @@ export default function ScoreCreatePage() {
                 }}
                 title="볼 위치 선택"
             />
+
+            {/* ── Memo Popup Modal ── */}
+            {editingMemoIndex !== null && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in">
+                    <div className="w-full max-w-sm bg-white dark:bg-zinc-900 rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-100 dark:border-zinc-800">
+                            <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-50">샷 메모 작성 ({editingMemoIndex + 1}번째 샷)</h3>
+                            <button
+                                onClick={() => setEditingMemoIndex(null)}
+                                className="p-1 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="p-5">
+                            <textarea
+                                value={holeData.shots[editingMemoIndex]?.memo || ""}
+                                onChange={(e) => updateShotMemo(editingMemoIndex, e.target.value)}
+                                placeholder="샷에 대한 원인이나 결과 등을 상세히 기록해 주세요"
+                                className="w-full h-32 px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400/60 dark:placeholder:text-zinc-600/60 focus:outline-none focus:ring-2 focus:ring-brand-navy/30 transition-all resize-none"
+                                autoFocus
+                            />
+                        </div>
+                        <div className="px-5 py-4 bg-zinc-50 dark:bg-zinc-800/30 border-t border-zinc-100 dark:border-zinc-800 flex justify-end">
+                            <button
+                                onClick={() => setEditingMemoIndex(null)}
+                                className="px-6 py-2 bg-brand-navy hover:bg-brand-navy/90 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
+                            >
+                                확인
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -141,45 +141,53 @@ export function TrainingTable({ trainings, totalCount, onUpdate }: TrainingTable
                             key={training.id}
                             onClick={() => router.push(`/training/${training.id}`)}
                             className={cn(
-                                "w-full text-left bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 border-l-4 rounded-xl px-4 py-3.5 transition-all cursor-pointer hover:shadow-md hover:-translate-y-px",
+                                "w-full text-left bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 border-l-4 rounded-xl px-3 py-3 transition-all cursor-pointer hover:shadow-md active:scale-[0.99]",
                                 cfg.accentBorder
                             )}
                         >
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                    <span className={cn("w-2 h-2 rounded-full shrink-0", cfg.dotColor)} />
-                                    <span className={cn("w-[5.5rem] text-[11px] font-bold uppercase tracking-widest shrink-0", cfg.labelColor)}>
-                                        {cfg.label}
-                                    </span>
-                                    <span className="mr-1.5 w-[1px] h-3 bg-zinc-200 dark:bg-zinc-700 shrink-0" />
-                                    <div className="flex items-center min-w-0">
-                                        <div className="flex items-center shrink-0">
-                                            {training.title?.includes("[기본기]") && <span className="text-[13px] font-black text-brand-red mr-1.5">기본기 |</span>}
-                                            {training.title?.includes("[예습]") && <span className="text-[13px] font-black text-brand-navy mr-1.5">예습 |</span>}
-                                            {training.title?.includes("[복습]") && <span className="text-[13px] font-black text-zinc-500 mr-1.5">복습 |</span>}
-                                        </div>
-                                        <span className="text-[14px] font-bold text-zinc-900 dark:text-zinc-100 truncate">
-                                            {training.playerName}
-                                        </span>
-                                        <span className="ml-1.5 text-[12px] font-black text-brand-navy shrink-0">
-                                            ({calculateProgress(training)}%)
-                                        </span>
-                                    </div>
+                            <div className="flex items-center justify-between gap-2">
+                                {/* 1. Category Icon (Shortened) */}
+                                <div className={cn(
+                                    "w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black text-white shrink-0 shadow-sm",
+                                    cfg.dotColor
+                                )}>
+                                    {cfg.label.charAt(0)}
                                 </div>
-                                <div className="flex items-center gap-3 shrink-0 ml-2">
-                                    <div className="flex flex-col items-end gap-0.5">
-                                        <span className="text-[11px] text-zinc-400 font-medium">
+
+                                {/* 2. Core Info (Centered) */}
+                                <div className="flex items-center justify-center gap-1 flex-1 min-w-0">
+                                    <div className="flex items-center shrink-0">
+                                        {training.title?.includes("[기본기]") && <span className="text-[12px] font-black text-brand-red">기본기</span>}
+                                        {training.title?.includes("[예습]") && <span className="text-[12px] font-black text-brand-navy">예습</span>}
+                                        {training.title?.includes("[복습]") && <span className="text-[12px] font-black text-zinc-500">복습</span>}
+                                        {(training.title?.includes("[기본기]") || training.title?.includes("[예습]") || training.title?.includes("[복습]")) && (
+                                            <span className="mx-1 text-zinc-300">|</span>
+                                        )}
+                                    </div>
+                                    <span className="text-[13px] font-bold text-zinc-900 dark:text-zinc-100 truncate">
+                                        {training.playerName}
+                                    </span>
+                                    <span className="mx-1 text-zinc-300">|</span>
+                                    <span className="text-[12px] font-black text-brand-navy shrink-0">
+                                        {calculateProgress(training)}%
+                                    </span>
+                                </div>
+
+                                {/* 3. Right Side (Coach & Date & Action) */}
+                                <div className="flex items-center gap-2 shrink-0">
+                                    <div className="flex flex-col items-end leading-tight mr-1">
+                                        <span className="text-[10px] text-zinc-400 font-medium">
                                             {training.date.slice(5).replace("-", ".")}
                                         </span>
-                                        <span className="text-[12px] text-zinc-600 dark:text-zinc-300 font-semibold">
+                                        <span className="text-[11px] text-zinc-600 dark:text-zinc-300 font-bold truncate max-w-[50px]">
                                             {training.coachName}
                                         </span>
                                     </div>
                                     <button 
                                         onClick={(e) => handleCompleteTraining(e, training)}
-                                        className="p-2 bg-brand-red text-white rounded-lg shadow-sm active:scale-95 transition-all"
+                                        className="p-1.5 bg-brand-red text-white rounded-lg shadow-sm active:scale-90 transition-all"
                                     >
-                                        <CheckCircle2 size={18} />
+                                        <CheckCircle2 size={16} />
                                     </button>
                                 </div>
                             </div>

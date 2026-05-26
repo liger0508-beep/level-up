@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { 
@@ -450,38 +452,42 @@ export default function AssignedAthletesPage() {
                             <UserPlus size={20} />
                         </div>
                         <h1 className="text-lg font-black text-zinc-900 dark:text-zinc-50 tracking-tight">
-                            담임 선수 관리
+                            담임 선수 배정
                         </h1>
                     </div>
                 </div>
             </header>
 
             <main className="max-w-5xl mx-auto px-4 sm:px-8 py-8">
-                {/* Shared Month Navigation */}
-                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between mb-8">
-                    <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl shadow-sm">
-                            <Calendar size={16} className="text-zinc-400" />
-                            <input 
-                                type="month" 
-                                value={selectedMonth}
-                                onChange={(e) => setSelectedMonth(e.target.value)}
-                                className="bg-transparent text-sm font-bold text-zinc-900 dark:text-zinc-100 focus:outline-none"
-                            />
+                {/* Refactored Header Layout: Stacked for clarity on both PC & Mobile */}
+                <div className="flex flex-col gap-8 mb-10">
+                    {/* 1. Month Navigation Section */}
+                    <div className="flex flex-col md:flex-row items-start md:items-center gap-4 bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2 px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl">
+                                <Calendar size={18} className="text-brand-navy" />
+                                <input 
+                                    type="month" 
+                                    value={selectedMonth}
+                                    onChange={(e) => setSelectedMonth(e.target.value)}
+                                    className="bg-transparent text-base font-black text-zinc-900 dark:text-zinc-100 focus:outline-none"
+                                />
+                            </div>
                         </div>
-                        <div className="flex gap-1">
+                        
+                        <div className="flex items-center gap-2 w-full md:w-auto">
                             <button
                                 onClick={() => handleMonthChange(-1)}
-                                className="px-3 py-2 rounded-xl text-[11px] font-bold transition-all border bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 hover:bg-zinc-50"
+                                className="flex-1 md:flex-none px-5 py-2.5 rounded-xl text-xs font-bold transition-all border bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300"
                             >
                                 이전 달
                             </button>
                             <button
                                 onClick={() => setSelectedMonth(format(new Date(), "yyyy-MM"))}
                                 className={cn(
-                                    "px-3 py-2 rounded-xl text-[11px] font-bold transition-all border",
+                                    "flex-1 md:flex-none px-5 py-2.5 rounded-xl text-xs font-bold transition-all border",
                                     selectedMonth === format(new Date(), "yyyy-MM")
-                                        ? "bg-brand-navy border-brand-navy text-white"
+                                        ? "bg-brand-navy border-brand-navy text-white shadow-md"
                                         : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500"
                                 )}
                             >
@@ -489,33 +495,49 @@ export default function AssignedAthletesPage() {
                             </button>
                             <button
                                 onClick={() => handleMonthChange(1)}
-                                className="px-3 py-2 rounded-xl text-[11px] font-bold transition-all border bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 hover:bg-zinc-50"
+                                className="flex-1 md:flex-none px-5 py-2.5 rounded-xl text-xs font-bold transition-all border bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 hover:bg-zinc-50 hover:border-zinc-300"
                             >
                                 다음 달
                             </button>
                         </div>
                     </div>
-
+                    
+                    {/* 2. Branch Filter & Search Section (Only for Admins/Coaches) */}
                     {user?.role !== 'athlete' && (
-                        <div className="flex items-center gap-2 w-full sm:w-auto">
-                            <div className="relative flex-1 sm:w-64">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                        <div className="flex flex-col gap-6">
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2 px-1">
+                                    <Filter size={14} className="text-zinc-400" />
+                                    <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">지점 필터</span>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {["all", "조이마루점", "구미점"].map(b => (
+                                        <button
+                                            key={b}
+                                            onClick={() => setBranchFilter(b)}
+                                            className={cn(
+                                                "whitespace-nowrap px-6 py-2.5 rounded-full text-sm font-black transition-all duration-200 border",
+                                                branchFilter === b
+                                                    ? "bg-brand-navy text-white shadow-md border-brand-navy scale-105"
+                                                    : "bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 hover:border-zinc-300"
+                                            )}
+                                        >
+                                            {b === "all" ? "전체 지점" : b}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="relative w-full">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={20} />
                                 <input 
                                     type="text"
-                                    placeholder="선수/코치 검색..."
+                                    placeholder="선수 또는 코치 이름으로 검색..."
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm focus:outline-none focus:ring-2 focus:ring-brand-navy/40"
+                                    className="w-full pl-12 pr-6 py-4 rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-base font-medium focus:outline-none focus:ring-2 focus:ring-brand-navy/40 shadow-sm transition-all placeholder:text-zinc-400"
                                 />
                             </div>
-                            <select 
-                                value={branchFilter}
-                                onChange={(e) => setBranchFilter(e.target.value)}
-                                className="px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm focus:outline-none"
-                            >
-                                <option value="all">전체 지점</option>
-                                {["총괄", "오피스", "조이마루점", "구미점"].map(b => <option key={b} value={b}>{b}</option>)}
-                            </select>
                         </div>
                     )}
                 </div>

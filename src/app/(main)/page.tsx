@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Activity,
@@ -18,10 +19,12 @@ import {
   ArrowUpRight,
   TrendingUp,
   Target,
+  User,
   Users
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getStoredEvents } from "@/lib/schedule-sync";
+import { getPolls, Vote, VOTE_TYPE_COLORS, VOTE_TYPE_LABELS } from "@/lib/vote-sync";
 import { format, isSameDay, formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
 import { createClient } from "@/lib/supabase/client";
@@ -31,7 +34,7 @@ const ALL_SHORTCUTS = [
   { id: "analysis", title: "분석", icon: Activity, color: "bg-orange-500", href: "/analysis" },
   { id: "lessons", title: "레슨", icon: BookOpen, color: "bg-blue-500", href: "/lessons" },
   { id: "training", title: "훈련", icon: Dumbbell, color: "bg-emerald-500", href: "/training" },
-  { id: "tests", title: "테스트", icon: ClipboardList, color: "bg-rose-500", href: "/training/tests" },
+  { id: "challenges", title: "챌린지", icon: Trophy, color: "bg-rose-500", href: "/training/challenges" },
   { id: "scores", title: "스코어", icon: Flag, color: "bg-sky-500", href: "/scores" },
   { id: "schedule", title: "스케쥴", icon: Calendar, color: "bg-cyan-600", href: "/schedule" },
   { id: "consultations", title: "상담", icon: MessageSquare, color: "bg-amber-500", href: "/consultations" },
@@ -49,32 +52,69 @@ const typeConfigs: Record<string, { label: string; gradient: string }> = {
   etc: { label: "ETC", gradient: "from-zinc-400 to-zinc-600" },
 };
 
+const categoryLabels: Record<string, string> = {
+  shot: "Shot",
+  short_game: "Short Game",
+  around_green: "Around Green",
+  putting: "Putting",
+  physical: "Physical",
+  mental: "Mental",
+  etc: "Etc"
+};
+
 function FeedCard({ item }: { item: any }) {
   const config = typeConfigs[item.type] || typeConfigs.etc;
   const timeAgo = formatDistanceToNow(new Date(item.created_at), { addSuffix: true, locale: ko });
+  const playerName = item.users?.name || "선수";
+  const authorName = item.coach?.name || "관리자";
+  
+  const categoryDisplay = categoryLabels[item.category] || item.category;
+  
+  // Parse title for tags like [예습], [기본기], [복습]
+  const tagMatch = item.title?.match(/^\[(.+?)\]/);
+  const tag = tagMatch ? tagMatch[1] : null;
+  const displayTitle = tag ? item.title.replace(`[${tag}]`, "").trim() : item.title;
 
   return (
     <Link
-      href={`/${item.type === 'score' ? 'scores' : item.type === 'consultation' ? 'consultations' : item.type}s/${item.id}`}
-      className="relative bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl overflow-hidden hover:shadow-md transition-all flex flex-col items-center justify-center h-28 sm:h-32 shrink-0 w-[80vw] max-w-[260px] p-4 text-center"
+      href={`/${item.type === 'score' ? 'scores' : item.type === 'consultation' ? 'consultations' : item.type === 'training' ? 'training' : item.type === 'analysis' ? 'analysis' : item.type + 's'}/${item.id}`}
+      className="relative bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl overflow-hidden hover:shadow-md transition-all flex flex-col items-center justify-center h-28 sm:h-32 shrink-0 w-[80vw] max-w-[260px] p-4 text-center group"
     >
-      <div 
-        className={cn(
-          "absolute top-0 left-0 w-12 h-12 bg-gradient-to-br z-10",
-          config.gradient
-        )}
-        style={{ clipPath: 'polygon(0 0, 100% 0, 0 100%)' }}
-      />
+      {/* Category Ribbon */}
+      <div className="absolute top-0 left-0 w-14 h-14 z-10 overflow-hidden pointer-events-none">
+        <div 
+          className={cn(
+            "absolute top-0 left-0 w-full h-full bg-gradient-to-br",
+            config.gradient
+          )}
+          style={{ clipPath: 'polygon(0 0, 100% 0, 0 100%)' }}
+        />
+        <span className="absolute top-[12px] left-[-12px] -rotate-45 text-[8px] font-black text-white/90 uppercase tracking-tighter w-full text-center drop-shadow-sm">
+          {config.label}
+        </span>
+      </div>
+
       <div className="flex flex-col items-center justify-center gap-1 w-full mt-2">
-        <h4 className="text-[15px] font-black text-zinc-900 dark:text-zinc-100 leading-tight">
-          {item.title?.split(' · ').pop() || "기록"}
+        {/* Line 1: Player Name */}
+        <h4 className="text-[14px] font-black text-zinc-900 dark:text-zinc-100 leading-tight">
+          {playerName}
         </h4>
-        <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-tighter">
-          {item.category || "일반"}
+        {/* Line 2: Category | Title */}
+        <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-tighter truncate max-w-full">
+          {categoryDisplay ? (
+            <span className="text-zinc-500 dark:text-zinc-400">{categoryDisplay}</span>
+          ) : (
+            tag ? `${tag} | ` : ""
+          )}
+          {categoryDisplay && displayTitle && displayTitle !== playerName ? ` | ${displayTitle}` : (categoryDisplay ? "" : displayTitle || "기록")}
         </p>
       </div>
       <div className="absolute bottom-3 right-4">
-        <p className="text-[10px] font-medium text-zinc-400">{timeAgo}</p>
+        <p className="text-[9px] font-semibold text-zinc-400/80">
+          <span className="text-zinc-500 dark:text-zinc-300">{authorName}</span>
+          <span className="mx-1.5 opacity-50">|</span>
+          {timeAgo}
+        </p>
       </div>
     </Link>
   );
@@ -93,11 +133,13 @@ interface SummaryStats {
 }
 
 export default function Home() {
+  const router = useRouter();
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState<SummaryStats>({ avgScore: 0, completionRate: 0 });
   const [todayTimeline, setTodayTimeline] = useState<any[]>([]);
   const [recentUpdates, setRecentUpdates] = useState<any[]>([]);
+  const [pendingPolls, setPendingPolls] = useState<Vote[]>([]);
 
   useEffect(() => {
     async function initialize() {
@@ -165,7 +207,7 @@ export default function Home() {
         // Fetch today's records for completion checks
         const { data: todayRecords } = await supabase
           .from("records")
-          .select("id, type, title, category, created_at, related_id")
+          .select("id, type, title, category, created_at")
           .eq("user_id", user.id)
           .gte("created_at", startOfToday.toISOString())
           .lte("created_at", endOfToday.toISOString());
@@ -198,6 +240,14 @@ export default function Home() {
           .select("poll_id")
           .eq("user_id", user.id);
 
+        const allPolls = await getPolls();
+        const ongoingUnvoted = allPolls.filter(p => {
+          const isOngoing = p.status === "ongoing" && todayStr >= p.startDate && todayStr <= p.endDate;
+          const hasNotVoted = !pollResponses?.some(pr => pr.poll_id === p.id);
+          return isOngoing && hasNotVoted;
+        });
+        setPendingPolls(ongoingUnvoted);
+
         const schedules = await getStoredEvents();
         const todaySchedules = schedules.filter(e => isSameDay(new Date(e.start), new Date()));
         const { data: todos } = await supabase.from("todos").select("*").eq("user_id", user.id).eq("due_date", todayStr);
@@ -215,12 +265,19 @@ export default function Home() {
 
           // 2. Active Trainings
           (activeTrainings || []).forEach(at => {
+            const isCompletedInLogs = at.completion_logs?.some((log: string) => {
+              try {
+                const ts = log.startsWith('{') ? JSON.parse(log).timestamp : log;
+                return format(new Date(ts), "yyyy-MM-dd") === todayStr;
+              } catch { return false; }
+            });
+
             autoItems.push({
               id: `training-auto-${at.id}`,
               time: "종일",
               title: at.title,
               type: 'training',
-              completed: todayRecords?.some(r => r.type === 'training' && r.related_id === at.id) || false
+              completed: isCompletedInLogs || false
             });
           });
 
@@ -262,7 +319,7 @@ export default function Home() {
           // Add records that are NOT journals and NOT matched to schedules or trainings
           ...(todayRecords || []).filter(r => {
             const isJournal = r.type === 'journal';
-            const isUsedInTraining = r.type === 'training' && activeTrainings?.some(at => r.related_id === at.id);
+            const isUsedInTraining = false;
             const matchesSchedule = todaySchedules.some(s => 
               r.type === s.type && 
               (r.title === s.title || s.title?.includes(r.title || "") || r.title?.includes(s.title || ""))
@@ -288,7 +345,7 @@ export default function Home() {
 
         const { data: updates } = await supabase
           .from("records")
-          .select(`id, type, title, created_at, category`)
+          .select(`id, type, title, created_at, category, users!records_user_id_fkey(name), coach:users!records_coach_id_fkey(name)`)
           .in("type", ["lesson", "analysis", "training"])
           .order("created_at", { ascending: false })
           .limit(5);
@@ -306,6 +363,7 @@ export default function Home() {
   const handleToggleItem = async (item: any) => {
     const supabase = createClient();
     const isCurrentlyCompleted = item.completed;
+    const todayStr = format(new Date(), "yyyy-MM-dd");
     
     try {
       if (item.type === 'todo') {
@@ -320,9 +378,44 @@ export default function Home() {
           .update({ status: isCurrentlyCompleted ? 'scheduled' : 'completed' })
           .eq("id", item.id);
         if (error) throw error;
+      } else if (item.type === 'training') {
+        // Find the record and update completion_logs
+        const { data: record } = await supabase
+          .from("records")
+          .select("id, completion_logs")
+          .eq("id", item.id.replace('training-auto-', ''))
+          .single();
+        
+        if (record) {
+          let logs = [];
+          if (record.completion_logs) {
+            logs = Array.isArray(record.completion_logs) ? record.completion_logs : [record.completion_logs];
+          }
+          
+          if (!isCurrentlyCompleted) {
+            // Add today's log
+            logs.push(JSON.stringify({ timestamp: new Date().toISOString(), type: 'quick-complete' }));
+          } else {
+            // Remove today's log
+            logs = logs.filter((log: string) => {
+              try {
+                const ts = log.startsWith('{') ? JSON.parse(log).timestamp : log;
+                return format(new Date(ts), "yyyy-MM-dd") !== todayStr;
+              } catch { return true; }
+            });
+          }
+
+          const { error } = await supabase
+            .from("records")
+            .update({ completion_logs: logs })
+            .eq("id", record.id);
+          if (error) throw error;
+        }
       } else {
-        // Auto items (journal, training, poll) are driven by records.
-        // For these, we might redirect or show a tooltip.
+        // For journal or poll, redirecting is better as they require user input
+        if (item.type === 'journal') {
+          router.push('/admin/training-journal/create');
+        }
         return;
       }
       
@@ -348,7 +441,7 @@ export default function Home() {
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-12">
       {/* ─── Hero / Dashboard Section ─── */}
-      <section className="bg-white dark:bg-zinc-900 border-2 border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] p-8 shadow-sm">
+      <section className="bg-white dark:bg-zinc-900 border-2 border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] p-5 sm:p-8 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
           <div>
             <div className="flex items-center gap-2 mb-2">
@@ -366,24 +459,24 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="bg-zinc-50 dark:bg-zinc-800/50 p-5 rounded-3xl border border-zinc-100 dark:border-zinc-800 min-w-[140px]">
+          <div className="grid grid-cols-2 gap-2 sm:gap-4">
+            <div className="bg-zinc-50 dark:bg-zinc-800/50 p-3 sm:p-5 rounded-3xl border border-zinc-100 dark:border-zinc-800 min-w-0">
               <div className="flex items-center gap-2 mb-2 text-zinc-400">
                 <TrendingUp size={16} />
-                <span className="text-[10px] font-black uppercase tracking-widest">{isAdmin ? "전체 선수 평균" : isCoach ? "담당 선수 평균" : "평균 타수"}</span>
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest truncate">{isAdmin ? "전체 선수 평균" : isCoach ? "담당 선수 평균" : "평균 타수"}</span>
               </div>
-              <p className="text-3xl font-black text-zinc-900 dark:text-zinc-100 italic">{stats.avgScore || "--"}</p>
+              <p className="text-2xl sm:text-3xl font-black text-zinc-900 dark:text-zinc-100 italic">{stats.avgScore || "--"}</p>
               <div className="mt-1 flex items-center gap-1 text-[10px] text-emerald-500 font-bold">
                 <ArrowUpRight size={12} />
                 <span>{isAdmin ? "플랫폼 전체" : "최근 10라운드"}</span>
               </div>
             </div>
-            <div className="bg-zinc-50 dark:bg-zinc-800/50 p-5 rounded-3xl border border-zinc-100 dark:border-zinc-800 min-w-[140px]">
+            <div className="bg-zinc-50 dark:bg-zinc-800/50 p-3 sm:p-5 rounded-3xl border border-zinc-100 dark:border-zinc-800 min-w-0">
               <div className="flex items-center gap-2 mb-2 text-zinc-400">
                 <Target size={16} />
-                <span className="text-[10px] font-black uppercase tracking-widest">{isAdmin ? "전체 훈련 완료율" : isCoach ? "담당 선수 훈련" : "훈련 완료율"}</span>
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest truncate">{isAdmin ? "전체 훈련 완료율" : isCoach ? "담당 선수 훈련" : "훈련 완료율"}</span>
               </div>
-              <p className="text-3xl font-black text-zinc-900 dark:text-zinc-100 italic">{stats.completionRate}%</p>
+              <p className="text-2xl sm:text-3xl font-black text-zinc-900 dark:text-zinc-100 italic">{stats.completionRate}%</p>
               <div className="mt-1 flex items-center gap-1 text-[10px] text-emerald-500 font-bold">
                 <ArrowUpRight size={12} />
                 <span>{isAdmin ? "전체 달성률" : "목표 달성 중"}</span>
@@ -392,6 +485,98 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* ─── Pending Polls Box ─── */}
+      {pendingPolls.length > 0 && (
+        <section className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className="flex items-center justify-between px-2">
+            <h2 className="text-sm font-black text-rose-500 uppercase tracking-widest flex items-center gap-2">
+              <MessageSquare size={14} className="fill-rose-500/20" />
+              참여가 필요한 투표
+            </h2>
+            <span className="text-[10px] font-bold text-zinc-400">{pendingPolls.length}건 진행 중</span>
+          </div>
+          
+          <div className="grid grid-cols-1 gap-4">
+            {pendingPolls.map(poll => {
+              // Calculate top 3 options for the card
+              const sortedOptions = [...poll.options].sort((a, b) => b.votes - a.votes).slice(0, 3);
+              const totalVoters = Math.max(poll.totalParticipants, 1);
+
+              return (
+                <Link 
+                  key={poll.id} 
+                  href={`/admin/polls/${poll.id}`}
+                  className="block bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2.5rem] p-8 hover:shadow-lg transition-all group"
+                >
+                  <div className="space-y-5">
+                    <div className="flex items-center gap-2">
+                      <span className={cn(
+                        "text-[10px] font-bold px-2 py-0.5 rounded-md uppercase",
+                        VOTE_TYPE_COLORS[poll.type].bg,
+                        VOTE_TYPE_COLORS[poll.type].text
+                      )}>
+                        {VOTE_TYPE_LABELS[poll.type]}
+                      </span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-500">
+                        {poll.branch}
+                      </span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                        진행 중
+                      </span>
+                    </div>
+
+                    <h3 className="text-2xl font-black text-zinc-900 dark:text-zinc-100 group-hover:text-brand-navy transition-colors">
+                      {poll.title} <span className="text-zinc-400 font-medium ml-1">({poll.totalParticipants}명)</span>
+                    </h3>
+
+                    {/* Options Preview */}
+                    <div className="space-y-4">
+                      {sortedOptions.map((opt, i) => {
+                        const percentage = Math.round((opt.votes / totalVoters) * 100);
+                        return (
+                          <div key={opt.id} className="space-y-2">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="font-bold text-zinc-600 dark:text-zinc-300 flex items-center gap-2">
+                                <span className={cn(
+                                  "w-5 h-5 rounded-full flex items-center justify-center text-[10px] text-white font-black",
+                                  i === 0 ? "bg-indigo-400" : i === 1 ? "bg-slate-400" : "bg-orange-300"
+                                )}>{i + 1}</span>
+                                <span className="truncate max-w-[250px]">{opt.text}</span>
+                              </span>
+                              <span className="font-black text-zinc-900 dark:text-zinc-100">{opt.votes}표 ({percentage}%)</span>
+                            </div>
+                            <div className="h-2 w-full bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
+                              <div
+                                className={cn(
+                                  "h-full rounded-full transition-all duration-1000",
+                                  i === 0 ? "bg-indigo-400" : i === 1 ? "bg-slate-400" : "bg-orange-300"
+                                )}
+                                style={{ width: `${percentage}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="flex items-center justify-end gap-5 text-[11px] text-zinc-400 pt-4 border-t border-zinc-50 dark:border-zinc-800/50 mt-4 font-bold">
+                      <div className="flex items-center gap-1.5">
+                        <Calendar size={12} />
+                        <span>{poll.startDate.replace(/-/g, ".")} ~ {poll.endDate.replace(/-/g, ".")}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <User size={12} />
+                        <span>{poll.author}</span>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {/* ─── Shortcuts ─── */}
       <section className="bg-zinc-50 dark:bg-zinc-900/50 rounded-[2.5rem] p-6 border border-zinc-100 dark:border-zinc-800">
@@ -421,7 +606,39 @@ export default function Home() {
 
           <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-800 p-8 shadow-sm space-y-8 relative">
             {todayTimeline.length > 0 ? (
-              todayTimeline.map((item, idx) => (
+              todayTimeline.map((item, idx) => {
+                const getItemHref = (item: any) => {
+                  if (item.type === 'todo') {
+                    if (item.title && item.title.includes(':::ID:::')) {
+                      return `/course-management/${item.title.split(':::ID:::')[1].trim()}`;
+                    }
+                    return '/operations/todos';
+                  }
+                  if (item.type === 'schedule') return '/schedule';
+                  if (item.type === 'journal') return '/admin/training-journal/create';
+                  
+                  if (item.type === 'score') {
+                    const rawId = item.id.replace('score-', '');
+                    return `/scores/${rawId}`;
+                  }
+                  if (item.type === 'poll') {
+                    const rawId = item.id.replace('poll-auto-', '');
+                    return `/admin/polls/${rawId}`;
+                  }
+                  if (item.type === 'training') {
+                    const rawId = item.id.replace('training-auto-', '').replace('record-', '');
+                    return `/training/${rawId}`;
+                  }
+                  
+                  const rawId = String(item.id).replace('record-', '');
+                  if (item.type === 'analysis') return `/analysis/${rawId}`;
+                  if (item.type === 'consultation') return `/consultations/${rawId}`;
+                  if (item.type === 'lesson') return `/lessons/${rawId}`;
+                  
+                  return '#';
+                };
+                
+                return (
                 <div key={item.id} className="relative flex items-start gap-6 group">
                   {idx !== todayTimeline.length - 1 && (
                     <div className="absolute left-[11px] top-8 bottom-[-32px] w-[2px] bg-zinc-100 dark:bg-zinc-800" />
@@ -464,15 +681,17 @@ export default function Home() {
                         {typeLabels[item.type]}
                       </span>
                     </div>
-                    <h4 className={cn(
-                      "text-lg font-bold transition-all",
-                      item.completed ? "text-zinc-400 line-through" : "text-zinc-900 dark:text-zinc-100"
-                    )}>
-                      {item.title}
-                    </h4>
+                    <Link href={getItemHref(item)}>
+                      <h4 className={cn(
+                        "text-lg font-bold transition-all hover:text-brand-navy dark:hover:text-brand-navy-light inline-block cursor-pointer",
+                        item.completed ? "text-zinc-400 line-through" : "text-zinc-900 dark:text-zinc-100"
+                      )}>
+                        {item.title ? item.title.split(':::ID:::')[0] : ''}
+                      </h4>
+                    </Link>
                   </div>
                 </div>
-              ))
+              )})
             ) : (
               <div className="py-10 text-center flex flex-col items-center">
                 <Clock className="text-zinc-100 dark:text-zinc-800 mb-4" size={48} />

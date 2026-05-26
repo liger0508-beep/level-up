@@ -285,27 +285,7 @@ export default function JournalDetailPage() {
                     </div>
                 </section>
 
-                {/* ── 2. Keywords ── */}
-                {journal.keywords && journal.keywords.length > 0 && (
-                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-3">
-                        <div className="flex items-center gap-2 mb-1">
-                            <Search size={14} className="text-zinc-400" />
-                            <h3 className="text-[11px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">키워드</h3>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                            {journal.keywords.map((kw, i) => (
-                                <span 
-                                    key={i} 
-                                    className="px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs font-bold text-zinc-700 dark:text-zinc-300"
-                                >
-                                    #{kw}
-                                </span>
-                            ))}
-                        </div>
-                    </section>
-                )}
-
-                {/* ── 3. Attached Media ── */}
+                {/* ── 2. Attached Media ── */}
                 <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden">
                     <div className="flex items-center gap-2 px-5 pt-4 pb-3 border-b border-zinc-100 dark:border-zinc-800">
                         <Play size={14} className="text-zinc-400" />

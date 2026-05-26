@@ -58,10 +58,17 @@ export default function CreateVotePage() {
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
     const [isImportant, setIsImportant] = useState(false);
-    const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
+    const [startDate, setStartDate] = useState(() => {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    });
     const [endDate, setEndDate] = useState("");
     const [options, setOptions] = useState<string[]>(["", ""]);
     const [allowMultiple, setAllowMultiple] = useState(false);
+    const [isRecurring, setIsRecurring] = useState(false);
 
     const addOption = () => {
         setOptions([...options, ""]);
@@ -125,7 +132,8 @@ export default function CreateVotePage() {
                 startDate,
                 endDate,
                 authorId: currentUserId,
-                isImportant
+                isImportant,
+                isRecurring
             });
 
             alert("투표가 등록되었습니다.");
@@ -165,7 +173,7 @@ export default function CreateVotePage() {
                             <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300">
                                 투표 대상 <span className="text-brand-red">*</span>
                             </label>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-nowrap overflow-x-auto pb-1 scrollbar-hide gap-2">
                                 {(Object.entries(VOTE_TYPE_LABELS) as [VoteType, string][]).map(([key, label]) => {
                                     const isActive = type === key;
                                     return (
@@ -174,7 +182,7 @@ export default function CreateVotePage() {
                                             type="button"
                                             onClick={() => setType(key)}
                                             className={cn(
-                                                "px-5 py-2 rounded-full text-sm font-bold transition-all border",
+                                                "whitespace-nowrap px-5 py-2 rounded-full text-sm font-bold transition-all border",
                                                 isActive
                                                     ? "bg-brand-navy text-white border-brand-navy shadow-sm"
                                                     : "bg-transparent text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50"
@@ -192,14 +200,14 @@ export default function CreateVotePage() {
                             <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300">
                                 지점 선택 <span className="text-brand-red">*</span>
                             </label>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-nowrap overflow-x-auto pb-1 scrollbar-hide gap-2">
                                 {["전체", "조이마루", "구미"].map((b) => (
                                     <button
                                         key={b}
                                         type="button"
                                         onClick={() => setBranch(b)}
                                         className={cn(
-                                            "px-5 py-2 rounded-full text-sm font-bold transition-all border",
+                                            "whitespace-nowrap px-5 py-2 rounded-full text-sm font-bold transition-all border",
                                             branch === b
                                                 ? "bg-brand-navy text-white border-brand-navy shadow-sm"
                                                 : "bg-transparent text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50"
@@ -336,28 +344,51 @@ export default function CreateVotePage() {
 
                     {/* ── 3. Period Section ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-6">
-                        <div className="space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300">
                                 투표 기간 설정 <span className="text-brand-red">*</span>
                             </label>
-                            <div className="flex items-center gap-3">
-                                <div className="relative flex-1">
-                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                                    <DatePickerInput
-                                        value={startDate}
-                                        onChange={(e) => setStartDate(e.target.value)}
-                                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-transparent dark:bg-zinc-800 text-sm text-center cursor-pointer"
-                                    />
+                            
+                            {/* Repeat Daily Toggle */}
+                            <label className="flex items-center gap-2 cursor-pointer group bg-rose-50/50 dark:bg-rose-500/5 px-3 py-1.5 rounded-lg border border-rose-100 dark:border-rose-900/30 w-fit">
+                                <div className={cn(
+                                    "w-8 h-4.5 rounded-full transition-colors relative flex items-center",
+                                    isRecurring ? "bg-rose-500" : "bg-zinc-300 dark:bg-zinc-600"
+                                )}>
+                                    <div className={cn(
+                                        "w-3.5 h-3.5 rounded-full bg-white absolute top-0.5 transition-transform",
+                                        isRecurring ? "translate-x-[18px]" : "translate-x-0.5"
+                                    )} />
                                 </div>
-                                <span className="text-zinc-400">~</span>
-                                <div className="relative flex-1">
-                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                                    <DatePickerInput
-                                        value={endDate}
-                                        onChange={(e) => setEndDate(e.target.value)}
-                                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-transparent dark:bg-zinc-800 text-sm text-center cursor-pointer"
-                                    />
-                                </div>
+                                <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400 select-none group-hover:text-rose-700 dark:group-hover:text-rose-300 transition-colors">
+                                    기간내 매일 반복 (새벽 6시 갱신)
+                                </span>
+                                <input
+                                    type="checkbox"
+                                    className="sr-only"
+                                    checked={isRecurring}
+                                    onChange={(e) => setIsRecurring(e.target.checked)}
+                                />
+                            </label>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <div className="relative flex-1">
+                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                                <DatePickerInput
+                                    value={startDate}
+                                    onChange={(e) => setStartDate(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-transparent dark:bg-zinc-800 text-sm text-center cursor-pointer"
+                                />
+                            </div>
+                            <span className="text-zinc-400">~</span>
+                            <div className="relative flex-1">
+                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                                <DatePickerInput
+                                    value={endDate}
+                                    onChange={(e) => setEndDate(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-transparent dark:bg-zinc-800 text-sm text-center cursor-pointer"
+                                />
                             </div>
                         </div>
                     </section>

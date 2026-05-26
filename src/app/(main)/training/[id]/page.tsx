@@ -55,6 +55,47 @@ export default function TrainingDetailPage() {
     const [expandedSessionIndex, setExpandedSessionIndex] = useState<number | null>(null);
     const [showAllHistory, setShowAllHistory] = useState(false);
 
+    // ── Review Training State ─────────────────────────────────────
+    const [reviewData, setReviewData] = useState<{
+        scorecardId: string;
+        analysis: any[];
+        completedHoles: number[];
+    } | null>(null);
+    const [selectedFocusHole, setSelectedFocusHole] = useState<number | null>(null);
+    const [expandedReviewIdx, setExpandedReviewIdx] = useState<number | null>(null);
+
+    const CATEGORY_TO_FIELD: Record<string, string> = {
+        "티샷 비거리": "distSG_DriverDist",
+        "티샷 정확도": "distSG_DriverAcc",
+        "180M이상": "distSG_180Plus",
+        "150-179M": "distSG_150_179",
+        "120-149M": "distSG_120_149",
+        "90-119M": "distSG_90_119",
+        "피치샷": "distSG_Pitch31_89",
+        "벙커": "distSG_Bunker",
+        "어프로치": "distSG_Approach",
+        "9M이상": "distSG_Putt9Plus",
+        "4-8M": "distSG_Putt4_8",
+        "2-3M": "distSG_Putt2_3",
+        "1M": "distSG_Putt1",
+    };
+
+    const LOCATION_ABBR_REV: Record<string, string> = {
+        "TE": "티박스",
+        "FW": "페어웨이",
+        "RO": "러프",
+        "FB": "페어웨이 벙커",
+        "GR": "그린",
+        "GA": "그린 주변 어프로치",
+        "GB": "그린 주변 벙커",
+        "HI": "홀인",
+        "PA": "패널티구역",
+        "OB": "오비",
+        "PS": "벌타",
+        "FO": "숲속",
+        "-": "-"
+    };
+
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
             if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -152,6 +193,22 @@ export default function TrainingDetailPage() {
                     completion_logs: data.completion_logs || [],
                     total_count: data.total_count || 0
                 });
+
+                const reviewSetting = (data.template_settings || []).find((s: any) => s.type === "review_scorecard");
+                if (reviewSetting && reviewSetting.scorecardId) {
+                    try {
+                        const { calculateScorecardAnalysis } = await import("@/lib/score-calculations");
+                        const analysis = await calculateScorecardAnalysis(reviewSetting.scorecardId);
+                        
+                        setReviewData({
+                            scorecardId: reviewSetting.scorecardId,
+                            analysis,
+                            completedHoles: reviewSetting.completedHoles || []
+                        });
+                    } catch (innerErr) {
+                        console.error("Failed to calculate scorecard analysis:", innerErr);
+                    }
+                }
             } catch (err) {
                 console.error("Failed to fetch training detail:", err);
             } finally {
@@ -239,6 +296,13 @@ export default function TrainingDetailPage() {
 
     const calculateProgress = () => {
         if (!training) return 0;
+        
+        if (training.title?.includes("[복습]") && reviewData) {
+            const completed = reviewData.completedHoles.length;
+            const total = 15;
+            return Math.min(Math.round((completed / total) * 100), 100);
+        }
+
         const total = training.total_count || 7;
         const logs = getLogs(training.completion_logs);
         const completed = logs.length;
@@ -485,7 +549,9 @@ export default function TrainingDetailPage() {
                                 훈련 진행률
                             </h3>
                             <span className="text-[11px] text-zinc-400 font-medium">
-                                {training.completion_logs?.length || 0}회 완료 / 총 {training.total_count || 0}회 기준
+                                {training.title?.includes("[복습]") && reviewData
+                                    ? `${reviewData.completedHoles.length}회 완료 / 총 15회 기준`
+                                    : `${training.completion_logs?.length || 0}회 완료 / 총 ${training.total_count || 0}회 기준`}
                             </span>
                         </div>
                         <div className="w-full h-12 bg-zinc-100 dark:bg-zinc-800 rounded-2xl overflow-hidden relative shadow-inner border border-zinc-200 dark:border-zinc-700">
@@ -504,19 +570,21 @@ export default function TrainingDetailPage() {
                             )}
                         </div>
 
-                        <button 
-                            onClick={handleCompleteTraining}
-                            disabled={isUploadingVideo}
-                            className={cn(
-                                "w-full py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 mt-2",
-                                isUploadingVideo 
-                                    ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-400 cursor-not-allowed"
-                                    : "bg-brand-red hover:bg-brand-red-dark text-white shadow-brand-red/20"
-                            )}
-                        >
-                            <CheckCircle2 size={18} />
-                            <span>훈련 완료 ({training.completion_logs?.length || 0}회 / {training.total_count || 0}회)</span>
-                        </button>
+                        {!training.title?.includes("[복습]") && (
+                            <button 
+                                onClick={handleCompleteTraining}
+                                disabled={isUploadingVideo}
+                                className={cn(
+                                    "w-full py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95 mt-2",
+                                    isUploadingVideo 
+                                        ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-400 cursor-not-allowed"
+                                        : "bg-brand-red hover:bg-brand-red-dark text-white shadow-brand-red/20"
+                                )}
+                            >
+                                <CheckCircle2 size={18} />
+                                <span>훈련 완료 ({training.completion_logs?.length || 0}회 / {training.total_count || 0}회)</span>
+                            </button>
+                        )}
                     </section>
 
                     {/* ── 4-1. Training History (List Style) ── */}
@@ -628,6 +696,212 @@ export default function TrainingDetailPage() {
                                         <ChevronDown size={14} />
                                     </button>
                                 )}
+                            </div>
+                        </section>
+                    )}
+
+                    {/* ── Review Training Plan UI ── */}
+                    {reviewData && (
+                        <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-6">
+                            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
+                                <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                                    <BookOpen size={16} className="text-orange-500" />
+                                    복습 훈련 (집중 관리 홀)
+                                </h3>
+                                <span className="text-[11px] text-zinc-400 font-medium">완료: {reviewData.completedHoles.length} / 전체 {reviewData.analysis?.length || 0}개</span>
+                            </div>
+
+                            <div className="space-y-3">
+                                {(() => {
+                                    const cats = Object.entries(CATEGORY_TO_FIELD).map(([name, field]) => ({
+                                        name,
+                                        sg: reviewData.analysis.reduce((s, h) => s + (h.summary as any)[field], 0)
+                                    }));
+                                    const sumPosSG = cats.filter(c => c.sg > 0).reduce((s, c) => s + c.sg, 0);
+                                    const positiveCats = cats.map(c => ({
+                                        ...c,
+                                        percent: c.sg > 0 ? (c.sg / sumPosSG) * 100 : 0
+                                    })).filter(c => c.sg > 0).sort((a, b) => b.percent - a.percent).slice(0, 5);
+
+                                    return positiveCats.map((cat, idx) => {
+                                        const catName = cat.name;
+                                        const field = CATEGORY_TO_FIELD[catName];
+                                        
+                                        const focusHolesForCat = [...reviewData.analysis]
+                                            .filter(h => (h.summary as any)[field] > 0)
+                                            .sort((a, b) => (b.summary as any)[field] - (a.summary as any)[field])
+                                            .slice(0, 3)
+                                            .sort((a, b) => a.holeNumber - b.holeNumber)
+                                            .map(h => {
+                                                const shots = h.shots || [];
+                                                let worstShotInfo = null;
+                                                
+                                                const relevantShots = shots.filter((s: any) => {
+                                                    if (catName.includes("티샷")) return s.shotLabel.startsWith("TE");
+                                                    if (catName === "벙커") return s.shotLabel.startsWith("GB");
+                                                    if (catName === "어프로치") return s.attemptDistance <= 30 && !s.shotLabel.startsWith("GR") && !s.shotLabel.startsWith("GB") && !s.shotLabel.startsWith("TE");
+                                                    if (catName === "피치샷") return s.attemptDistance >= 31 && s.attemptDistance < 90 && !s.shotLabel.startsWith("GR") && !s.shotLabel.startsWith("GB") && !s.shotLabel.startsWith("TE");
+                                                    if (catName.includes("180M이상")) return s.attemptDistance >= 180 && !s.shotLabel.startsWith("GR") && !s.shotLabel.startsWith("GB");
+                                                    if (catName.includes("150-179M")) return s.attemptDistance >= 150 && s.attemptDistance < 180 && !s.shotLabel.startsWith("GR") && !s.shotLabel.startsWith("GB");
+                                                    if (catName.includes("120-149M")) return s.attemptDistance >= 120 && s.attemptDistance < 150 && !s.shotLabel.startsWith("GR") && !s.shotLabel.startsWith("GB");
+                                                    if (catName.includes("90-119M")) return s.attemptDistance >= 90 && s.attemptDistance < 120 && !s.shotLabel.startsWith("GR") && !s.shotLabel.startsWith("GB");
+                                                    if (catName.includes("9M이상") || catName.includes("4-8M") || catName.includes("2-3M") || catName.includes("1M")) return s.shotLabel.startsWith("GR");
+                                                    return true;
+                                                });
+
+                                                if (relevantShots.length > 0) {
+                                                    // Get the one with the lowest SG (worst shot for this category)
+                                                    const s = relevantShots.sort((a: any, b: any) => a.shotSG - b.shotSG)[0];
+                                                    const startAbbr = s.shotLabel.split('/')[0].trim();
+                                                    worstShotInfo = {
+                                                        attempt: `${LOCATION_ABBR_REV[startAbbr] || startAbbr} / ${s.attemptDistance > 0 ? s.attemptDistance + 'm' : "-"}`,
+                                                        result: LOCATION_ABBR_REV[s.landingLabel] || s.landingLabel || "알수없음",
+                                                        isPenalty: ['OB', 'PA', 'PS'].includes(s.landingLabel)
+                                                    };
+                                                }
+
+                                                return { ...h, worstShotInfo };
+                                            });
+
+                                        if (focusHolesForCat.length === 0) return null;
+
+                                    const isExpanded = expandedReviewIdx === idx;
+                                    const rankNumber = idx + 1;
+
+                                    return (
+                                        <div key={catName} className="border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-sm">
+                                            <button 
+                                                onClick={() => {
+                                                    setExpandedReviewIdx(isExpanded ? null : idx);
+                                                    if (!isExpanded && focusHolesForCat.length > 0 && selectedFocusHole === null) {
+                                                        setSelectedFocusHole(focusHolesForCat[0].holeNumber);
+                                                    }
+                                                }}
+                                                className={cn(
+                                                    "w-full flex items-center justify-between p-4 transition-colors",
+                                                    isExpanded ? "bg-orange-50 dark:bg-orange-950/20" : "bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                                                )}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <span className={cn(
+                                                        "flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold shrink-0",
+                                                        "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400"
+                                                    )}>
+                                                        {rankNumber}
+                                                    </span>
+                                                    <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{catName}</span>
+                                                    <span className="text-[11px] font-medium text-orange-500 bg-orange-100 dark:bg-orange-500/20 px-2 py-0.5 rounded-full">
+                                                        {focusHolesForCat.length}개 홀
+                                                    </span>
+                                                </div>
+                                                <ChevronDown size={18} className={cn("text-zinc-400 transition-transform", isExpanded && "rotate-180")} />
+                                            </button>
+
+                                            {isExpanded && (
+                                                <div className="p-4 bg-zinc-50 dark:bg-zinc-800/30 border-t border-zinc-200 dark:border-zinc-800">
+                                                    <div className="grid grid-cols-3 gap-2 mb-4">
+                                                        {focusHolesForCat.map((h) => {
+                                                            const isHoleSelected = selectedFocusHole === h.holeNumber;
+                                                            return (
+                                                                <button 
+                                                                    key={h.holeNumber} 
+                                                                    onClick={() => setSelectedFocusHole(h.holeNumber)}
+                                                                    className={cn(
+                                                                        "flex flex-col items-center gap-0.5 w-full p-2 rounded-2xl transition-all border-2 relative",
+                                                                        isHoleSelected 
+                                                                            ? "bg-orange-500 border-zinc-900 text-white shadow-md" 
+                                                                            : "bg-white dark:bg-zinc-800 border-zinc-100 dark:border-zinc-800 text-orange-500 hover:border-orange-200"
+                                                                    )}
+                                                                >
+                                                                    {reviewData.completedHoles.includes(h.holeNumber) && (
+                                                                        <div className="absolute -top-1.5 -right-1.5 bg-emerald-500 text-white rounded-full p-0.5 shadow-sm">
+                                                                            <CheckCircle2 size={10} />
+                                                                        </div>
+                                                                    )}
+                                                                    <span className={cn("text-[8px] font-black uppercase tracking-tighter", isHoleSelected ? "text-orange-100" : "text-zinc-400")}>HOLE</span>
+                                                                    <span className={cn("text-lg font-black tracking-tighter")}>{h.holeNumber}</span>
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+
+                                                    {selectedFocusHole !== null && (
+                                                        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-700 shadow-sm overflow-hidden">
+                                                            <div className="bg-orange-500 px-4 py-2 flex items-center justify-between">
+                                                                <span className="text-[11px] font-bold text-white uppercase tracking-wider">{selectedFocusHole}번 홀 집중 분석</span>
+                                                            </div>
+                                                            {(() => {
+                                                                const hData = focusHolesForCat.find(h => h.holeNumber === selectedFocusHole);
+                                                                if (!hData) return <div className="p-4 text-center text-zinc-500 text-xs">데이터 없음</div>;
+                                                                
+                                                                return (
+                                                                    <div className="p-4 space-y-1">
+                                                                        <div className="flex items-center p-3 rounded-xl bg-zinc-50/50 dark:bg-zinc-900/30">
+                                                                            <div className="w-1 h-4 bg-zinc-300 dark:bg-zinc-600 rounded-full mr-3 shrink-0"></div>
+                                                                            <span className="text-[10px] font-bold text-zinc-400 w-12 shrink-0">시도</span>
+                                                                            <span className="flex-1 text-[13px] font-semibold text-zinc-700 dark:text-zinc-300 truncate">
+                                                                                {hData.worstShotInfo?.attempt || "-"}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="flex items-center justify-between p-3 rounded-xl bg-orange-50/30 dark:bg-orange-950/10">
+                                                                            <div className="flex items-center flex-1 min-w-0">
+                                                                                <div className={cn("w-1 h-4 rounded-full mr-3 shrink-0", hData.worstShotInfo?.isPenalty ? "bg-red-500" : "bg-orange-500")}></div>
+                                                                                <span className="text-[10px] font-bold text-zinc-400 w-12 shrink-0">결과</span>
+                                                                                <span className={cn("flex-1 text-[13px] font-bold text-left whitespace-nowrap overflow-hidden text-ellipsis", hData.worstShotInfo?.isPenalty ? "text-red-500" : "text-zinc-900 dark:text-zinc-100")}>
+                                                                                    {hData.worstShotInfo?.isPenalty ? "패널티" : hData.worstShotInfo?.result}
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="pt-2 flex justify-end">
+                                                                            <button 
+                                                                                onClick={async () => {
+                                                                                    const isCompleted = reviewData.completedHoles.includes(hData.holeNumber);
+                                                                                    const newCompleted = isCompleted 
+                                                                                        ? reviewData.completedHoles.filter((h: any) => h !== hData.holeNumber) 
+                                                                                        : [...reviewData.completedHoles, hData.holeNumber];
+                                                                                    
+                                                                                    setReviewData({ ...reviewData, completedHoles: newCompleted });
+                                                                                    
+                                                                                    try {
+                                                                                        const supabase = createClient();
+                                                                                        const { data: recordData } = await supabase.from("records").select("template_settings").eq("id", id).single();
+                                                                                        const currentSettings = recordData?.template_settings || [];
+                                                                                        const updatedSettings = currentSettings.map((s: any) => 
+                                                                                            s.type === "review_scorecard" ? { ...s, completedHoles: newCompleted } : s
+                                                                                        );
+                                                                                        await supabase.from("records").update({ template_settings: updatedSettings }).eq("id", id);
+                                                                                    } catch (e) {
+                                                                                        console.error(e);
+                                                                                    }
+                                                                                }}
+                                                                                className={cn(
+                                                                                    "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95",
+                                                                                    reviewData.completedHoles.includes(hData.holeNumber)
+                                                                                        ? "bg-emerald-50 text-emerald-600 border border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800/50"
+                                                                                        : "bg-orange-500 text-white hover:bg-orange-600 border border-orange-600"
+                                                                                )}
+                                                                            >
+                                                                                {reviewData.completedHoles.includes(hData.holeNumber) ? (
+                                                                                    <>
+                                                                                        <CheckCircle2 size={14} />
+                                                                                        훈련 완료됨
+                                                                                    </>
+                                                                                ) : (
+                                                                                    "훈련 완료"
+                                                                                )}
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                });
+                                })()}
                             </div>
                         </section>
                     )}

@@ -23,7 +23,9 @@ import {
     ClipboardList,
     Server,
     LogOut,
-    UserCircle
+    UserCircle,
+    MessageSquare,
+    Trophy
 } from "lucide-react";
 
 // Menu configuration based on user request
@@ -53,11 +55,12 @@ const menuItems = [
         icon: Dumbbell,
         href: "/training",
     },
+
     {
-        key: "tests",
-        title: "테스트",
-        icon: ClipboardList,
-        href: "/training/tests",
+        key: "challenges",
+        title: "챌린지",
+        icon: Trophy,
+        href: "/training/challenges",
     },
     {
         title: "스케쥴",
@@ -73,23 +76,33 @@ const menuItems = [
         icon: Flag,
         subItems: [
             { key: "scores", title: "스코어", href: "/scores" },
-            { key: "scores-review", title: "스코어 확인", href: "/scores/review" },
+            { key: "scores-stats", title: "스코어 통계", href: "/scores/stats" },
+        ],
+    },
+    {
+        title: "라운지",
+        icon: MessageSquare,
+        subItems: [
+            { key: "community", title: "공지사항", href: "/community" },
+            { key: "polls", title: "투표", href: "/admin/polls" },
+            { key: "consultations", title: "상담", href: "/consultations" },
+            { key: "training-journal", title: "훈련일지", href: "/admin/training-journal" },
+            { key: "attendance", title: "출석 체크", href: "/operations/attendance" },
+            { key: "todo-list", title: "To-Do 리스트", href: "/operations/todos" },
+            { key: "course-management", title: "골프IQ", href: "/course-management" },
+            { key: "reports", title: "선수 레포트", href: "/operations/reports" },
         ],
     },
     {
         title: "운영/관리",
         icon: Settings,
         subItems: [
-            { key: "community", title: "공지사항", href: "/community" },
-            { key: "polls", title: "투표", href: "/admin/polls" },
-            { key: "consultations", title: "상담", href: "/consultations" },
-            { key: "training-journal", title: "훈련일지", href: "/admin/training-journal" },
-            { key: "course-management", title: "골프IQ", href: "/course-management" },
-            { key: "assigned-athletes", title: "담임 선수 관리", href: "/admin/assigned-athletes" },
+            { key: "assigned-athletes", title: "담임 선수 배정", href: "/admin/assigned-athletes" },
             { key: "statistics", title: "운영 통계", href: "/admin/statistics" },
-            { key: "todo-list", title: "To-Do 리스트 관리", href: "/operations/todos" },
+            { key: "tournament-results", title: "대회 성적 관리", href: "/admin/tournament-results" },
             { key: "lesson-list", title: "스윙 오류 관리", href: "/system/lesson-list" },
             { key: "training-list", title: "훈련 리스트 관리", href: "/system/training-list" },
+            { key: "challenge-list", title: "챌린지 컨텐츠 관리", href: "/system/challenge-list" },
         ],
     },
     {
@@ -227,41 +240,42 @@ export function SideNav() {
                     <Menu size={24} />
                 </button>
 
-                {/* Center: Mobile Shortcuts */}
-                <div className="flex-1 flex items-center justify-center gap-3 sm:gap-6 px-1 overflow-x-auto no-scrollbar">
+                {/* Right: Shortcuts + Profile aligned to the right */}
+                <div className="flex items-center gap-1 sm:gap-2 ml-auto">
                     <Link href="/" className={cn(
-                        "px-2 py-1 text-[13px] font-bold transition-colors whitespace-nowrap",
+                        "flex flex-col items-center justify-center min-w-[40px] py-1 rounded-lg transition-all",
                         pathname === "/" ? "text-brand-navy dark:text-brand-navy-light" : "text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
                     )}>
-                        Home
+                        <Home size={18} />
+                        <span className="text-[9px] font-bold mt-0.5 leading-none">Home</span>
                     </Link>
                     <Link href="/lessons" className={cn(
-                        "px-2 py-1 text-[13px] font-bold transition-colors whitespace-nowrap",
+                        "flex flex-col items-center justify-center min-w-[40px] py-1 rounded-lg transition-all",
                         pathname.startsWith("/lessons") ? "text-brand-navy dark:text-brand-navy-light" : "text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
                     )}>
-                        Lesson
+                        <BookOpen size={18} />
+                        <span className="text-[9px] font-bold mt-0.5 leading-none">Lesson</span>
                     </Link>
                     <Link href="/training" className={cn(
-                        "px-2 py-1 text-[13px] font-bold transition-colors whitespace-nowrap",
+                        "flex flex-col items-center justify-center min-w-[40px] py-1 rounded-lg transition-all",
                         pathname.startsWith("/training") ? "text-brand-navy dark:text-brand-navy-light" : "text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
                     )}>
-                        Training
+                        <Dumbbell size={18} />
+                        <span className="text-[9px] font-bold mt-0.5 leading-none">Train</span>
                     </Link>
                     <Link href="/scores" className={cn(
-                        "px-2 py-1 text-[13px] font-bold transition-colors whitespace-nowrap",
+                        "flex flex-col items-center justify-center min-w-[40px] py-1 rounded-lg transition-all",
                         pathname.startsWith("/scores") ? "text-brand-navy dark:text-brand-navy-light" : "text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
                     )}>
-                        Score
+                        <Flag size={18} />
+                        <span className="text-[9px] font-bold mt-0.5 leading-none">Score</span>
                     </Link>
-                </div>
-
-                {/* Right: Search, Notification, Avatar */}
-                <div className="flex items-center gap-1">
-
-
-                    <Link href={profileLink} className="flex items-center gap-2 px-2 py-1 rounded-full text-zinc-400 hover:text-brand-navy dark:hover:text-brand-navy-light hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all shrink-0">
-                        <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{userName}</span>
-                        <UserCircle size={28} strokeWidth={1.5} />
+                    <Link href={profileLink} className={cn(
+                        "flex flex-col items-center justify-center min-w-[44px] py-1 rounded-lg transition-all",
+                        pathname.startsWith("/system/coaches") || pathname.startsWith("/system/athletes") ? "text-brand-navy dark:text-brand-navy-light" : "text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
+                    )}>
+                        <UserCircle size={22} strokeWidth={1.5} />
+                        <span className="text-[9px] font-bold mt-0.5 leading-none">Profile</span>
                     </Link>
                 </div>
             </div>
@@ -282,7 +296,7 @@ export function SideNav() {
                     <div className="flex flex-col gap-4 mb-6">
                         <div className="flex items-center justify-between">
                             <Link href="/" className="flex items-center justify-center w-full px-3 py-2.5 bg-brand-navy rounded-xl shadow-md group border border-brand-navy-dark">
-                                <span className="text-white font-black text-xl tracking-widest transition-transform group-hover:scale-105">GOLFZON</span>
+                                <span className="text-white font-black text-xl tracking-widest transition-transform group-hover:scale-105">Level-Up</span>
                             </Link>
                             {/* Mobile Close Button */}
                             <button

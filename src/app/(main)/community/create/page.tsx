@@ -54,7 +54,13 @@ export default function CreateNoticePage() {
     const [title, setTitle] = useState("");
     const [content, setContent] = useState("");
     const [isImportant, setIsImportant] = useState(false);
-    const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
+    const [startDate, setStartDate] = useState(() => {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    });
     const [endDate, setEndDate] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
@@ -87,7 +93,13 @@ export default function CreateNoticePage() {
                 branch,
                 title,
                 content,
-                date: new Date().toISOString().split("T")[0],
+                date: (() => {
+                    const now = new Date();
+                    const yyyy = now.getFullYear();
+                    const mm = String(now.getMonth() + 1).padStart(2, '0');
+                    const dd = String(now.getDate()).padStart(2, '0');
+                    return `${yyyy}-${mm}-${dd}`;
+                })(),
                 authorId: userId || undefined,
                 isImportant,
                 startDate,

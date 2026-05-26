@@ -16,7 +16,7 @@ export async function fetchAthletes(): Promise<string[]> {
 
         if (!data || data.length === 0) return MOCK_ATHLETES;
 
-        return data.map((u: { name: string }) => u.name).sort();
+        return data.map((u: { name: string }) => (u.name || "").trim().normalize("NFC")).filter(Boolean).sort();
     } catch (err) {
         console.warn("Using fallback mock data (Supabase not initialized):", err);
         return MOCK_ATHLETES;

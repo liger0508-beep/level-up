@@ -35,8 +35,8 @@ const partOptions: { key: TestPart; label: string }[] = [
 ];
 
 const SCORING = {
-    fairway: -0.15,
-    rough: 0.3,
+    fairway: -0.17,
+    rough: 0.23,
     penalty: 0.75
 };
 
@@ -169,7 +169,7 @@ export default function CreateTestPage() {
                                         "text-xl font-black italic",
                                         totalDriverScore <= 0 ? "text-emerald-500" : "text-brand-red"
                                     )}>
-                                        {totalDriverScore > 0 ? `+${totalDriverScore.toFixed(2)}` : totalDriverScore.toFixed(2)}
+                                        {totalDriverScore > 0 ? `+${totalDriverScore.toFixed(1)}` : totalDriverScore.toFixed(1)}
                                     </span>
                                 </div>
                             </div>

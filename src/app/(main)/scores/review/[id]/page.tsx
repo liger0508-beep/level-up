@@ -17,9 +17,9 @@ interface Scorecard {
     holes: { hole_number: number; par: number; score: number; shots: any[] }[];
 }
 
-const roundToTwo = (num: number | undefined) => {
+const roundToOne = (num: number | undefined) => {
     if (num === undefined || num === null) return "";
-    return (Math.sign(num) * Math.round(Math.abs(num) * 100) / 100).toFixed(2);
+    return (Math.sign(num) * Math.round(Math.abs(num) * 10) / 10).toFixed(1);
 };
 
 export default function ScoreDetailReviewPage() {
@@ -146,8 +146,8 @@ export default function ScoreDetailReviewPage() {
         }
         
         if (typeof finalVal === "number") {
-            // 야드일때는 보통 정수로 보므로 Math.round, 미터일때는 roundToTwo
-            return isYard ? Math.round(finalVal).toString() : roundToTwo(finalVal);
+            // 야드일때는 보통 정수로 보므로 Math.round, 미터일때는 roundToOne
+            return isYard ? Math.round(finalVal).toString() : roundToOne(finalVal);
         }
         return finalVal;
     };
@@ -274,14 +274,14 @@ export default function ScoreDetailReviewPage() {
                             {holeNums.map(n => {
                                 const sg = getShotResult(getAnalysis(n), s)?.shotSG;
                                 return <td key={n} className={cn("border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm font-medium", (sg||0) > 0 ? "text-blue-500" : (sg||0) < 0 ? "text-red-500" : "")}>
-                                    {sg !== undefined ? roundToTwo(sg) : ""}
+                                    {sg !== undefined ? roundToOne(sg) : ""}
                                 </td>
                             })}
                         </tr>
                     ))}
                     <tr key="shot-sg-total" className="bg-zinc-50 dark:bg-zinc-900/50 font-bold">
                         <td className="border border-zinc-200 dark:border-zinc-800 p-2 sticky left-0 bg-zinc-50 dark:bg-zinc-900/50 text-brand-navy">총합</td>
-                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center">{roundToTwo(getAnalysis(n)?.totalSG)}</td>)}
+                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center">{roundToOne(getAnalysis(n)?.totalSG)}</td>)}
                     </tr>
                 </TableSection>
 
@@ -289,59 +289,59 @@ export default function ScoreDetailReviewPage() {
                 <TableSection title="거리별 분석 지수" range="C69:U86" startRow={69}>
                     <tr key="dist-sg-total">
                         <td className="border border-zinc-200 dark:border-zinc-800 p-2 font-bold sticky left-0 bg-white dark:bg-zinc-900 text-brand-navy">총합</td>
-                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center font-bold">{roundToTwo(getAnalysis(n)?.totalSG)}</td>)}
+                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center font-bold">{roundToOne(getAnalysis(n)?.totalSG)}</td>)}
                     </tr>
                     <tr key="dist-sg-driver-dist">
                         <td className="border border-zinc-200 dark:border-zinc-800 p-2 font-medium sticky left-0 bg-white dark:bg-zinc-900">드라이버비거리</td>
-                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToTwo(getAnalysis(n)?.summary?.distSG_DriverDist)}</td>)}
+                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToOne(getAnalysis(n)?.summary?.distSG_DriverDist)}</td>)}
                     </tr>
                     <tr key="dist-sg-driver-acc">
                         <td className="border border-zinc-200 dark:border-zinc-800 p-2 font-medium sticky left-0 bg-white dark:bg-zinc-900">정확도</td>
-                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToTwo(getAnalysis(n)?.summary?.distSG_DriverAcc)}</td>)}
+                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToOne(getAnalysis(n)?.summary?.distSG_DriverAcc)}</td>)}
                     </tr>
                     <tr key="dist-sg-180">
                         <td className="border border-zinc-200 dark:border-zinc-800 p-2 font-medium sticky left-0 bg-white dark:bg-zinc-900">180M이상</td>
-                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToTwo(getAnalysis(n)?.summary?.distSG_180Plus)}</td>)}
+                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToOne(getAnalysis(n)?.summary?.distSG_180Plus)}</td>)}
                     </tr>
                     <tr key="dist-sg-150-179">
                         <td className="border border-zinc-200 dark:border-zinc-800 p-2 font-medium sticky left-0 bg-white dark:bg-zinc-900">150-179M</td>
-                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToTwo(getAnalysis(n)?.summary?.distSG_150_179)}</td>)}
+                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToOne(getAnalysis(n)?.summary?.distSG_150_179)}</td>)}
                     </tr>
                     <tr key="dist-sg-120-149">
                         <td className="border border-zinc-200 dark:border-zinc-800 p-2 font-medium sticky left-0 bg-white dark:bg-zinc-900">120-149M</td>
-                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToTwo(getAnalysis(n)?.summary?.distSG_120_149)}</td>)}
+                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToOne(getAnalysis(n)?.summary?.distSG_120_149)}</td>)}
                     </tr>
                     <tr key="dist-sg-90-119">
                         <td className="border border-zinc-200 dark:border-zinc-800 p-2 font-medium sticky left-0 bg-white dark:bg-zinc-900">90-119M</td>
-                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToTwo(getAnalysis(n)?.summary?.distSG_90_119)}</td>)}
+                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToOne(getAnalysis(n)?.summary?.distSG_90_119)}</td>)}
                     </tr>
                     <tr key="dist-sg-pitch">
                         <td className="border border-zinc-200 dark:border-zinc-800 p-2 font-medium sticky left-0 bg-white dark:bg-zinc-900">피치샷</td>
-                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToTwo(getAnalysis(n)?.summary?.distSG_Pitch31_89)}</td>)}
+                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToOne(getAnalysis(n)?.summary?.distSG_Pitch31_89)}</td>)}
                     </tr>
                     <tr key="dist-sg-bunker">
                         <td className="border border-zinc-200 dark:border-zinc-800 p-2 font-medium sticky left-0 bg-white dark:bg-zinc-900">벙커</td>
-                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToTwo(getAnalysis(n)?.summary?.distSG_Bunker)}</td>)}
+                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToOne(getAnalysis(n)?.summary?.distSG_Bunker)}</td>)}
                     </tr>
                     <tr key="dist-sg-approach">
                         <td className="border border-zinc-200 dark:border-zinc-800 p-2 font-medium sticky left-0 bg-white dark:bg-zinc-900">어프로치</td>
-                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToTwo(getAnalysis(n)?.summary?.distSG_Approach)}</td>)}
+                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToOne(getAnalysis(n)?.summary?.distSG_Approach)}</td>)}
                     </tr>
                     <tr key="dist-sg-putt-9">
                         <td className="border border-zinc-200 dark:border-zinc-800 p-2 font-medium sticky left-0 bg-white dark:bg-zinc-900">9M이상</td>
-                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToTwo(getAnalysis(n)?.summary?.distSG_Putt9Plus)}</td>)}
+                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToOne(getAnalysis(n)?.summary?.distSG_Putt9Plus)}</td>)}
                     </tr>
                     <tr key="dist-sg-putt-4-8">
                         <td className="border border-zinc-200 dark:border-zinc-800 p-2 font-medium sticky left-0 bg-white dark:bg-zinc-900">4-8M</td>
-                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToTwo(getAnalysis(n)?.summary?.distSG_Putt4_8)}</td>)}
+                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToOne(getAnalysis(n)?.summary?.distSG_Putt4_8)}</td>)}
                     </tr>
                     <tr key="dist-sg-putt-2-3">
                         <td className="border border-zinc-200 dark:border-zinc-800 p-2 font-medium sticky left-0 bg-white dark:bg-zinc-900">2-3M</td>
-                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToTwo(getAnalysis(n)?.summary?.distSG_Putt2_3)}</td>)}
+                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToOne(getAnalysis(n)?.summary?.distSG_Putt2_3)}</td>)}
                     </tr>
                     <tr key="dist-sg-putt-1">
                         <td className="border border-zinc-200 dark:border-zinc-800 p-2 font-medium sticky left-0 bg-white dark:bg-zinc-900">1M</td>
-                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToTwo(getAnalysis(n)?.summary?.distSG_Putt1)}</td>)}
+                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-sm">{roundToOne(getAnalysis(n)?.summary?.distSG_Putt1)}</td>)}
                     </tr>
                     <tr className="bg-zinc-50 dark:bg-zinc-900/50"><td colSpan={holeNums.length + 1} className="h-4 border border-zinc-200 dark:border-zinc-800"></td></tr>
                     <tr key="ref-85">
@@ -366,7 +366,7 @@ export default function ScoreDetailReviewPage() {
                     </tr>
                     <tr key="total-sg">
                         <td className="border border-zinc-200 dark:border-zinc-800 p-2 font-black sticky left-0 bg-zinc-100 dark:bg-zinc-800 text-brand-navy">총점</td>
-                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center font-black bg-zinc-50 dark:bg-zinc-800/50">{roundToTwo(getAnalysis(n)?.totalSG)}</td>)}
+                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center font-black bg-zinc-50 dark:bg-zinc-800/50">{roundToOne(getAnalysis(n)?.totalSG)}</td>)}
                     </tr>
                     {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(s => {
                         const rows = [
@@ -396,7 +396,7 @@ export default function ScoreDetailReviewPage() {
                                 <td className="border border-zinc-200 dark:border-zinc-800 p-2 sticky left-0 bg-white dark:bg-zinc-900">시도 위치</td>
                                 {holeNums.map(n => {
                                     const val = getShotResult(getAnalysis(n), s)?.tryPosition;
-                                    return <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center">{roundToTwo(val)}</td>
+                                    return <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center">{roundToOne(val)}</td>
                                 })}
                             </tr>,
                             <tr key={`analysis-shot-try-dist-${s}`}>
@@ -410,7 +410,7 @@ export default function ScoreDetailReviewPage() {
                                 <td className="border border-zinc-200 dark:border-zinc-800 p-2 sticky left-0 bg-white dark:bg-zinc-900">위치 결과</td>
                                 {holeNums.map(n => {
                                     const val = getShotResult(getAnalysis(n), s)?.positionResult;
-                                    return <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center">{roundToTwo(val)}</td>
+                                    return <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center">{roundToOne(val)}</td>
                                 })}
                             </tr>,
                             <tr key={`analysis-shot-dist-res-${s}`}>
@@ -425,7 +425,7 @@ export default function ScoreDetailReviewPage() {
                                 {holeNums.map(n => {
                                     const sg = getShotResult(getAnalysis(n), s)?.shotSG;
                                     return <td key={n} className={cn("border border-zinc-200 dark:border-zinc-800 p-2 text-center bg-zinc-50 dark:bg-zinc-800/50", (sg||0) > 0 ? "text-blue-500" : (sg||0) < 0 ? "text-red-500" : "")}>
-                                        {roundToTwo(sg)}
+                                        {roundToOne(sg)}
                                     </td>
                                 })}
                             </tr>
@@ -641,9 +641,9 @@ export default function ScoreDetailReviewPage() {
                                     <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                                         {/* General Stats */}
                                         {[
-                                            { label: "플레이 내용", value: roundToTwo(summary.playContent) },
-                                            { label: "내용대비 스코어", value: (summary.scoreVsContent > 0 ? "+" : "") + roundToTwo(summary.scoreVsContent), color: summary.scoreVsContent > 0 ? "text-blue-500" : "text-red-500" },
-                                            { label: "롱게임대비 숏게임", value: (summary.longVsShort > 0 ? "+" : "") + roundToTwo(summary.longVsShort), color: summary.longVsShort > 0 ? "text-blue-500" : "text-red-500" },
+                                            { label: "플레이 내용", value: roundToOne(summary.playContent) },
+                                            { label: "내용대비 스코어", value: (summary.scoreVsContent > 0 ? "+" : "") + roundToOne(summary.scoreVsContent), color: summary.scoreVsContent > 0 ? "text-blue-500" : "text-red-500" },
+                                            { label: "롱게임대비 숏게임", value: (summary.longVsShort > 0 ? "+" : "") + roundToOne(summary.longVsShort), color: summary.longVsShort > 0 ? "text-blue-500" : "text-red-500" },
                                             { label: "퍼트수", value: summary.totalPutts },
                                             { label: "첫 퍼트 거리(합계)", value: Math.round(summary.sumFirstPuttDist) },
                                             { label: "3퍼트 이상 횟수", value: summary.threePuttCount },
@@ -663,7 +663,7 @@ export default function ScoreDetailReviewPage() {
                                             <tr key={`cat-${idx}`} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/30">
                                                 <td className="border border-zinc-200 dark:border-zinc-800 p-2 font-bold bg-zinc-50 dark:bg-zinc-800/50">{cat.name}</td>
                                                 <td className={cn("border border-zinc-200 dark:border-zinc-800 p-2 text-center font-bold", cat.sg > 0 ? "text-blue-500" : cat.sg < 0 ? "text-red-500" : "text-zinc-400")}>
-                                                    {cat.sg !== 0 ? (cat.sg > 0 ? "+" : "") + roundToTwo(cat.sg) : "0.00"}
+                                                    {cat.sg !== 0 ? (cat.sg > 0 ? "+" : "") + roundToOne(cat.sg) : "0.0"}
                                                 </td>
                                                 <td className="border border-zinc-200 dark:border-zinc-800 p-2 text-center text-zinc-500 font-medium">{Math.round(cat.percent)}%</td>
                                             </tr>

@@ -22,6 +22,7 @@ export interface Vote {
     author: string;
     authorId?: string;
     isImportant?: boolean;
+    isRecurring?: boolean;
     totalParticipants: number;
     createdAt?: string;
 }
@@ -59,6 +60,34 @@ export async function getPolls() {
     return (data || []).map(formatPollFromDb);
 }
 
+export async function getRecurringPollHistory(pollId: string) {
+    const supabase = createClient();
+    const { data, error } = await supabase
+        .from("poll_responses")
+        .select(`
+            option_id,
+            user_id,
+            vote_date,
+            created_at,
+            users!poll_responses_user_id_fkey (name)
+        `)
+        .eq("poll_id", pollId)
+        .order("vote_date", { ascending: false });
+
+    if (error) {
+        console.error("Error fetching recurring poll history:", error.message);
+        return [];
+    }
+
+    return (data || []).map((r: any) => ({
+        optionId: r.option_id,
+        userId: r.user_id,
+        userName: r.users?.name || "익명 사용자",
+        voteDate: r.vote_date,
+        createdAt: r.created_at
+    }));
+}
+
 export async function getPollById(id: string) {
     const supabase = createClient();
     const { data, error } = await supabase
@@ -92,6 +121,7 @@ export async function savePoll(poll: Omit<Vote, "id" | "totalParticipants" | "au
             end_date: poll.endDate,
             author_id: poll.authorId,
             is_important: poll.isImportant,
+            is_recurring: poll.isRecurring,
             total_participants: 0
         }])
         .select(`
@@ -117,6 +147,7 @@ export async function updatePoll(id: string, poll: Partial<Vote>) {
     if (poll.endDate) updateData.end_date = poll.endDate;
     if (poll.author) updateData.author = poll.author;
     if (poll.isImportant !== undefined) updateData.is_important = poll.isImportant;
+    if (poll.isRecurring !== undefined) updateData.is_recurring = poll.isRecurring;
 
     const { data, error } = await supabase
         .from("polls")
@@ -163,27 +194,52 @@ export async function getPollVoters(pollId: string) {
 
 export async function castVote(pollId: string, optionId: string, userId: string) {
     const supabase = createClient();
-    
-    // 1. Check for existing vote
+
+    // 1. Determine the effective "vote date" (6 AM renewal) in local time
+    const now = new Date();
+    // Offset by 6 hours so that 00:00-06:00 counts as the previous day
+    const effectiveDate = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+    const yyyy = effectiveDate.getFullYear();
+    const mm = String(effectiveDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(effectiveDate.getDate()).padStart(2, '0');
+    const voteDateStr = `${yyyy}-${mm}-${dd}`;
+
+    const poll = await getPollById(pollId);
+    if (!poll) return;
+
+    // 2. Check for existing vote
     const existingOptionId = await getUserVote(pollId, userId);
     
     if (existingOptionId === optionId) return; // No change
 
-    // 2. Upsert into poll_responses
-    const { error: responseError } = await supabase
-        .from("poll_responses")
-        .upsert([{
-            poll_id: pollId,
-            user_id: userId,
-            option_id: optionId
-        }], { onConflict: "poll_id,user_id" });
+    // 3. Upsert into poll_responses
+    const responseData: any = {
+        poll_id: pollId,
+        user_id: userId,
+        option_id: optionId
+    };
 
-    if (responseError) throw responseError;
+    if (poll.isRecurring) {
+        responseData.vote_date = voteDateStr;
+    }
 
-    // 3. Update the options JSONB votes
-    const poll = await getPollById(pollId);
-    if (!poll) return;
+    try {
+        const { error: responseError } = await supabase
+            .from("poll_responses")
+            .upsert([responseData], { 
+                onConflict: poll.isRecurring ? "poll_id,user_id,vote_date" : "poll_id,user_id" 
+            });
 
+        if (responseError) throw responseError;
+    } catch (error: any) {
+        if (error.message?.includes("unique or exclusion constraint")) {
+            console.error("Database schema mismatch: Recurring polls require a (poll_id, user_id, vote_date) unique constraint.");
+            throw new Error("데이터베이스 제약 조건 설정이 필요합니다. 관리자에게 문의하거나 제공된 SQL을 실행해 주세요.");
+        }
+        throw error;
+    }
+
+    // 4. Update the options JSONB votes
     const updatedOptions = poll.options.map(opt => {
         let newVotes = opt.votes;
         // Decrement old choice if it exists
@@ -202,12 +258,27 @@ export async function castVote(pollId: string, optionId: string, userId: string)
 
 export async function getUserVote(pollId: string, userId: string) {
     const supabase = createClient();
-    const { data, error } = await supabase
+    
+    // Check if recurring
+    const { data: poll } = await supabase.from("polls").select("is_recurring").eq("id", pollId).single();
+    
+    let query = supabase
         .from("poll_responses")
         .select("option_id")
         .eq("poll_id", pollId)
-        .eq("user_id", userId)
-        .maybeSingle();
+        .eq("user_id", userId);
+
+    if (poll?.is_recurring) {
+        const now = new Date();
+        const effectiveDate = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+        const yyyy = effectiveDate.getFullYear();
+        const mm = String(effectiveDate.getMonth() + 1).padStart(2, '0');
+        const dd = String(effectiveDate.getDate()).padStart(2, '0');
+        const voteDateStr = `${yyyy}-${mm}-${dd}`;
+        query = query.eq("vote_date", voteDateStr);
+    }
+
+    const { data, error } = await query.maybeSingle();
 
     if (error) throw error;
     return data?.option_id || null;
@@ -229,6 +300,7 @@ function formatPollFromDb(dbPoll: any): Vote {
         author: dbPoll.users?.name || "알 수 없음",
         authorId: dbPoll.author_id,
         isImportant: dbPoll.is_important,
+        isRecurring: dbPoll.is_recurring,
         totalParticipants: dbPoll.total_participants,
         createdAt: dbPoll.created_at
     };

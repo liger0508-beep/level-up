@@ -15,6 +15,7 @@ export interface TrainingRecord {
     completion_logs?: string[];
     template_settings?: any[];
     total_count?: number;
+    user_id?: string;
 }
 
 export async function fetchTrainingRecords(filters?: { playerName?: string, category?: string }): Promise<TrainingRecord[]> {
@@ -25,6 +26,7 @@ export async function fetchTrainingRecords(filters?: { playerName?: string, cate
             .from("records")
             .select(`
                 id,
+                user_id,
                 type,
                 category,
                 title,
@@ -68,7 +70,8 @@ export async function fetchTrainingRecords(filters?: { playerName?: string, cate
             template_settings: r.template_settings,
             total_count: r.total_count,
             playerName: r.users?.name || "알 수 없음",
-            coachName: r.coach?.name || "알 수 없음"
+            coachName: r.coach?.name || "알 수 없음",
+            user_id: r.user_id
         }));
     } catch (error: any) {
         console.error("Error fetching training records:", error?.message || error);

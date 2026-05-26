@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+export const dynamic = "force-dynamic";
+
+import { useState, useMemo, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, Calendar, Upload, Search, X, Layers, Image as ImageIcon } from "lucide-react";
@@ -30,10 +32,17 @@ const partOptions: { key: string; label: string }[] = [
 const trainingTypeOptions = [
     { key: "basic", label: "기본기" },
     { key: "preview", label: "예습" },
-    { key: "review", label: "복습" },
 ];
 
 export default function CreateTrainingPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center text-zinc-400">페이지 로딩 중...</div>}>
+            <CreateTrainingContent />
+        </Suspense>
+    );
+}
+
+function CreateTrainingContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const [searchQuery, setSearchQuery] = useState("");
@@ -51,6 +60,7 @@ export default function CreateTrainingPage() {
     const [currentCoachName, setCurrentCoachName] = useState("코치");
 
     const [trainingDate, setTrainingDate] = useState(() => formatLocalDate());
+    const [trainingTime, setTrainingTime] = useState("12:00");
     const [termStart, setTermStart] = useState("");
     const [termEnd, setTermEnd] = useState("");
     const [selectedPart, setSelectedPart] = useState<string>("");
@@ -69,9 +79,13 @@ export default function CreateTrainingPage() {
 
         const playerParam = searchParams.get("player");
         const typeParam = searchParams.get("type");
+        const dateParam = searchParams.get("date");
+        const startParam = searchParams.get("start");
 
         if (playerParam) setSelectedPlayers([playerParam]);
         if (typeParam) setSelectedPart(typeParam);
+        if (dateParam) setTrainingDate(dateParam);
+        if (startParam) setTrainingTime(startParam);
 
         // Fetch current user name
         const supabase = createClient();
@@ -237,6 +251,7 @@ export default function CreateTrainingPage() {
                     title: finalTitle || "훈련 기록",
                     content: trainingComment,
                     date: trainingDate,
+                    startTime: trainingTime,
                     training_start: termStart,
                     training_end: termEnd,
                     total_count: totalCount,

@@ -1,0 +1,2 @@
+ALTER TABLE IF EXISTS public.scorecard_shots
+ADD COLUMN IF NOT EXISTS memo TEXT;

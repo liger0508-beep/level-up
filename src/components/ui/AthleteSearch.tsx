@@ -15,6 +15,17 @@ interface AthleteSearchProps {
     multi?: boolean;
 }
 
+function getChosung(str: string) {
+    const cho = ["ㄱ", "ㄲ", "ㄴ", "ㄷ", "ㄸ", "ㄹ", "ㅁ", "ㅂ", "ㅃ", "ㅅ", "ㅆ", "ㅇ", "ㅈ", "ㅉ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"];
+    let result = "";
+    for (let i = 0; i < str.length; i++) {
+        const code = str.charCodeAt(i) - 44032;
+        if (code > -1 && code < 11172) result += cho[Math.floor(code / 588)];
+        else result += str.charAt(i);
+    }
+    return result;
+}
+
 export function AthleteSearch({
     onSelect,
     onRemove,
@@ -46,9 +57,14 @@ export function AthleteSearch({
 
     const suggestions = useMemo(() => {
         if (!query.trim()) return [];
-        return allAthletes.filter(a =>
-            a.normalize("NFD").toLowerCase().includes(query.normalize("NFD").toLowerCase())
-        );
+        const normalizedQuery = query.toLowerCase();
+        const chosungQuery = getChosung(normalizedQuery);
+        
+        return allAthletes.filter(a => {
+            const normalizedA = a.toLowerCase();
+            const chosungA = getChosung(normalizedA);
+            return normalizedA.includes(normalizedQuery) || chosungA.includes(chosungQuery);
+        });
     }, [allAthletes, query]);
 
     const handleSelect = (name: string) => {

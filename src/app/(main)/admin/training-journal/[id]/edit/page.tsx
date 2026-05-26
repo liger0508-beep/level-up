@@ -32,8 +32,6 @@ export default function EditJournalPage() {
     const [trainingDate, setTrainingDate] = useState("");
     const [shotType, setShotType] = useState<ShotType>("good");
     const [content, setContent] = useState("");
-    const [keywords, setKeywords] = useState<string[]>([]);
-    const [keywordInput, setKeywordInput] = useState("");
     const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
     const [existingMedia, setExistingMedia] = useState<string[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -45,7 +43,6 @@ export default function EditJournalPage() {
                     setTrainingDate(data.date);
                     setShotType(data.type === "all" ? "good" : data.type as ShotType);
                     setContent(getPlainText(data.content));
-                    setKeywords(data.keywords || []);
                     setExistingMedia(data.media_urls || []);
                 }
                 setIsLoading(false);
@@ -88,7 +85,6 @@ export default function EditJournalPage() {
                 type: shotType as any,
                 date: trainingDate,
                 content: content,
-                keywords: keywords,
                 media_urls: [...existingMedia, ...newMediaUrls],
             });
             alert("수정이 완료되었습니다.");
@@ -100,6 +96,19 @@ export default function EditJournalPage() {
             setIsSubmitting(false);
         }
     };
+
+    const placeholderText = useMemo(() => {
+        if (shotType === "good") {
+            return "굿샷을 반복할수 있도록 훈련중 잘된 점을 상세히 기록해 주세요";
+        }
+        if (shotType === "miss") {
+            return "미스샷을 반복하지 않도록 훈련중 안된 점을 상세히 기록해 주세요";
+        }
+        if (shotType === "field") {
+            return "라운드중 느낀점을 상세히 기록해 주세요";
+        }
+        return "훈련 내용을 상세히 기록해 주세요";
+    }, [shotType]);
 
     const isValid = !!trainingDate && !!shotType && !!content.trim();
 
@@ -236,46 +245,7 @@ export default function EditJournalPage() {
                         </div>
                     </section>
 
-                    {/* ── 4. 키워드 ── */}
-                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-3">
-                        <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                            키워드
-                        </label>
-                        <div className="flex flex-wrap gap-2 mb-2">
-                            {keywords.map((kw, i) => (
-                                <span key={i} className="inline-flex items-center gap-1 px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                                    #{kw}
-                                    <button 
-                                        type="button" 
-                                        onClick={() => setKeywords(prev => prev.filter((_, idx) => idx !== i))}
-                                        className="text-zinc-400 hover:text-brand-red transition-colors"
-                                    >
-                                        <X size={12} />
-                                    </button>
-                                </span>
-                            ))}
-                        </div>
-                        <div className="relative">
-                            <input
-                                type="text"
-                                value={keywordInput}
-                                onChange={(e) => setKeywordInput(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        if (keywordInput.trim() && !keywords.includes(keywordInput.trim())) {
-                                            setKeywords(prev => [...prev, keywordInput.trim()]);
-                                            setKeywordInput("");
-                                        }
-                                    }
-                                }}
-                                placeholder="키워드 입력 후 Enter (예: 드라이버, 슬라이스)"
-                                className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all"
-                            />
-                        </div>
-                    </section>
-
-                    {/* ── 5. 내용 ── */}
+                    {/* ── 4. 내용 ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-3">
                         <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
                             내용 <span className="text-brand-red">*</span>
@@ -284,7 +254,7 @@ export default function EditJournalPage() {
                             rows={6}
                             value={content}
                             onChange={(e) => setContent(e.target.value)}
-                            placeholder="훈련 내용을 상세히 기록해주세요..."
+                            placeholder={placeholderText}
                             className="w-full p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all resize-y"
                         />
                     </section>

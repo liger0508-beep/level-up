@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { Activity, ChevronLeft, ChevronRight, MoreVertical, Calendar, MessageSquare, Send, User, Edit2, Trash2, Paperclip, X } from "lucide-react";
 
-import { fetchAnalysisById, AnalysisRecord, fetchComments, saveComment, updateComment, deleteComment, AnalysisComment } from "@/lib/analysis-sync";
+import { fetchAnalysisById, AnalysisRecord, fetchComments, saveComment, updateComment, deleteComment, deleteAnalysisRecord, AnalysisComment } from "@/lib/analysis-sync";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { uploadFile } from "@/lib/storage-sync";
@@ -71,12 +71,17 @@ export default function AnalysisDetailPage() {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const handleDelete = () => {
+    const handleDelete = async () => {
         setIsMenuOpen(false);
         const confirmDelete = window.confirm("분석 내용을 삭제하시겠습니까?");
         if (confirmDelete) {
-            alert("삭제되었습니다.");
-            router.push("/analysis");
+            try {
+                await deleteAnalysisRecord(id as string);
+                alert("삭제되었습니다.");
+                router.push("/analysis");
+            } catch (err) {
+                alert("삭제에 실패했습니다.");
+            }
         }
     };
 

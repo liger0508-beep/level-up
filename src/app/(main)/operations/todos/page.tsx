@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { 
     Calendar as CalendarIcon, 
@@ -201,7 +202,13 @@ export default function TodoPage() {
             };
         });
 
-        const mappedTrainings: UnifiedItem[] = (trainingData || []).map(t => {
+        const mappedTrainings: UnifiedItem[] = (trainingData || [])
+            .filter(t => {
+                if (role === 'admin') return false;
+                if (role === 'coach' && t.coach_id === currentUserId) return false;
+                return true;
+            })
+            .map(t => {
             const isCompletedToday = t.completion_logs?.some((log: string) => {
                 try {
                     let timestamp = log;
@@ -227,6 +234,7 @@ export default function TodoPage() {
         });
 
         const mappedOtherRecords: UnifiedItem[] = (recordsData || []).filter(r => {
+            if (r.type === 'course_management') return false;
             // Filter out journals and trainings already handled or matched to schedules
             const isUsedInTraining = r.type === 'training' && trainingData?.some(at => r.id === at.id);
             const matchesSchedule = (scheduleData || []).some(s => 
@@ -237,7 +245,7 @@ export default function TodoPage() {
         }).map(r => {
             const dStart = new Date(r.created_at);
             const timeStr = `${dStart.getHours().toString().padStart(2, '0')}:${dStart.getMinutes().toString().padStart(2, '0')}`;
-            const typeLabels: Record<string, string> = { lesson: "레슨", training: "훈련", analysis: "분석", journal: "일지", course_management: "코스" };
+            const typeLabels: Record<string, string> = { lesson: "레슨", training: "훈련", analysis: "분석", journal: "일지" };
             return {
                 id: r.id,
                 type: r.type as any,
@@ -267,7 +275,23 @@ export default function TodoPage() {
             };
         });
 
-        const allItems = [...mappedTodos, ...mappedSchedules, ...mappedTrainings, ...mappedOtherRecords, ...mappedScores];
+        const dailyJournals: UnifiedItem[] = [];
+        if (role === "athlete") {
+            const todaysJournals = (recordsData || []).filter(r => r.type === 'journal');
+            if (todaysJournals.length === 0) {
+                dailyJournals.push({
+                    id: `daily-journal-${date}`,
+                    type: 'journal',
+                    title: '훈련일지 작성',
+                    content: '오늘의 훈련 일지를 작성해주세요.',
+                    is_completed: false,
+                    due_date: date,
+                    user_id: currentUserId
+                });
+            }
+        }
+
+        const allItems = [...mappedTodos, ...mappedSchedules, ...mappedTrainings, ...mappedOtherRecords, ...mappedScores, ...dailyJournals];
         allItems.sort((a, b) => {
             if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
             const typeOrder = { todo: 0, schedule: 1, training: 2, lesson: 3, analysis: 4, score: 5, journal: 6 };
@@ -338,21 +362,71 @@ export default function TodoPage() {
     }, [allUsers, userSearchQuery]);
 
     const toggleComplete = async (item: UnifiedItem) => {
-        if (item.type !== 'todo') {
-            alert("자동 연동 항목(예약, 훈련, 기록 등)의 상태는 해당 메뉴에서 변경해주세요.");
-            return;
-        }
-
         const supabase = createClient();
-        const { error } = await supabase
-            .from("todos")
-            .update({ is_completed: !item.is_completed })
-            .eq("id", item.id);
+        const isCurrentlyCompleted = item.is_completed;
+        const todayStr = formatLocalDate(new Date());
 
-        if (error) {
+        try {
+            if (item.type === 'todo') {
+                const { error } = await supabase
+                    .from("todos")
+                    .update({ is_completed: !isCurrentlyCompleted })
+                    .eq("id", item.id);
+                if (error) throw error;
+            } else if (item.type === 'schedule') {
+                const { error } = await supabase
+                    .from("schedules")
+                    .update({ status: isCurrentlyCompleted ? 'scheduled' : 'completed' })
+                    .eq("id", item.id);
+                if (error) throw error;
+            } else if (item.type === 'training') {
+                // Find the record and update completion_logs
+                const { data: record } = await supabase
+                    .from("records")
+                    .select("id, completion_logs")
+                    .eq("id", item.id)
+                    .single();
+                
+                if (record) {
+                    let logs = [];
+                    if (record.completion_logs) {
+                        logs = Array.isArray(record.completion_logs) ? record.completion_logs : [record.completion_logs];
+                    }
+                    
+                    if (!isCurrentlyCompleted) {
+                        // Add today's log
+                        logs.push(JSON.stringify({ timestamp: new Date().toISOString(), type: 'quick-complete' }));
+                    } else {
+                        // Remove today's log
+                        logs = logs.filter((log: string) => {
+                            try {
+                                const ts = log.startsWith('{') ? JSON.parse(log).timestamp : log;
+                                return formatLocalDate(new Date(ts)) === todayStr;
+                            } catch { return true; }
+                        }).filter((log: string) => {
+                            // Actually we want to KEEP logs from OTHER days, and only remove today's logs if we are un-completing
+                            try {
+                                const ts = log.startsWith('{') ? JSON.parse(log).timestamp : log;
+                                return formatLocalDate(new Date(ts)) !== todayStr;
+                            } catch { return true; }
+                        });
+                    }
+
+                    const { error } = await supabase
+                        .from("records")
+                        .update({ completion_logs: logs })
+                        .eq("id", record.id);
+                    if (error) throw error;
+                }
+            } else {
+                alert("자동 연동 항목(기록 등)의 상태는 해당 메뉴에서 변경해주세요.");
+                return;
+            }
+
+            setItems(items.map(t => t.id === item.id && t.type === item.type ? { ...t, is_completed: !isCurrentlyCompleted } : t));
+        } catch (err) {
+            console.error("Toggle failed:", err);
             alert("상태 변경 중 오류가 발생했습니다.");
-        } else {
-            setItems(items.map(t => t.id === item.id ? { ...t, is_completed: !t.is_completed } : t));
         }
     };
 
@@ -453,13 +527,15 @@ export default function TodoPage() {
                         >
                             <button 
                                 onClick={() => toggleComplete(item)}
-                                disabled={item.type !== 'todo'}
+                                disabled={!['todo', 'schedule', 'training'].includes(item.type)}
+                                title={['todo', 'schedule', 'training'].includes(item.type) ? "완료 체크" : "자동 연동 항목"}
                                 className={cn(
                                     "shrink-0 w-8 h-8 rounded-full flex items-center justify-center transition-all",
                                     item.is_completed 
                                         ? "bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400" 
                                         : "text-zinc-300 border-2 border-zinc-100 dark:border-zinc-800",
-                                    item.type === 'todo' && !item.is_completed && "hover:text-brand-navy hover:border-brand-navy/50"
+                                    ['todo', 'schedule', 'training'].includes(item.type) && !item.is_completed && "hover:text-brand-navy hover:border-brand-navy/50 cursor-pointer",
+                                    !['todo', 'schedule', 'training'].includes(item.type) && "cursor-default"
                                 )}
                             >
                                 {item.is_completed ? <CheckCircle2 size={24} /> : (
@@ -467,17 +543,22 @@ export default function TodoPage() {
                                     item.type === 'training' ? <Dumbbell size={20} /> :
                                     <Circle size={24} />
                                 )}
-                                {!item.is_completed && (item.type === 'lesson' || item.type === 'analysis' || item.type === 'score' || item.type === 'journal') && <CheckCircle2 size={24} />}
                             </button>
 
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-1">
-                                    <h3 className={cn(
-                                        "text-base font-bold truncate",
-                                        item.is_completed ? "text-zinc-400 line-through" : "text-zinc-900 dark:text-zinc-50"
-                                    )}>
-                                        {item.title}
-                                    </h3>
+                                    <Link href={
+                                        item.type === 'todo' && item.title && item.title.includes(':::ID:::')
+                                            ? `/course-management/${item.title.split(':::ID:::')[1].trim()}`
+                                            : '#'
+                                    }>
+                                        <h3 className={cn(
+                                            "text-base font-bold truncate hover:text-brand-navy dark:hover:text-brand-navy-light cursor-pointer transition-colors",
+                                            item.is_completed ? "text-zinc-400 line-through" : "text-zinc-900 dark:text-zinc-50"
+                                        )}>
+                                            {item.title ? item.title.split(':::ID:::')[0] : ''}
+                                        </h3>
+                                    </Link>
                                     {(item.type === 'todo' || item.type === 'training') && item.assigner_id && item.assigner_id !== item.user_id && (
                                         <span className="px-2 py-0.5 rounded-full bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 text-[10px] font-black uppercase">
                                             Assigned by {item.assigner_name}

@@ -8,6 +8,7 @@ import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { fetchAthletes } from "@/lib/athlete-sync";
 import { createClient } from "@/lib/supabase/client";
 import { formatLocalDate } from "@/lib/utils";
+import { DatePresets, DatePresetType } from "@/components/ui/DatePresets";
 
 // ── Supabase & Data Fetching ───────────────────────────────
 
@@ -19,6 +20,7 @@ export default function ScoresPage() {
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
     const [displayLimit, setDisplayLimit] = useState(20);
+    const [activePreset, setActivePreset] = useState<DatePresetType>("custom");
     
     const [allScores, setAllScores] = useState<ScoreData[]>([]);
     const [loading, setLoading] = useState(true);
@@ -49,6 +51,18 @@ export default function ScoresPage() {
             setAllAthletes(athletes);
             setSelectedPlayers(new Set(athletes));
 
+            // 2.5 Cleanup old drafts (created > 24h ago and not final)
+            try {
+                const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+                await supabase
+                    .from("scorecards")
+                    .delete()
+                    .eq("is_final", false)
+                    .lt("created_at", twentyFourHoursAgo);
+            } catch (err) {
+                console.error("Cleanup error:", err);
+            }
+
             // 3. Fetch Scorecards
             const { data: scorecards, error } = await supabase
                 .from("scorecards")
@@ -57,23 +71,44 @@ export default function ScoresPage() {
                     total_score, 
                     course_name, 
                     round_date, 
+                    created_at,
                     memo,
                     athlete:users!scorecards_athlete_id_fkey(id, name),
-                    coach:users!scorecards_coach_id_fkey(name)
+                    coach:users!scorecards_coach_id_fkey(name),
+                    holes:scorecard_holes(score),
+                    hole_count,
+                    is_final
                 `)
-                .order("round_date", { ascending: false });
+                .order("round_date", { ascending: false })
+                .order("created_at", { ascending: false });
 
             if (scorecards) {
-                const mapped: ScoreData[] = scorecards.map(s => ({
-                    id: s.id,
-                    score: s.total_score || 0,
-                    title: `${s.course_name} 라운드`,
-                    playerName: (s.athlete as any)?.name || "미지정",
-                    coachName: (s.coach as any)?.name || "미지정",
-                    courseName: s.course_name,
-                    comment: s.memo || "",
-                    date: s.round_date
-                }));
+                const mapped: ScoreData[] = scorecards.map(s => {
+                    const holes = (s as any).holes || [];
+                    const completedCount = holes.filter((h: any) => h.score > 0 && h.score !== -1).length;
+
+                    return {
+                        id: s.id,
+                        score: s.total_score || 0,
+                        title: `${s.course_name} 라운드`,
+                        playerName: (s.athlete as any)?.name || "미지정",
+                        coachName: (s.coach as any)?.name || "미지정",
+                        courseName: s.course_name,
+                        comment: s.memo || "",
+                        date: s.round_date,
+                        completedHoles: completedCount,
+                        holeCount: (s as any).hole_count || (completedCount > 9 ? 18 : 9),
+                        isFinal: (s as any).is_final
+                    };
+                }).sort((a, b) => {
+                    // 1. Incomplete (Draft) first
+                    if (a.isFinal === false && b.isFinal !== false) return -1;
+                    if (a.isFinal !== false && b.isFinal === false) return 1;
+                    // 2. Then by date descending
+                    if (a.date > b.date) return -1;
+                    if (a.date < b.date) return 1;
+                    return 0;
+                });
                 setAllScores(mapped);
 
                 // Calculate summary
@@ -89,18 +124,24 @@ export default function ScoresPage() {
                 }
                 
                 if (relevantScores.length > 0) {
-                    const avg = relevantScores.reduce((sum, s) => sum + s.score, 0) / relevantScores.length;
+                    // 통계는 18홀 라운드만 기준으로 계산 (평균, 베스트)
+                    const fullRounds = relevantScores.filter(s => s.holeCount === 18 && s.completedHoles === 18);
                     
-                    // Find best score and the player who achieved it
-                    let bestScore = relevantScores[0].score;
-                    let bestPlayer = relevantScores[0].playerName;
-                    
-                    relevantScores.forEach(s => {
-                        if (s.score < bestScore) {
-                            bestScore = s.score;
-                            bestPlayer = s.playerName;
-                        }
-                    });
+                    let avg = 0;
+                    let bestScore = 0;
+                    let bestPlayer = "";
+
+                    if (fullRounds.length > 0) {
+                        avg = fullRounds.reduce((sum, s) => sum + s.score, 0) / fullRounds.length;
+                        bestScore = fullRounds[0].score;
+                        bestPlayer = fullRounds[0].playerName;
+                        fullRounds.forEach(s => {
+                            if (s.score < bestScore) {
+                                bestScore = s.score;
+                                bestPlayer = s.playerName;
+                            }
+                        });
+                    }
 
                     const thisMonth = relevantScores.filter(s => s.date.startsWith(currentMonth)).length;
                     setSummaryStats({
@@ -214,7 +255,9 @@ export default function ScoresPage() {
                             </div>
                             <div className="flex flex-col items-end">
                                 <div className="flex items-baseline gap-1">
-                                    <p className="text-3xl font-black text-zinc-900 dark:text-zinc-50 tracking-tighter italic">{summaryStats.avg || "--"}</p>
+                                    <p className={`text-3xl font-black tracking-tighter italic ${summaryStats.avg > 0 ? (summaryStats.avg < 72 ? "text-red-500" : summaryStats.avg > 72 ? "text-blue-500" : "text-zinc-900 dark:text-zinc-50") : "text-zinc-900 dark:text-zinc-50"}`}>
+                                        {summaryStats.avg || "--"}
+                                    </p>
                                     <span className="text-xs font-bold text-zinc-400">타</span>
                                 </div>
                             </div>
@@ -233,7 +276,9 @@ export default function ScoresPage() {
                                     <span className="text-[10px] font-bold text-zinc-400 mb-1">{summaryStats.bestPlayerName} 선수</span>
                                 )}
                                 <div className="flex items-baseline gap-1">
-                                    <p className="text-3xl font-black text-brand-red tracking-tighter italic">{summaryStats.best || "--"}</p>
+                                    <p className={`text-3xl font-black tracking-tighter italic ${summaryStats.best > 0 ? (summaryStats.best < 72 ? "text-red-500" : summaryStats.best > 72 ? "text-blue-500" : "text-zinc-900 dark:text-zinc-50") : "text-zinc-900 dark:text-zinc-50"}`}>
+                                        {summaryStats.best || "--"}
+                                    </p>
                                     <span className="text-xs font-bold text-zinc-400">타</span>
                                 </div>
                             </div>
@@ -298,8 +343,13 @@ export default function ScoresPage() {
                                     <BarChart3 size={14} className="text-zinc-300 group-hover:text-brand-navy transition-colors shrink-0" />
                                 </div>
                                 <div className="text-right">
-                                    <div className={`text-[17px] font-black tracking-tight mb-0.5 ${s.score < 72 ? "text-red-500" : s.score > 72 ? "text-blue-500" : "text-zinc-900 dark:text-zinc-100"}`}>
+                                    <div className={`text-[17px] font-black tracking-tight mb-0.5 ${s.score < (s.holeCount === 9 ? 36 : 72) ? "text-red-500" : s.score > (s.holeCount === 9 ? 36 : 72) ? "text-blue-500" : "text-zinc-900 dark:text-zinc-100"}`}>
                                         {s.score}타
+                                        {s.holeCount === 9 ? (
+                                            <span className="ml-1 text-[11px] text-zinc-400 font-bold italic tracking-tighter">(9H)</span>
+                                        ) : (s.completedHoles !== undefined && s.completedHoles > 0 && s.completedHoles < 18 && (
+                                            <span className="ml-1 text-[11px] text-zinc-400 font-bold italic tracking-tighter">({s.completedHoles}H)</span>
+                                        ))}
                                     </div>
                                     <div className="text-[11px] text-zinc-500 font-medium truncate">
                                         {s.courseName}
@@ -325,14 +375,14 @@ export default function ScoresPage() {
                         <DatePickerInput
                             value={startDate}
                             onClick={(e) => (e.target as any).showPicker?.()}
-                            onChange={(e) => setStartDate(e.target.value)}
+                            onChange={(e) => { setStartDate(e.target.value); setActivePreset("custom"); }}
                             className="no-year-date flex-1 min-w-0 px-2 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-[13px] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all text-center cursor-pointer"
                         />
                         <span className="text-zinc-400 shrink-0 text-xs">~</span>
                         <DatePickerInput
                             value={endDate}
                             onClick={(e) => (e.target as any).showPicker?.()}
-                            onChange={(e) => setEndDate(e.target.value)}
+                            onChange={(e) => { setEndDate(e.target.value); setActivePreset("custom"); }}
                             className="no-year-date flex-1 min-w-0 px-2 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-[13px] text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all text-center cursor-pointer"
                         />
                     </div>
@@ -386,6 +436,14 @@ export default function ScoresPage() {
                             ({filteredScores.length}건)
                         </span>
                     </div>
+                    <DatePresets
+                        activePreset={activePreset}
+                        onPresetChange={(start, end, preset) => {
+                            setStartDate(start);
+                            setEndDate(end);
+                            setActivePreset(preset);
+                        }}
+                    />
                 </div>
                 <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
                     {displayedScores.length > 0 ? (

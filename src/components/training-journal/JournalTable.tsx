@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { Journal, JournalType, JOURNAL_TYPE_LABELS } from "@/lib/journal-sync";
 import { cn } from "@/lib/utils";
+import { Paperclip } from "lucide-react";
 
 const typeConfig: Record<JournalType, {
     accentBorder: string;
@@ -45,18 +46,35 @@ export function JournalTable({ journals }: JournalTableProps) {
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-1.5 min-w-0">
                                     <span className={cn("w-2 h-2 rounded-full shrink-0", cfg.dotColor)} />
-                                    <span className={cn("w-[5.5rem] text-[11px] font-bold uppercase tracking-widest shrink-0", cfg.labelColor)}>
+                                    <span className={cn("w-[3.8rem] text-[11px] font-bold uppercase tracking-widest shrink-0", cfg.labelColor)}>
                                         {label}
                                     </span>
                                     <span className="mr-1.5 w-[1px] h-3 bg-zinc-200 dark:bg-zinc-700 shrink-0" />
                                     <span className="text-[14px] font-bold text-zinc-900 dark:text-zinc-100 truncate">
                                         {journal.athleteName}
+                                        {journal.type === 'field' && journal.fieldScore !== undefined && (
+                                            <span className="ml-1.5 text-[11px] font-medium font-normal">
+                                                (
+                                                <span className={cn(
+                                                    journal.fieldScore - (journal.fieldHoleCount === 9 ? 36 : 72) < 0 ? "text-red-500 font-bold" :
+                                                    journal.fieldScore - (journal.fieldHoleCount === 9 ? 36 : 72) > 0 ? "text-blue-500 font-bold" : "text-zinc-900 dark:text-zinc-100 font-bold"
+                                                )}>
+                                                    {journal.fieldScore}타
+                                                </span>
+                                                <span className="text-zinc-400"> • </span>
+                                                <span className="text-zinc-900 dark:text-zinc-100">{journal.fieldCourse}</span>
+                                                )
+                                            </span>
+                                        )}
                                     </span>
                                     {journal.isImportant && (
                                         <span className="ml-1.5 shrink-0 text-[10px] font-bold text-red-500 border border-red-200 px-1 py-0.5 rounded bg-red-50">중요</span>
                                     )}
                                 </div>
                                 <div className="flex items-center gap-0.5 shrink-0 pl-3">
+                                    {journal.media_urls && journal.media_urls.length > 0 && (
+                                        <Paperclip size={12} className="text-brand-navy mr-0.5" />
+                                    )}
                                     <span className="text-[11px] text-zinc-400 font-medium">
                                         {journal.date.slice(5).replace("-", ".")}
                                     </span>
@@ -99,10 +117,32 @@ export function JournalTable({ journals }: JournalTableProps) {
                                     <td className="py-3.5 px-4 text-center">
                                         <span className="text-zinc-700 dark:text-zinc-300 font-bold truncate">
                                             {journal.athleteName}
+                                            {journal.type === 'field' && journal.fieldScore !== undefined && (
+                                                <span className="ml-1.5 text-[11px] font-medium font-normal">
+                                                    (
+                                                    <span className={cn(
+                                                        journal.fieldScore - (journal.fieldHoleCount === 9 ? 36 : 72) < 0 ? "text-red-500 font-bold" :
+                                                        journal.fieldScore - (journal.fieldHoleCount === 9 ? 36 : 72) > 0 ? "text-blue-500 font-bold" : "text-zinc-900 dark:text-zinc-100 font-bold"
+                                                    )}>
+                                                        {journal.fieldScore}타
+                                                    </span>
+                                                    <span className="text-zinc-400"> • </span>
+                                                    <span className="text-zinc-900 dark:text-zinc-100">{journal.fieldCourse}</span>
+                                                    )
+                                                </span>
+                                            )}
                                         </span>
                                     </td>
                                     <td className="py-3.5 px-4 text-center text-zinc-500 dark:text-zinc-500">
-                                        {journal.date.slice(5).replace("-", ".")}
+                                        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1.5">
+                                            <div className="flex justify-end">
+                                                {journal.media_urls && journal.media_urls.length > 0 && (
+                                                    <Paperclip size={14} className="text-brand-navy" />
+                                                )}
+                                            </div>
+                                            <span className="text-center">{journal.date.slice(5).replace("-", ".")}</span>
+                                            <div></div>
+                                        </div>
                                     </td>
                                 </tr>
                             );

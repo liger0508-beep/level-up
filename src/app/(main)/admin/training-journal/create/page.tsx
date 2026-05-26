@@ -16,13 +16,14 @@ import {
     BarChart3,
     ArrowRight,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatLocalDate } from "@/lib/utils";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { AthleteSearch } from "@/components/ui/AthleteSearch";
-import { fetchJournals, saveJournal, calculateShotRatio, JournalType, JOURNAL_TYPE_LABELS } from "@/lib/journal-sync";
+import { fetchJournals, saveJournal, calculateShotRatio, JournalType, JOURNAL_TYPE_LABELS, fetchJournalsByAthlete, Journal } from "@/lib/journal-sync";
 import { createClient } from "@/lib/supabase/client";
 import { fetchLatestScoreByPlayer, ScoreData } from "@/lib/score-sync";
 import { uploadFile } from "@/lib/storage-sync";
+import { Target, AlertTriangle, FileText, ChevronRight, TrendingDown, TrendingUp } from "lucide-react";
 
 const mockPlayers = ["이수진", "최민준", "김지윤", "박도윤", "이지원", "한상욱"];
 
@@ -36,28 +37,56 @@ export default function CreateJournalPage() {
     const [selectedPlayer, setSelectedPlayer] = useState("");
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [trainingDate, setTrainingDate] = useState(() =>
-        new Date().toISOString().split("T")[0]
+        formatLocalDate()
     );
     const [shotType, setShotType] = useState<ShotType | null>(null);
     const [title, setTitle] = useState("");
     const [content, setContent] = useState("");
-    const [keywords, setKeywords] = useState<string[]>([]);
-    const [keywordInput, setKeywordInput] = useState("");
     const [userRole, setUserRole] = useState<string | null>(null);
     const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
     const [latestScore, setLatestScore] = useState<ScoreData | null>(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
     const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+    const [playerJournals, setPlayerJournals] = useState<Journal[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const JOURNAL_TEMP_KEY = "journal_create_temp";
+
+    useEffect(() => {
+        const temp = sessionStorage.getItem(JOURNAL_TEMP_KEY);
+        if (temp) {
+            try {
+                const data = JSON.parse(temp);
+                if (data.selectedPlayer) setSelectedPlayer(data.selectedPlayer);
+                if (data.trainingDate) setTrainingDate(data.trainingDate);
+                if (data.shotType) setShotType(data.shotType);
+                if (data.content) setContent(data.content);
+            } catch(e) {}
+        }
+    }, []);
+
+    useEffect(() => {
+        const data = { selectedPlayer, trainingDate, shotType, content };
+        sessionStorage.setItem(JOURNAL_TEMP_KEY, JSON.stringify(data));
+    }, [selectedPlayer, trainingDate, shotType, content]);
+
+    // ── Fetch Player Journals for Ratio ──────────────────────────
+    useEffect(() => {
+        if (selectedPlayer) {
+            fetchJournalsByAthlete(selectedPlayer).then(setPlayerJournals);
+        } else {
+            setPlayerJournals([]);
+        }
+    }, [selectedPlayer]);
 
     useEffect(() => {
         if (shotType === "field" && selectedPlayer) {
-            fetchLatestScoreByPlayer(selectedPlayer).then(setLatestScore);
+            fetchLatestScoreByPlayer(selectedPlayer, trainingDate).then(setLatestScore);
         } else {
             setLatestScore(null);
         }
-    }, [shotType, selectedPlayer]);
+    }, [shotType, selectedPlayer, trainingDate]);
 
     useEffect(() => {
         const supabase = createClient();
@@ -95,8 +124,8 @@ export default function CreateJournalPage() {
 
     // ── Shot Ratio ───────────────────────────────────────────────────
     const ratio = useMemo(
-        () => calculateShotRatio([]),
-        []
+        () => calculateShotRatio(playerJournals),
+        [playerJournals]
     );
 
     // ── File Upload ──────────────────────────────────────────────────
@@ -147,9 +176,10 @@ export default function CreateJournalPage() {
                 userId: athleteData.id,
                 coachId: userRole === 'athlete' ? athleteData.id : (currentUserId || ""),
                 isImportant: false, // Default
-                keywords,
                 media_urls,
             });
+
+            sessionStorage.removeItem(JOURNAL_TEMP_KEY);
 
             alert("훈련일지가 등록되었습니다.");
             router.push("/admin/training-journal");
@@ -160,6 +190,19 @@ export default function CreateJournalPage() {
             setIsSubmitting(false);
         }
     };
+
+    const placeholderText = useMemo(() => {
+        if (shotType === "good") {
+            return "굿샷을 반복할수 있도록 훈련중 잘된 점을 상세히 기록해 주세요";
+        }
+        if (shotType === "miss") {
+            return "미스샷을 반복하지 않도록 훈련중 안된 점을 상세히 기록해 주세요";
+        }
+        if (shotType === "field") {
+            return "라운드중 느낀점을 상세히 기록해 주세요";
+        }
+        return "훈련 내용을 상세히 기록해 주세요";
+    }, [shotType]);
 
     const isValid = !!trainingDate && !!shotType && !!content.trim();
 
@@ -278,7 +321,7 @@ export default function CreateJournalPage() {
                                 {shotType === "good" && (
                                     <CheckCircle2 size={16} className="absolute top-3 right-3 text-blue-500" />
                                 )}
-                                <span className="text-2xl">🎯</span>
+                                <Target size={24} className="mb-0.5" />
                                 <span>굿샷</span>
                             </button>
                             <button
@@ -294,7 +337,7 @@ export default function CreateJournalPage() {
                                 {shotType === "miss" && (
                                     <CheckCircle2 size={16} className="absolute top-3 right-3 text-orange-400" />
                                 )}
-                                <span className="text-2xl">⚠️</span>
+                                <AlertTriangle size={24} className="mb-0.5" />
                                 <span>미스샷</span>
                             </button>
                             <button
@@ -310,106 +353,109 @@ export default function CreateJournalPage() {
                                 {shotType === "field" && (
                                     <CheckCircle2 size={16} className="absolute top-3 right-3 text-indigo-500" />
                                 )}
-                                <span className="text-2xl">📝</span>
+                                <FileText size={24} className="mb-0.5" />
                                 <span>필드노트</span>
                             </button>
                         </div>
                     </section>
 
-                    {/* ── 4.5 키워드 작성 ── */}
-                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-3">
-                        <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                            키워드 작성
-                        </label>
-                        <div className="space-y-3">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                                <input
-                                    type="text"
-                                    placeholder="키워드 입력 후 Enter (예: 테이크백, 릴리즈...)"
-                                    value={keywordInput}
-                                    onChange={(e) => setKeywordInput(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === "Enter") {
-                                            e.preventDefault();
-                                            const val = keywordInput.trim();
-                                            if (val && !keywords.includes(val)) {
-                                                setKeywords([...keywords, val]);
-                                                setKeywordInput("");
-                                            }
-                                        }
-                                    }}
-                                    className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all font-medium"
-                                />
-                            </div>
-
-                            {keywords.length > 0 && (
-                                <div className="flex flex-wrap gap-2">
-                                    {keywords.map((kw) => (
-                                        <div
-                                            key={kw}
-                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-700 dark:text-zinc-300 transition-all hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                                        >
-                                            <span>#{kw}</span>
-                                            <button
-                                                type="button"
-                                                onClick={() => setKeywords(keywords.filter(k => k !== kw))}
-                                                className="p-0.5 rounded-full hover:bg-zinc-300 dark:hover:bg-zinc-600 transition-colors"
-                                            >
-                                                <X size={12} />
-                                            </button>
-                                        </div>
-                                    ))}
+                    {/* ── Latest Score (Field Note Only) ── */}
+                    {shotType === "field" && (
+                        <div className="mt-5 pt-5 border-t border-zinc-100 dark:border-zinc-800/50">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-2">
+                                    <Trophy size={14} className="text-amber-500" />
+                                    <h3 className="text-[11px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">최근 스코어 정보</h3>
                                 </div>
-                            )}
-                        </div>
-
-                        {/* ── Latest Score (Field Note Only) ── */}
-                        {shotType === "field" && (
-                            <div className="mt-5 pt-5 border-t border-zinc-100 dark:border-zinc-800/50">
-                                <div className="flex items-center justify-between mb-3">
-                                    <div className="flex items-center gap-2">
-                                        <Trophy size={14} className="text-amber-500" />
-                                        <h3 className="text-[11px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">최근 스코어 정보</h3>
-                                    </div>
-                                    {latestScore && (
-                                        <span className="text-[10px] font-medium text-zinc-400">{latestScore.date.replace(/-/g, ".")}</span>
-                                    )}
-                                </div>
-                                
-                                {latestScore ? (
-                                    <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl p-4 border border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
-                                        <div className="space-y-1">
-                                            <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{latestScore.courseName}</p>
-                                            <p className="text-[11px] text-zinc-500">{latestScore.title}</p>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <div className="text-right">
-                                                <div className={cn(
-                                                    "text-xl font-black tracking-tight",
-                                                    latestScore.score < 72 ? "text-red-500" : latestScore.score > 72 ? "text-blue-500" : "text-zinc-900 dark:text-zinc-100"
-                                                )}>
-                                                    {latestScore.score}타
-                                                </div>
-                                                <p className="text-[10px] text-zinc-400 font-medium">최종 스코어</p>
-                                            </div>
-                                            <Link 
-                                                href={`/scores/${latestScore.id}`}
-                                                className="w-8 h-8 rounded-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 flex items-center justify-center text-zinc-400 hover:text-brand-navy transition-colors shadow-sm"
-                                            >
-                                                <ArrowRight size={14} />
-                                            </Link>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl p-6 border border-dashed border-zinc-200 dark:border-zinc-800 flex flex-col items-center justify-center gap-2">
-                                        <BarChart3 size={20} className="text-zinc-300" />
-                                        <p className="text-xs text-zinc-400">등록된 최신 스코어가 없습니다.</p>
+                                {latestScore && (
+                                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold text-zinc-500">
+                                        <Calendar size={10} />
+                                        {latestScore.date.replace(/-/g, ".")}
                                     </div>
                                 )}
                             </div>
-                        )}
-                    </section>
+                            
+                            {latestScore ? (
+                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-[1.5rem] p-5 border border-zinc-100 dark:border-zinc-800 space-y-5">
+                                    <div className="flex items-center justify-between">
+                                        <div className="space-y-0.5">
+                                            <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{latestScore.courseName}</p>
+                                            <p className="text-[11px] text-zinc-400 font-medium">{latestScore.title}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <div className={cn(
+                                                "text-2xl font-black tracking-tighter leading-none",
+                                                latestScore.score < 72 ? "text-red-500" : latestScore.score > 72 ? "text-blue-500" : "text-zinc-900 dark:text-zinc-100"
+                                            )}>
+                                                {latestScore.score}타
+                                            </div>
+                                            <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mt-1">Final Score</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {[
+                                            { label: "티샷", val: latestScore.teeShotSG },
+                                            { label: "세컨샷", val: latestScore.secondShotSG },
+                                            { label: "그린주변", val: latestScore.aroundGreenSG },
+                                            { label: "퍼팅", val: latestScore.puttingSG }
+                                        ].map((item, i) => (
+                                            <div key={i} className="bg-white dark:bg-zinc-900/50 p-2.5 rounded-xl border border-zinc-100 dark:border-zinc-800/60 text-center">
+                                                <p className="text-[10px] font-bold text-zinc-400 mb-1">{item.label}</p>
+                                                <p className={cn(
+                                                    "text-[13px] font-black tracking-tight",
+                                                    item.val < 0 ? "text-red-500" : item.val > 0 ? "text-blue-500" : "text-zinc-600 dark:text-zinc-400"
+                                                )}>
+                                                    {item.val > 0 ? `+${item.val.toFixed(2)}` : item.val.toFixed(2)}
+                                                </p>
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    <div className="flex items-start gap-6 pt-1">
+                                        <div className="flex-1 space-y-2">
+                                            <div className="flex items-center gap-1.5">
+                                                <Trophy size={14} className="text-amber-500" />
+                                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight">Strong</span>
+                                            </div>
+                                            <div className="px-3 py-2 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 text-[11px] font-black text-red-600 dark:text-red-400 text-center">
+                                                {latestScore.strongPoint}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex-[2] space-y-2">
+                                            <div className="flex items-center gap-1.5">
+                                                <AlertTriangle size={14} className="text-blue-500" />
+                                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight">Weak</span>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                {latestScore.weakPoints.map((wp, idx) => (
+                                                    <div key={idx} className="flex-1 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-[11px] font-black text-blue-600 dark:text-blue-400 text-center">
+                                                        {wp}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="pt-2 flex justify-end">
+                                        <Link 
+                                            href={`/scores/${latestScore.id}`}
+                                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-navy text-white text-[11px] font-bold hover:bg-brand-navy/90 transition-all shadow-md shadow-brand-navy/10 active:scale-95"
+                                        >
+                                            상세 분석
+                                            <ChevronRight size={14} />
+                                        </Link>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl p-8 border border-dashed border-zinc-200 dark:border-zinc-800 flex flex-col items-center justify-center gap-2">
+                                    <BarChart3 size={24} className="text-zinc-300 mb-1" />
+                                    <p className="text-xs font-bold text-zinc-400">등록된 최신 스코어가 없습니다.</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* ── 5. 제목 & 내용 ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-4">
@@ -421,7 +467,7 @@ export default function CreateJournalPage() {
                                 rows={6}
                                 value={content}
                                 onChange={(e) => setContent(e.target.value)}
-                                placeholder="훈련 내용을 상세히 기록해주세요..."
+                                placeholder={placeholderText}
                                 className="w-full p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all resize-y"
                             />
                         </div>

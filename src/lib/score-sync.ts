@@ -1,4 +1,7 @@
 
+import { createClient } from "./supabase/client";
+import { calculateScorecardAnalysis } from "./score-calculations";
+
 export interface ScoreData {
     id: string;
     score: number;
@@ -8,63 +11,133 @@ export interface ScoreData {
     courseName: string;
     comment: string;
     date: string;
+    teeShotSG: number;
+    secondShotSG: number;
+    aroundGreenSG: number;
+    puttingSG: number;
+    strongPoint: string;
+    weakPoints: string[];
 }
 
-export const mockScores: ScoreData[] = [
-    {
-        id: "1",
-        score: 68,
-        title: "2026 윈터 클래식 1R",
-        playerName: "김민수",
-        coachName: "최코치",
-        courseName: "베어크리크 CC",
-        comment: "전반적으로 샷감이 매우 좋았으나 3번 홀에서 3펏이 아쉬웠습니다. 후반 집중력이 돋보였습니다.",
-        date: "2026-03-07",
-    },
-    {
-        id: "2",
-        score: 72,
-        playerName: "이수진",
-        title: "정기 평가 라운드",
-        coachName: "박코치",
-        courseName: "솔트베이 CC",
-        comment: "기복 없는 안정적인 경기 운영을 보여주었습니다. 파 세이브 능력이 향상되었습니다.",
-        date: "2026-03-06",
-    },
-    {
-        id: "3",
-        score: 75,
-        playerName: "박현우",
-        title: "주말 연습 라운드",
-        coachName: "최코치",
-        courseName: "아일랜드 CC",
-        comment: "러프에서의 탈출이 다소 아쉬웠으나 장타를 활용한 공략이 유효했습니다.",
-        date: "2026-03-05",
-    },
-    {
-        id: "4",
-        score: 71,
-        playerName: "정세민",
-        title: "2월 국가대표 선발전",
-        coachName: "최코치",
-        courseName: "남서울 CC",
-        comment: "퍼팅 거리감이 완벽했습니다. 핀 위치에 따른 공략이 잘 이루어졌습니다.",
-        date: "2026-03-04",
-    },
-    {
-        id: "5",
-        score: 80,
-        playerName: "김민수",
-        title: "연습 전반 9홀",
-        coachName: "최코치",
-        courseName: "베어크리크 CC",
-        comment: "체력적인 부담으로 후반에 집중력이 흐트러진 점을 보완해야 합니다.",
-        date: "2026-03-03",
-    },
-];
+export async function fetchLatestScoreByPlayer(playerName: string, targetDate?: string): Promise<ScoreData | null> {
+    try {
+        const supabase = createClient();
+        
+        // 1. Get athlete user_id
+        const { data: userData } = await supabase
+            .from("users")
+            .select("id")
+            .eq("name", playerName)
+            .limit(1)
+            .single();
+            
+        if (!userData) return null;
 
-export async function fetchLatestScoreByPlayer(playerName: string): Promise<ScoreData | null> {
-    const playerScores = mockScores.filter(s => s.playerName === playerName);
-    if (playerScores.length === 0) return null;
-    return playerScores.sort((a, b) => b.date.localeCompare(a.date))[0];
+        // 2. Fetch latest scorecards (up to 10) to find a completed one
+        let query = supabase
+            .from("scorecards")
+            .select(`
+                id, 
+                total_score, 
+                course_name, 
+                round_date, 
+                memo,
+                athlete:users!scorecards_athlete_id_fkey(name),
+                coach:users!scorecards_coach_id_fkey(name),
+                holes:scorecard_holes(score)
+            `)
+            .eq("athlete_id", userData.id)
+            .order("round_date", { ascending: false })
+            .order("created_at", { ascending: false });
+
+        if (targetDate) {
+            query = query.lte("round_date", targetDate);
+        }
+
+        const { data: scorecards } = await query.limit(10);
+
+        if (!scorecards || scorecards.length === 0) return null;
+
+        // Find the most recent scorecard with 18 completed holes (score !== -1)
+        const scorecard = scorecards.find(s => {
+            const holes = (s.holes as any[]) || [];
+            const completedCount = holes.filter(h => h.score !== -1 && h.score !== null).length;
+            return completedCount === 18;
+        });
+
+        if (!scorecard) return null;
+
+        // 3. Perform Analysis
+        const analysis = await calculateScorecardAnalysis(scorecard.id);
+        
+        // Group SG by category
+        let teeSG = 0;
+        let secondSG = 0;
+        let greenSG = 0;
+        let puttingSG = 0;
+
+        const cats: { name: string; sg: number }[] = [
+            { name: "티샷 비거리", sg: 0 },
+            { name: "티샷 정확도", sg: 0 },
+            { name: "180M이상", sg: 0 },
+            { name: "150-179M", sg: 0 },
+            { name: "120-149M", sg: 0 },
+            { name: "90-119M", sg: 0 },
+            { name: "피치샷", sg: 0 },
+            { name: "벙커", sg: 0 },
+            { name: "어프로치", sg: 0 },
+            { name: "9M이상", sg: 0 },
+            { name: "4-8M", sg: 0 },
+            { name: "2-3M", sg: 0 },
+            { name: "1M", sg: 0 }
+        ];
+
+        analysis.forEach(h => {
+            const s = h.summary;
+            teeSG += (s.distSG_DriverDist + s.distSG_DriverAcc);
+            secondSG += (s.distSG_180Plus + s.distSG_150_179 + s.distSG_120_149 + s.distSG_90_119 + s.distSG_Pitch31_89);
+            greenSG += (s.distSG_Bunker + s.distSG_Approach);
+            puttingSG += (s.distSG_Putt9Plus + s.distSG_Putt4_8 + s.distSG_Putt2_3 + s.distSG_Putt1);
+
+            cats[0].sg += s.distSG_DriverDist;
+            cats[1].sg += s.distSG_DriverAcc;
+            cats[2].sg += s.distSG_180Plus;
+            cats[3].sg += s.distSG_150_179;
+            cats[4].sg += s.distSG_120_149;
+            cats[5].sg += s.distSG_90_119;
+            cats[6].sg += s.distSG_Pitch31_89;
+            cats[7].sg += s.distSG_Bunker;
+            cats[8].sg += s.distSG_Approach;
+            cats[9].sg += s.distSG_Putt9Plus;
+            cats[10].sg += s.distSG_Putt4_8;
+            cats[11].sg += s.distSG_Putt2_3;
+            cats[12].sg += s.distSG_Putt1;
+        });
+
+        // Derive strong/weak points (Lower SG is better)
+        const sortedCats = [...cats].sort((a, b) => a.sg - b.sg);
+        const strongPoint = sortedCats[0]?.name || "-";
+        const weakPoints = sortedCats.slice(-2).reverse().map(c => c.name);
+
+        return {
+            id: scorecard.id,
+            score: scorecard.total_score || 0,
+            title: `${scorecard.course_name} 라운드`,
+            playerName: (scorecard.athlete as any)?.name || "",
+            coachName: (scorecard.coach as any)?.name || "",
+            courseName: scorecard.course_name,
+            comment: scorecard.memo || "",
+            date: scorecard.round_date,
+            teeShotSG: teeSG,
+            secondShotSG: secondSG,
+            aroundGreenSG: greenSG,
+            puttingSG: puttingSG,
+            strongPoint,
+            weakPoints
+        };
+    } catch (err) {
+        console.error("Error in fetchLatestScoreByPlayer:", err);
+        return null;
+    }
 }
+

@@ -30,6 +30,7 @@ export async function getStoredEvents(): Promise<ScheduleEvent[]> {
             event_type,
             start_time,
             end_time,
+            status,
             users!schedules_user_id_fkey(name),
             creator:users!schedules_creator_id_fkey(name)
         `)

@@ -13,7 +13,10 @@ import {
     CheckCircle2,
     Vote as VoteIcon,
     BarChart3,
-    Trophy
+    Trophy,
+    Clock,
+    ChevronRight,
+    Users
 } from "lucide-react";
 import { 
     getPollById, 
@@ -21,6 +24,7 @@ import {
     castVote, 
     getUserVote,
     getPollVoters,
+    getRecurringPollHistory,
     Vote, 
     VOTE_TYPE_LABELS, 
     VOTE_TYPE_COLORS 
@@ -41,6 +45,18 @@ export default function PollDetailPage() {
     const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
     const [userVotedOptionId, setUserVotedOptionId] = useState<string | null>(null);
     const [voters, setVoters] = useState<{ optionId: string; userName: string }[]>([]);
+    const [recurringHistory, setRecurringHistory] = useState<any[]>([]);
+    const [selectedHistoryDate, setSelectedHistoryDate] = useState(() => {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    });
+    const [selectedHistoryOption, setSelectedHistoryOption] = useState<string>("all");
+    const filterContainerRef = useRef<HTMLDivElement>(null);
+    const [canScrollLeft, setCanScrollLeft] = useState(false);
+    const [canScrollRight, setCanScrollRight] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showResults, setShowResults] = useState(false);
     const [showVoterList, setShowVoterList] = useState(false);
@@ -62,6 +78,30 @@ export default function PollDetailPage() {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [id]);
 
+    useEffect(() => {
+        checkScroll();
+        window.addEventListener("resize", checkScroll);
+        return () => window.removeEventListener("resize", checkScroll);
+    }, [vote, selectedHistoryDate]);
+
+    const checkScroll = () => {
+        if (filterContainerRef.current) {
+            const { scrollLeft, scrollWidth, clientWidth } = filterContainerRef.current;
+            setCanScrollLeft(scrollLeft > 0);
+            setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 1);
+        }
+    };
+
+    const scrollFilter = (direction: "left" | "right") => {
+        if (filterContainerRef.current) {
+            const scrollAmount = 200;
+            filterContainerRef.current.scrollBy({
+                left: direction === "left" ? -scrollAmount : scrollAmount,
+                behavior: "smooth"
+            });
+        }
+    };
+
     const fetchData = async () => {
         try {
             const data = await getPollById(id);
@@ -72,6 +112,11 @@ export default function PollDetailPage() {
                 // Fetch voters
                 const votersData = await getPollVoters(id);
                 setVoters(votersData);
+                
+                if (data.isRecurring) {
+                    const history = await getRecurringPollHistory(id);
+                    setRecurringHistory(history);
+                }
                 
                 // Get actual user first
                 const supabase = createClient();
@@ -135,6 +180,19 @@ export default function PollDetailPage() {
     };
 
     // Removed individual toggleVoters function
+
+    const handleDateChange = (days: number) => {
+        const current = new Date(selectedHistoryDate);
+        current.setDate(current.getDate() + days);
+        setSelectedHistoryDate(current.toISOString().split('T')[0]);
+    };
+
+    // Filter history based on UI selection
+    const filteredHistory = recurringHistory.filter(item => {
+        const matchesDate = item.voteDate === selectedHistoryDate;
+        const matchesOption = selectedHistoryOption === "all" || item.optionId === selectedHistoryOption;
+        return matchesDate && matchesOption;
+    });
 
     if (loading) {
         return (
@@ -316,7 +374,7 @@ export default function PollDetailPage() {
                                     onClick={() => setShowResults(!showResults)}
                                     className="text-[12px] font-bold text-zinc-500 hover:text-brand-navy transition-colors px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-brand-navy/5 dark:hover:bg-brand-navy-light/10"
                                 >
-                                    {showResults ? "결과보기" : "투표하기"}
+                                    {showResults ? "투표하기" : "결과보기"}
                                 </button>
                             </div>
                         )}
@@ -436,6 +494,141 @@ export default function PollDetailPage() {
                         )}
                     </div>
                 </section>
+
+                {/* ── Recurring History Table ── */}
+                {vote.isRecurring && (
+                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-6">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-1">
+                            <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                                <Clock size={18} className="text-rose-500" />
+                                일자별 참여 히스토리
+                            </h3>
+                            
+                            {/* Date Selector */}
+                            <div className="space-y-1">
+                                <p className="text-[10px] font-bold text-zinc-400 ml-1">날짜 선택</p>
+                                <div className="flex items-center gap-4 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-700/50 rounded-2xl p-1.5 min-w-[220px] justify-between">
+                                    <button 
+                                        onClick={() => handleDateChange(-1)}
+                                        className="p-2 hover:bg-white dark:hover:bg-zinc-700 rounded-xl transition-all shadow-sm active:scale-90"
+                                    >
+                                        <ChevronLeft size={18} className="text-zinc-500" />
+                                    </button>
+                                    <div className="flex items-center gap-2 font-black text-sm text-zinc-800 dark:text-zinc-200">
+                                        <Calendar size={14} className="text-zinc-400" />
+                                        {selectedHistoryDate}
+                                    </div>
+                                    <button 
+                                        onClick={() => handleDateChange(1)}
+                                        className="p-2 hover:bg-white dark:hover:bg-zinc-700 rounded-xl transition-all shadow-sm active:scale-90"
+                                    >
+                                        <ChevronRight size={18} className="text-zinc-500" />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Option Filter Buttons with Desktop Navigation Arrows */}
+                        <div className="relative group px-1">
+                            {/* Left Arrow */}
+                            {canScrollLeft && (
+                                <button
+                                    onClick={() => scrollFilter("left")}
+                                    className="absolute left-0 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-8 h-8 bg-white/90 dark:bg-zinc-800/90 rounded-full shadow-lg border border-zinc-100 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:scale-110 transition-all"
+                                >
+                                    <ChevronLeft size={16} />
+                                </button>
+                            )}
+
+                            <div 
+                                ref={filterContainerRef}
+                                onScroll={checkScroll}
+                                className="flex flex-nowrap overflow-x-auto pb-2 scrollbar-hide gap-2"
+                            >
+                                <button
+                                    onClick={() => setSelectedHistoryOption("all")}
+                                    className={cn(
+                                        "whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold transition-all border shrink-0",
+                                        selectedHistoryOption === "all"
+                                            ? "bg-zinc-800 text-white border-zinc-800 shadow-md"
+                                            : "bg-white dark:bg-zinc-900 text-zinc-500 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400"
+                                    )}
+                                >
+                                    전체 ({recurringHistory.filter(h => h.voteDate === selectedHistoryDate).length})
+                                </button>
+                                {vote.options.map(opt => {
+                                    const count = recurringHistory.filter(h => h.voteDate === selectedHistoryDate && h.optionId === opt.id).length;
+                                    return (
+                                        <button
+                                            key={opt.id}
+                                            onClick={() => setSelectedHistoryOption(opt.id)}
+                                            className={cn(
+                                                "whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold transition-all border shrink-0",
+                                                selectedHistoryOption === opt.id
+                                                    ? "bg-brand-navy text-white border-brand-navy shadow-md"
+                                                    : "bg-white dark:bg-zinc-900 text-zinc-500 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50"
+                                            )}
+                                        >
+                                            {opt.text} ({count})
+                                        </button>
+                                    );
+                                })}
+                            </div>
+
+                            {/* Right Arrow */}
+                            {canScrollRight && (
+                                <button
+                                    onClick={() => scrollFilter("right")}
+                                    className="absolute right-0 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-8 h-8 bg-white/90 dark:bg-zinc-800/90 rounded-full shadow-lg border border-zinc-100 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:scale-110 transition-all"
+                                >
+                                    <ChevronRight size={16} />
+                                </button>
+                            )}
+                        </div>
+                        
+                        <div className="overflow-hidden border border-zinc-100 dark:border-zinc-800 rounded-2xl">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400 font-bold border-b border-zinc-100 dark:border-zinc-800">
+                                        <tr>
+                                            <th className="px-4 py-3">참여자</th>
+                                            <th className="px-4 py-3">선택 항목</th>
+                                            <th className="px-4 py-3 text-right">참여 시간</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
+                                        {filteredHistory.length > 0 ? (
+                                            filteredHistory.map((item, idx) => {
+                                                const optionText = vote.options.find(o => o.id === item.optionId)?.text || "알 수 없음";
+                                                return (
+                                                    <tr key={idx} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors">
+                                                        <td className="px-4 py-3 font-bold text-zinc-900 dark:text-zinc-100">
+                                                            {item.userName}
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            <span className="inline-flex px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 rounded text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
+                                                                {optionText}
+                                                            </span>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right text-xs text-zinc-400 font-medium">
+                                                            {new Date(item.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })
+                                        ) : (
+                                            <tr>
+                                                <td colSpan={3} className="px-4 py-10 text-center text-zinc-400 font-medium">
+                                                    해당 조건에 맞는 투표 내역이 없습니다.
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </section>
+                )}
 
                 {/* ── Footer Actions ── */}
                 <div className="flex justify-center pt-4">

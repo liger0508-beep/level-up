@@ -5,8 +5,10 @@ const key = "sb_publishable_kQLxgFJtAxuIkfGp_4qgNw_btIFduP5";
 
 async function checkTable() {
     const supabase = createClient(url, key);
+    
+    console.log("Checking tournament_results table...");
     const { data, error } = await supabase
-        .from('lesson_templates')
+        .from('tournament_results')
         .select('*')
         .limit(1);
 

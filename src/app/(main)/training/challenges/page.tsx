@@ -10,25 +10,29 @@ import { getTodayScheduledItems } from "@/lib/schedule-sync";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { createClient } from "@/lib/supabase/client";
 import { DatePresets, DatePresetType } from "@/components/ui/DatePresets";
-import { cn } from "@/lib/utils";
+import { cn, formatScore } from "@/lib/utils";
 
 // ── Filter categories ────────────────────────────────────────
-type FilterType = "all" | "shot" | "around_green" | "putting";
+type FilterType = "all" | "shot" | "short_game" | "putting" | "physical" | "etc";
 
 const filterButtons: { key: FilterType; label: string }[] = [
     { key: "all", label: "ALL" },
-    { key: "shot", label: "Shot" },
-    { key: "around_green", label: "Around Green" },
-    { key: "putting", label: "Putt" },
+    { key: "shot", label: "샷" },
+    { key: "short_game", label: "숏게임" },
+    { key: "putting", label: "퍼팅" },
+    { key: "physical", label: "피지컬" },
+    { key: "etc", label: "기타" },
 ];
 
 const categories = [
-    { key: "shot", label: "Shot", color: "from-amber-400 to-orange-500", icon: <Trophy size={18} /> },
-    { key: "around_green", label: "Around Green", color: "from-emerald-400 to-teal-500", icon: <Medal size={18} /> },
-    { key: "putting", label: "Putt", color: "from-violet-400 to-fuchsia-500", icon: <Crown size={18} /> }
+    { key: "shot", label: "샷", color: "from-amber-400 to-orange-500", icon: <Trophy size={18} /> },
+    { key: "short_game", label: "숏게임", color: "from-emerald-400 to-teal-500", icon: <Medal size={18} /> },
+    { key: "putting", label: "퍼팅", color: "from-violet-400 to-fuchsia-500", icon: <Crown size={18} /> },
+    { key: "physical", label: "피지컬", color: "from-sky-400 to-indigo-500", icon: <Trophy size={18} /> },
+    { key: "etc", label: "기타", color: "from-zinc-400 to-slate-500", icon: <ClipboardList size={18} /> }
 ];
 
-export default function TestsPage() {
+export default function ChallengesPage() {
     const router = useRouter();
     const [allTests, setAllTests] = useState<TestData[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -68,22 +72,19 @@ export default function TestsPage() {
                 if (profile.role === 'athlete') {
                     fetchedRecords = await fetchTestsByPlayer(profile.name);
                 } else {
-                    // For coach/admin, fetch all records with type='test'
+                    // For coach/admin, fetch all records from test_sessions
                     const { data } = await supabase
-                        .from("records")
+                        .from("test_sessions")
                         .select(`
                             id,
-                            type,
                             category,
                             title,
-                            content,
-                            score,
-                            media_urls,
+                            raw_shot_data,
+                            total_score,
                             created_at,
-                            users!records_user_id_fkey(name),
-                            coach:users!records_coach_id_fkey(name)
+                            athlete:users!test_sessions_user_id_fkey(name),
+                            coach:users!test_sessions_coach_id_fkey(name)
                         `)
-                        .eq("type", "test")
                         .order("created_at", { ascending: false });
                     
                     if (data) {
@@ -92,10 +93,10 @@ export default function TestsPage() {
                             type: "test",
                             category: r.category as TestType,
                             title: r.title || "",
-                            content: r.content,
-                            media_urls: r.media_urls || [],
+                            content: r.raw_shot_data, // mapped back to content for UI compatibility
+                            score: r.total_score,
                             created_at: r.created_at,
-                            playerName: r.users?.name || "Unknown",
+                            playerName: r.athlete?.name || "Unknown",
                             coachName: r.coach?.name || "Unknown"
                         }));
                     }
@@ -180,10 +181,14 @@ export default function TestsPage() {
             let typeMatch = activeFilter === "all";
             if (activeFilter === "shot") {
                 typeMatch = t.type === "shot" || t.type === "driver" || t.type === "iron" || t.type === "wood_iron";
-            } else if (activeFilter === "around_green") {
-                typeMatch = t.type === "around_green" || t.type === "approach" || t.type === "bunker" || t.type === "pitch";
+            } else if (activeFilter === "short_game") {
+                typeMatch = t.type === "around_green" || t.type === "short_game" || t.type === "approach" || t.type === "bunker" || t.type === "pitch";
             } else if (activeFilter === "putting") {
                 typeMatch = t.type === "putting" || t.type === "long_putt" || t.type === "middle_putt" || t.type === "short_putt";
+            } else if (activeFilter === "physical") {
+                typeMatch = t.type === "physical";
+            } else if (activeFilter === "etc") {
+                typeMatch = t.type === "etc";
             }
             
             const playerMatch = selectedPlayers.has(t.playerName);
@@ -210,8 +215,10 @@ export default function TestsPage() {
         return categories.map(cat => {
             const catTests = allTests.filter(t => {
                 if (cat.key === "shot") return t.type === "shot" || t.type === "driver" || t.type === "iron" || t.type === "wood_iron";
-                if (cat.key === "around_green") return t.type === "around_green" || t.type === "approach" || t.type === "bunker" || t.type === "pitch";
+                if (cat.key === "short_game") return t.type === "around_green" || t.type === "short_game" || t.type === "approach" || t.type === "bunker" || t.type === "pitch";
                 if (cat.key === "putting") return t.type === "putting" || t.type === "long_putt" || t.type === "middle_putt" || t.type === "short_putt";
+                if (cat.key === "physical") return t.type === "physical";
+                if (cat.key === "etc") return t.type === "etc";
                 return false;
             });
             
@@ -232,7 +239,11 @@ export default function TestsPage() {
     }, [allTests]);
     
     const todayCompletedTests = useMemo(() => {
-        const today = new Date().toISOString().split('T')[0];
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        const today = `${yyyy}-${mm}-${dd}`;
         return allTests.filter(t => t.date === today);
     }, [allTests]);
 
@@ -268,12 +279,12 @@ export default function TestsPage() {
                 <div className="flex items-center gap-2">
                     <ClipboardList size={24} className="text-brand-navy dark:text-brand-navy-light shrink-0" />
                     <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-                        Test
+                        Challenge
                     </h1>
                 </div>
                 {(userRole === 'coach' || userRole === 'admin') && (
                     <Link
-                        href="/training/tests/create"
+                        href="/training/challenges/create"
                         className="bg-brand-red hover:bg-brand-red-dark text-white px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
                     >
                         <Plus size={18} />
@@ -284,14 +295,16 @@ export default function TestsPage() {
 
             {/* ── 🏆 Leaderboard (Hall of Fame) ── */}
             <div className="mb-8">
-                <div className="flex items-center gap-3 mb-4 px-1">
-                    <div className="flex items-center gap-2">
-                        <Trophy size={18} className="text-amber-500" />
-                        <h2 className="text-lg font-black text-zinc-800 dark:text-zinc-100 tracking-tight">명예의 전당 (HALL OF FAME)</h2>
+                <div className="flex items-center justify-between mb-4 px-1">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <Trophy size={18} className="text-amber-500 shrink-0" />
+                        <h2 className="text-[15px] sm:text-lg font-black text-zinc-800 dark:text-zinc-100 tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
+                            명예의 전당 <span className="hidden xs:inline">(HALL OF FAME)</span>
+                        </h2>
                     </div>
                     <Link 
                         href="/training/rankings"
-                        className="px-3 py-1 bg-amber-500 text-[10px] font-bold text-white rounded-full hover:bg-amber-600 shadow-sm shadow-amber-500/20 transition-all active:scale-95 flex items-center gap-1"
+                        className="px-2.5 sm:px-3 py-1 bg-amber-500 text-[10px] font-bold text-white rounded-full hover:bg-amber-600 shadow-sm shadow-amber-500/20 transition-all active:scale-95 flex items-center gap-1 shrink-0 whitespace-nowrap"
                     >
                         전체 랭킹보기 <ChevronRight size={12} />
                     </Link>
@@ -307,22 +320,22 @@ export default function TestsPage() {
                             <div className="space-y-4">
                                 <div className="flex justify-between items-center">
                                     <span className="text-sm font-bold opacity-60">Shot</span>
-                                    <span className="text-sm font-black italic">{todayBestSummary.shot !== null ? (todayBestSummary.shot > 0 ? `+${todayBestSummary.shot.toFixed(2)}` : todayBestSummary.shot.toFixed(2)) : "-"}</span>
+                                    <span className="text-sm font-black italic">{todayBestSummary.shot !== null ? formatScore(todayBestSummary.shot) : "-"}</span>
                                 </div>
                                 <div className="h-[1px] bg-white/10 w-full" />
                                 <div className="flex justify-between items-center">
                                     <span className="text-sm font-bold opacity-60">Around Green</span>
-                                    <span className="text-sm font-black italic">{todayBestSummary.around !== null ? (todayBestSummary.around > 0 ? `+${todayBestSummary.around.toFixed(2)}` : todayBestSummary.around.toFixed(2)) : "-"}</span>
+                                    <span className="text-sm font-black italic">{todayBestSummary.around !== null ? formatScore(todayBestSummary.around) : "-"}</span>
                                 </div>
                                 <div className="h-[1px] bg-white/10 w-full" />
                                 <div className="flex justify-between items-center">
                                     <span className="text-sm font-bold opacity-60">Putting</span>
-                                    <span className="text-sm font-black italic">{todayBestSummary.putting !== null ? (todayBestSummary.putting > 0 ? `+${todayBestSummary.putting.toFixed(2)}` : todayBestSummary.putting.toFixed(2)) : "-"}</span>
+                                    <span className="text-sm font-black italic">{todayBestSummary.putting !== null ? formatScore(todayBestSummary.putting) : "-"}</span>
                                 </div>
                                 <div className="pt-2 mt-4 border-t border-white/20 flex justify-between items-center">
                                     <span className="text-xs font-black uppercase text-amber-400">Total Today</span>
                                     <span className="text-2xl font-black italic text-amber-400">
-                                        {todayBestSummary.total > 0 ? `+${todayBestSummary.total.toFixed(2)}` : todayBestSummary.total.toFixed(2)}
+                                        {formatScore(todayBestSummary.total)}
                                     </span>
                                 </div>
                             </div>
@@ -356,8 +369,8 @@ export default function TestsPage() {
                                             <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">{data.weekly.playerName}</span>
                                             <span className="text-sm font-black italic text-zinc-800 dark:text-zinc-200">
                                                 {data.weekly.totalScore !== undefined ? (
-                                                    data.weekly.totalScore > 0 ? `+${data.weekly.totalScore.toFixed(2)}` : data.weekly.totalScore.toFixed(2)
-                                                ) : "0.00"}
+                                                    formatScore(data.weekly.totalScore)
+                                                ) : "0.0"}
                                             </span>
                                         </div>
                                     ) : (
@@ -378,8 +391,8 @@ export default function TestsPage() {
                                             <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">{data.monthly.playerName}</span>
                                             <span className="text-sm font-black italic text-zinc-800 dark:text-zinc-200">
                                                 {data.monthly.totalScore !== undefined ? (
-                                                    data.monthly.totalScore > 0 ? `+${data.monthly.totalScore.toFixed(2)}` : data.monthly.totalScore.toFixed(2)
-                                                ) : "0.00"}
+                                                    formatScore(data.monthly.totalScore)
+                                                ) : "0.0"}
                                             </span>
                                         </div>
                                     ) : (
@@ -417,9 +430,9 @@ export default function TestsPage() {
                 <div className="flex items-center justify-between mb-3 px-1">
                     <h2 className="text-sm font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
                         <Calendar size={16} className="text-brand-navy dark:text-brand-navy-light" />
-                        오늘 완료한 테스트
+                        오늘 완료한 챌린지
                     </h2>
-                    <span className="text-[10px] text-zinc-400 font-medium">등록된 테스트 결과를 확인하세요.</span>
+                    <span className="text-[10px] text-zinc-400 font-medium">등록된 챌린지 결과를 확인하세요.</span>
                 </div>
 
                 <div className="relative group/scroll">
@@ -444,13 +457,10 @@ export default function TestsPage() {
                             todayCompletedTests.map((t) => (
                                 <button
                                     key={t.id}
-                                    onClick={() => router.push(`/training/tests/${t.id}`)}
+                                    onClick={() => router.push(`/training/challenges/${t.id}`)}
                                     className="flex-shrink-0 w-40 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3.5 rounded-2xl shadow-sm hover:border-brand-navy/50 hover:shadow-md transition-all active:scale-95 text-left"
                                 >
-                                    <div className="flex items-center justify-between mb-2">
-                                        <div className="w-6 h-6 rounded-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-300 font-black italic text-[9px] border border-zinc-100 dark:border-zinc-700">
-                                            {t.playerName[0]}
-                                        </div>
+                                    <div className="flex items-center justify-start mb-2">
                                         <span className="text-[9px] font-black text-brand-navy uppercase tracking-widest px-1.5 py-0.5 bg-brand-navy/5 rounded-md">
                                             {TEST_TYPE_LABELS[t.type] || t.type}
                                         </span>
@@ -459,16 +469,16 @@ export default function TestsPage() {
                                         {t.playerName}
                                     </div>
                                     <div className={cn(
-                                        "text-lg font-black italic tracking-tighter",
+                                        "text-lg font-black italic tracking-tighter text-right",
                                         (t.totalScore || 0) > 0 ? "text-blue-600" : (t.totalScore || 0) < 0 ? "text-brand-red" : "text-zinc-400"
                                     )}>
-                                        {(t.totalScore || 0) > 0 ? `+${t.totalScore?.toFixed(2)}` : t.totalScore?.toFixed(2)}
+                                        {formatScore(t.totalScore)}
                                         <span className="text-[9px] uppercase ml-1 not-italic opacity-40 font-bold">pts</span>
                                     </div>
                                 </button>
                             ))
                         ) : (
-                            <div className="text-xs text-zinc-400 py-4 px-2 italic">오늘 완료된 테스트가 없습니다.</div>
+                            <div className="text-xs text-zinc-400 py-4 px-2 italic">오늘 완료된 챌린지가 없습니다.</div>
                         )}
                     </div>
                 </div>
@@ -479,7 +489,7 @@ export default function TestsPage() {
                 {/* Date range */}
                 <div className="flex items-center gap-2">
                     <label className="w-24 shrink-0 text-center text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                        테스트 일자
+                        챌린지 일자
                     </label>
                     <div className="flex items-center gap-1 flex-1 min-w-0">
                         <DatePickerInput
@@ -568,7 +578,7 @@ export default function TestsPage() {
                         </div>
                     ) : displayedTests.length > 0 ? (
                         <>
-                            <TestTable tests={displayedTests} />
+                            <TestTable tests={displayedTests} basePath="/training/challenges" />
                             {filteredTests.length > displayLimit && (
                                 <div className="mt-8 flex justify-center">
                                     <button

@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+export const dynamic = "force-dynamic";
+
+import { useState, useMemo, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, Calendar, FileText, Image as ImageIcon, Upload, Flag, Search, X, ChevronDown, ChevronUp, Paperclip, CheckCircle2, Check } from "lucide-react";
@@ -11,10 +13,12 @@ import { TopicPickerSheet } from "@/components/ui/TopicPickerSheet";
 import { AthleteSearch } from "@/components/ui/AthleteSearch";
 import { createClient } from "@/lib/supabase/client";
 import { LessonTemplate, fetchLessonTemplates } from "@/lib/lesson-template-sync";
-import { fetchRecentLessonsByPlayer, fetchRecentScorecard, saveLessonRecord, LessonRecord } from "@/lib/lesson-sync";
+import { fetchRecentLessonsByPlayer, saveLessonRecord, LessonRecord } from "@/lib/lesson-sync";
+import { fetchLatestScoreByPlayer, ScoreData } from "@/lib/score-sync";
 import { uploadFiles } from "@/lib/storage-sync";
 import { saveCompletedItem, saveEvent } from "@/lib/schedule-sync";
 import { formatLocalDate } from "@/lib/utils";
+import { Trophy, AlertTriangle, TrendingDown, TrendingUp, ChevronRight as ChevronRight2 } from "lucide-react";
 
 const ALL_SLOTS = [
     "07:00", "07:30", "08:00", "08:30", "09:00", "09:30",
@@ -76,15 +80,70 @@ const dummyImages = [
 // (Supabase used for templates)
 
 export default function CreateLessonPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 flex items-center justify-center text-zinc-400">페이지 로딩 중...</div>}>
+            <CreateLessonContent />
+        </Suspense>
+    );
+}
+
+function CreateLessonContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
+    const DRAFT_KEY = "lesson_create_draft";
+
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
     const [isPlayerDropdownOpen, setIsPlayerDropdownOpen] = useState(false);
     const [currentCoachName, setCurrentCoachName] = useState("코치");
+    const [isAborting, setIsAborting] = useState(false);
 
-    // Initialize state from search params
+    const [lessonDate, setLessonDate] = useState(() => formatLocalDate());
+
+    // ── Consolidate Mount Logic (Draft + Params) ──────────────────
     useEffect(() => {
+        // 1. Check if we should resume from draft
+        // Should resume if: 1) We set a flag before navigating away, or 2) It's a page reload
+        const navEntries = window.performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
+        const isReload = navEntries.length > 0 && navEntries[0].type === "reload";
+        const isResumeNavigation = sessionStorage.getItem("resume_lesson_create") === "true";
+        
+        const shouldClear = !isReload && !isResumeNavigation;
+        
+        if (shouldClear) {
+            localStorage.removeItem(DRAFT_KEY);
+        }
+        
+        // Always consume the flag
+        sessionStorage.removeItem("resume_lesson_create");
+
+        // 2. Load Draft from LocalStorage
+        const draft = localStorage.getItem(DRAFT_KEY);
+        if (draft) {
+            try {
+                const data = JSON.parse(draft);
+                // Only load if updated within the last 10 minutes
+                const isRecent = data.updatedAt && (new Date().getTime() - new Date(data.updatedAt).getTime() < 10 * 60 * 1000);
+                
+                if (isRecent) {
+                    if (data.selectedPlayers && data.selectedPlayers.length > 0) {
+                        setSelectedPlayers(data.selectedPlayers);
+                    }
+                    if (data.selectedPart) setSelectedPart(data.selectedPart as LessonType);
+                    if (data.lessonDate) setLessonDate(data.lessonDate);
+                    if (data.startSlot) setStartSlot(data.startSlot);
+                    if (data.endSlot) setEndSlot(data.endSlot);
+                    if (data.period) setPeriod(data.period);
+                    if (data.lessonContent) setLessonContent(data.lessonContent);
+                } else {
+                    localStorage.removeItem(DRAFT_KEY);
+                }
+            } catch (e) {
+                console.error("Failed to load lesson draft:", e);
+            }
+        }
+
+        // 3. Overwrite with Search Params (Highest Priority)
         const playerParam = searchParams.get("player");
         const typeParam = searchParams.get("type");
         const startParam = searchParams.get("start");
@@ -102,7 +161,7 @@ export default function CreateLessonPage() {
             setEndSlot(endParam);
         }
 
-        // RBAC Check
+        // 3. RBAC & Coach Info
         const supabase = createClient();
         supabase.auth.getUser().then(async ({ data: { user } }) => {
             if (user) {
@@ -126,9 +185,9 @@ export default function CreateLessonPage() {
                 router.push("/login");
             }
         });
-    }, [searchParams, router]);
 
-    const [lessonDate, setLessonDate] = useState(() => formatLocalDate());
+        isInitialMount.current = false;
+    }, [searchParams, router]);
 
     const [startSlot, setStartSlot] = useState<string | null>(() => {
         const now = new Date();
@@ -186,12 +245,6 @@ export default function CreateLessonPage() {
     }, [startSlot, endSlot]);
 
     const [selectedPart, setSelectedPart] = useState<LessonType | "">("");
-    const [selectedTrainingType, setSelectedTrainingType] = useState<string>("basic");
-    const trainingTypeOptions = [
-        { key: "basic", label: "기본기" },
-        { key: "preview", label: "예습" },
-        { key: "review", label: "복습" },
-    ];
     const [lessonContent, setLessonContent] = useState("");
     const [selectedImages, setSelectedImages] = useState<string[]>([]);
     const [isImagePickerOpen, setIsImagePickerOpen] = useState(true);
@@ -204,7 +257,31 @@ export default function CreateLessonPage() {
     const [isUploading, setIsUploading] = useState(false);
 
     const [recentLessons, setRecentLessons] = useState<LessonRecord[]>([]);
-    const [recentScore, setRecentScore] = useState<any | null>(null);
+    const [recentScore, setRecentScore] = useState<ScoreData | null>(null);
+
+    const isFormValid = useMemo(() => {
+        return selectedPlayers.length > 0 && !!selectedPart && !!lessonContent.trim();
+    }, [selectedPlayers, selectedPart, lessonContent]);
+
+    // ── Draft Persistence ──────────────────────────────────────────
+    const isInitialMount = useRef(true);
+
+    // Save Draft
+    useEffect(() => {
+        if (isInitialMount.current || isAborting) return;
+        
+        const draft = {
+            selectedPlayers,
+            selectedPart,
+            lessonDate,
+            startSlot,
+            endSlot,
+            period,
+            lessonContent,
+            updatedAt: new Date().toLocaleString('sv-SE').replace(' ', 'T')
+        };
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+    }, [selectedPlayers, selectedPart, lessonDate, startSlot, endSlot, period, lessonContent, isAborting]);
 
     useEffect(() => {
         fetchLessonTemplates().then(setDbTemplates);
@@ -227,7 +304,7 @@ export default function CreateLessonPage() {
     useEffect(() => {
         if (lastSelectedPlayer) {
             fetchRecentLessonsByPlayer(lastSelectedPlayer, selectedPart).then(setRecentLessons);
-            fetchRecentScorecard(lastSelectedPlayer).then(setRecentScore);
+            fetchLatestScoreByPlayer(lastSelectedPlayer).then(setRecentScore);
         } else {
             setRecentLessons([]);
             setRecentScore(null);
@@ -288,6 +365,17 @@ export default function CreateLessonPage() {
 
 
 
+    const handleResumeNavigate = (url: string) => {
+        sessionStorage.setItem("resume_lesson_create", "true");
+        router.push(url);
+    };
+
+    const handleAbort = () => {
+        setIsAborting(true);
+        localStorage.removeItem(DRAFT_KEY);
+        router.back();
+    };
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files) {
             const newFiles = Array.from(e.target.files);
@@ -299,8 +387,8 @@ export default function CreateLessonPage() {
         setAttachedFiles(prev => prev.filter((_, i) => i !== index));
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSubmit = async (e?: React.FormEvent, redirectToTraining: boolean = false) => {
+        if (e) e.preventDefault();
 
         if (selectedPlayers.length === 0) {
             alert("선수를 선택해주세요.");
@@ -328,8 +416,7 @@ export default function CreateLessonPage() {
 
             for (const player of selectedPlayers) {
                 // Prepend training type to title
-                const typeLabel = trainingTypeOptions.find(opt => opt.key === selectedTrainingType)?.label || "";
-                const derivedTitle = typeLabel ? `[${typeLabel}] ${player}` : player;
+                const derivedTitle = player;
 
                 await saveLessonRecord({
                     playerName: player,
@@ -370,8 +457,16 @@ export default function CreateLessonPage() {
                 }
             }
 
-            alert(`${selectedPlayers.length}명의 레슨이 등록되었습니다.`);
-            router.push("/lessons");
+            // Clear Draft on success
+            localStorage.removeItem(DRAFT_KEY);
+
+            if (redirectToTraining) {
+                const lastPlayer = selectedPlayers[selectedPlayers.length - 1];
+                router.push(`/training/create?player=${lastPlayer}&type=${selectedPart}&date=${lessonDate}&start=${startSlot}`);
+            } else {
+                alert(`${selectedPlayers.length}명의 레슨이 등록되었습니다.`);
+                router.push("/lessons");
+            }
         } catch (err: any) {
             console.error("Lesson registration detailed error:", err);
             const errorMsg = err.message || "권한이 없거나 데이터베이스 오류가 발생했습니다.";
@@ -388,7 +483,7 @@ export default function CreateLessonPage() {
                 {/* ── Header ── */}
                 <div className="flex items-center gap-3 mb-8">
                     <button
-                        onClick={() => router.back()}
+                        onClick={handleAbort}
                         className="p-2 -ml-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-900 dark:text-zinc-50 transition-colors"
                     >
                         <ChevronLeft size={24} />
@@ -441,29 +536,7 @@ export default function CreateLessonPage() {
                                 </div>
                             </div>
 
-                            {/* 3. Training Type Selection */}
-                            <div className="space-y-2 md:col-span-2">
-                                <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                    훈련 유형 <span className="text-brand-red">*</span>
-                                </label>
-                                <div className="flex flex-wrap gap-2">
-                                    {trainingTypeOptions.map((opt) => (
-                                        <button
-                                            key={opt.key}
-                                            type="button"
-                                            onClick={() => setSelectedTrainingType(opt.key)}
-                                            className={cn(
-                                                "px-4 py-2.5 rounded-xl text-sm font-medium transition-all border",
-                                                selectedTrainingType === opt.key
-                                                    ? "bg-brand-navy text-white border-brand-navy shadow-sm"
-                                                    : "bg-transparent dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-brand-navy/30"
-                                            )}
-                                        >
-                                            {opt.label}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
+
 
                             {/* 4. Date Selection */}
                             <div className="space-y-2">
@@ -490,11 +563,11 @@ export default function CreateLessonPage() {
                                 <div className="flex bg-transparent border border-zinc-200 dark:bg-zinc-800 rounded-lg p-0.5 w-fit mb-3">
                                     <button type="button" onClick={() => setPeriod("am")}
                                         className={cn("px-4 py-1.5 rounded-md text-xs font-semibold transition-all",
-                                            period === "am" ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-50 shadow-sm" : "text-zinc-500 dark:text-zinc-400"
+                                            period === "am" ? "bg-brand-navy text-white shadow-sm" : "text-zinc-500 dark:text-zinc-400"
                                         )}>오전</button>
                                     <button type="button" onClick={() => setPeriod("pm")}
                                         className={cn("px-4 py-1.5 rounded-md text-xs font-semibold transition-all",
-                                            period === "pm" ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-50 shadow-sm" : "text-zinc-500 dark:text-zinc-400"
+                                            period === "pm" ? "bg-brand-navy text-white shadow-sm" : "text-zinc-500 dark:text-zinc-400"
                                         )}>오후</button>
                                 </div>
 
@@ -536,7 +609,7 @@ export default function CreateLessonPage() {
                                     이전 레슨 내용 <span className="text-[11px] font-normal text-zinc-400">({lastSelectedPlayer})</span>
                                 </h3>
                                 <div className="space-y-4">
-                                    {recentLessons.length > 0 ? recentLessons.map((lesson) => (
+                                    {recentLessons.length > 0 ? recentLessons.slice(0, 3).map((lesson) => (
                                         <div key={lesson.id} className="p-4 rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-800">
                                             <div className="flex items-center justify-between mb-2">
                                                 <span className="text-[10px] font-bold text-brand-navy dark:text-brand-navy-light uppercase px-1.5 py-0.5 bg-brand-navy/5 dark:bg-brand-navy/20 rounded-md">
@@ -557,44 +630,97 @@ export default function CreateLessonPage() {
                                 </div>
                             </section>
 
-                            {/* Recent Scorecard Summary Box */}
-                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm flex flex-col min-h-[200px]">
-                                <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
-                                    <Flag size={18} className="text-brand-navy" />
-                                    최근 라운드 요약 <span className="text-[11px] font-normal text-zinc-400">({lastSelectedPlayer})</span>
-                                </h3>
-                                {recentScore ? (
-                                    <Link
-                                        href={`/scores/${recentScore.id}`}
-                                        className="block flex-1 rounded-xl border border-zinc-100 dark:border-zinc-800/50 bg-zinc-50/50 dark:bg-zinc-800/30 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors p-4 space-y-3"
-                                    >
-                                        <div className="flex justify-between items-baseline mb-2">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-2xl font-black text-brand-navy dark:text-white">{recentScore.content?.score || "0"}</span>
-                                                <span className="text-xs text-zinc-500">타</span>
+                             {/* Recent Scorecard Summary Box (Field Note Style) */}
+                             <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm flex flex-col min-h-[200px]">
+                                 <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
+                                     <Trophy size={18} className="text-amber-500" />
+                                     최근 라운드 요약 <span className="text-[11px] font-normal text-zinc-400">({lastSelectedPlayer})</span>
+                                 </h3>
+                                 
+                                 {recentScore ? (
+                                    <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-[1.5rem] p-5 border border-zinc-100 dark:border-zinc-800 space-y-5 flex-1">
+                                        <div className="flex items-center justify-between">
+                                            <div className="space-y-0.5">
+                                                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{recentScore.courseName}</p>
+                                                <p className="text-[11px] text-zinc-400 font-medium">{recentScore.title}</p>
+                                                <div className="flex items-center gap-1.5 mt-1.5 px-2 py-0.5 w-fit rounded bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold text-zinc-500">
+                                                    <Calendar size={10} />
+                                                    {recentScore.date.replace(/-/g, ".")}
+                                                </div>
                                             </div>
-                                            <span className="text-xs text-zinc-400">
-                                                {recentScore.created_at?.split('T')[0]} • {recentScore.title}
-                                            </span>
+                                            <div className="text-right">
+                                                <div className={cn(
+                                                    "text-2xl font-black tracking-tighter leading-none",
+                                                    recentScore.score < 72 ? "text-red-500" : recentScore.score > 72 ? "text-blue-500" : "text-zinc-900 dark:text-zinc-100"
+                                                )}>
+                                                    {recentScore.score}타
+                                                </div>
+                                                <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mt-1">Final Score</p>
+                                            </div>
                                         </div>
 
-                                        <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-xs">
-                                            <div className="flex justify-between">
-                                                <span className="text-zinc-500">티샷</span>
-                                                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{recentScore.content?.teeShot || "-"}</span>
+                                        <div className="grid grid-cols-4 gap-2">
+                                            {[
+                                                { label: "티샷", val: recentScore.teeShotSG },
+                                                { label: "세컨샷", val: recentScore.secondShotSG },
+                                                { label: "그린주변", val: recentScore.aroundGreenSG },
+                                                { label: "퍼팅", val: recentScore.puttingSG }
+                                            ].map((item, i) => (
+                                                <div key={i} className="bg-white dark:bg-zinc-900/50 p-2.5 rounded-xl border border-zinc-100 dark:border-zinc-800/60 text-center">
+                                                    <p className="text-[10px] font-bold text-zinc-400 mb-1">{item.label}</p>
+                                                    <p className={cn(
+                                                        "text-[13px] font-black tracking-tight",
+                                                        item.val < 0 ? "text-red-500" : item.val > 0 ? "text-blue-500" : "text-zinc-600 dark:text-zinc-400"
+                                                    )}>
+                                                        {item.val > 0 ? `+${item.val.toFixed(2)}` : item.val.toFixed(2)}
+                                                    </p>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div className="flex items-start gap-6 pt-1">
+                                            <div className="flex-1 space-y-2">
+                                                <div className="flex items-center gap-1.5">
+                                                    <Trophy size={14} className="text-amber-500" />
+                                                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight">Strong</span>
+                                                </div>
+                                                <div className="px-3 py-2 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 text-[11px] font-black text-red-600 dark:text-red-400 text-center">
+                                                    {recentScore.strongPoint}
+                                                </div>
                                             </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-zinc-500">아이언샷</span>
-                                                <span className="font-semibold text-zinc-800 dark:text-zinc-200">{recentScore.content?.iron || "-"}</span>
+
+                                            <div className="flex-[2] space-y-2">
+                                                <div className="flex items-center gap-1.5">
+                                                    <AlertTriangle size={14} className="text-blue-500" />
+                                                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight">Weak</span>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    {recentScore.weakPoints.map((wp, idx) => (
+                                                        <div key={idx} className="flex-1 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-[11px] font-black text-blue-600 dark:text-blue-400 text-center">
+                                                            {wp}
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             </div>
                                         </div>
-                                    </Link>
-                                ) : (
-                                    <div className="flex-1 flex items-center justify-center py-8 text-center bg-zinc-50 dark:bg-zinc-900/50 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800">
-                                        <p className="text-xs text-zinc-400">최근 라운드 기록이 없습니다.</p>
+                                        
+                                        <div className="pt-2 flex justify-end">
+                                            <button 
+                                                type="button"
+                                                onClick={() => handleResumeNavigate(`/scores/${recentScore.id}`)}
+                                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-navy text-white text-[11px] font-bold hover:bg-brand-navy/90 transition-all shadow-md shadow-brand-navy/10 active:scale-95"
+                                            >
+                                                상세 분석
+                                                <ChevronRight2 size={14} />
+                                            </button>
+                                        </div>
                                     </div>
-                                )}
-                            </section>
+                                 ) : (
+                                     <div className="flex-1 flex items-center justify-center py-8 text-center bg-zinc-50 dark:bg-zinc-900/50 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800">
+                                         <p className="text-xs text-zinc-400">최근 라운드 기록이 없습니다.</p>
+                                     </div>
+                                 )}
+                             </section>
                         </div>
                     )}
 
@@ -677,13 +803,14 @@ export default function CreateLessonPage() {
                                         }}
                                         placeholder="스윙 오류 검색..."
                                     />
-                                    <Link
-                                        href="/system/lesson-list"
-                                        className="flex items-center gap-1 text-[11px] font-bold text-zinc-400 hover:text-brand-navy transition-colors"
-                                    >
-                                        <ImageIcon size={12} />
-                                        관리
-                                    </Link>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleResumeNavigate("/system/lesson-list")}
+                                            className="flex items-center gap-1 text-[11px] font-bold text-zinc-400 hover:text-brand-navy transition-colors"
+                                        >
+                                            <ImageIcon size={12} />
+                                            관리
+                                        </button>
                                 </div>
                             </div>
 
@@ -770,7 +897,7 @@ export default function CreateLessonPage() {
                     <div className="flex items-center justify-end gap-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
                         <button
                             type="button"
-                            onClick={() => router.back()}
+                            onClick={handleAbort}
                             disabled={isUploading}
                             className="px-5 py-2.5 rounded-xl text-sm font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
                         >
@@ -778,8 +905,8 @@ export default function CreateLessonPage() {
                         </button>
                         <button
                             type="submit"
-                            disabled={isUploading}
-                            className="bg-brand-red hover:bg-brand-red-dark disabled:bg-zinc-300 text-white px-6 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm flex items-center gap-2"
+                            disabled={isUploading || !isFormValid}
+                            className="bg-brand-red hover:bg-brand-red-dark disabled:bg-zinc-200 dark:disabled:bg-zinc-800 disabled:text-zinc-400 text-white px-6 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm flex items-center gap-2"
                         >
                             {isUploading ? (
                                 <>
@@ -788,6 +915,21 @@ export default function CreateLessonPage() {
                                 </>
                             ) : (
                                 "레슨 등록"
+                            )}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={(e) => handleSubmit(undefined, true)}
+                            disabled={isUploading || !isFormValid}
+                            className="bg-brand-navy hover:bg-brand-navy/90 disabled:bg-zinc-200 dark:disabled:bg-zinc-800 disabled:text-zinc-400 text-white px-6 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm flex items-center gap-2"
+                        >
+                            {isUploading ? (
+                                <>
+                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                                    등록 중...
+                                </>
+                            ) : (
+                                "레슨 등록 & 훈련 작성"
                             )}
                         </button>
                     </div>
