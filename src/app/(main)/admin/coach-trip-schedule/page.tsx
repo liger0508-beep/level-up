@@ -93,6 +93,7 @@ export default function CoachTripAdminPage() {
             category: "대회 출장",
             participants: [],
             remarks: "",
+            vehicle: "",
         };
         setAllTrips(prev => [...prev, newTrip]);
         setParticipantInput(prev => ({ ...prev, [newId]: "" }));
@@ -274,13 +275,24 @@ export default function CoachTripAdminPage() {
                                 />
                             </div>
 
-                            <div className="flex flex-col gap-1 flex-[1.5] min-w-[150px]">
-                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-1">내용</span>
+                            <div className="flex flex-col gap-1 flex-1 min-w-[120px]">
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-1">차량</span>
                                 <input
                                     type="text"
-                                    placeholder="내용"
+                                    placeholder="차량 입력"
                                     className="h-[34px] w-full px-3 bg-transparent dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs"
-                                    value={t.remarks}
+                                    value={t.vehicle || ""}
+                                    onChange={(e) => handleUpdate(t.id, "vehicle", e.target.value)}
+                                />
+                            </div>
+
+                            <div className="flex flex-col gap-1 flex-[1.5] min-w-[150px]">
+                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider px-1">비고</span>
+                                <input
+                                    type="text"
+                                    placeholder="비고 입력"
+                                    className="h-[34px] w-full px-3 bg-transparent dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs"
+                                    value={t.remarks || ""}
                                     onChange={(e) => handleUpdate(t.id, "remarks", e.target.value)}
                                 />
                             </div>
@@ -403,13 +415,24 @@ export default function CoachTripAdminPage() {
                             </div>
 
                             <div className="flex flex-col gap-1">
-                                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">내용</label>
+                                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">차량</label>
                                 <input
                                     type="text"
                                     className="w-full px-3 py-2 bg-transparent dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-[13px]"
-                                    value={t.remarks}
+                                    value={t.vehicle || ""}
+                                    onChange={(e) => handleUpdate(t.id, "vehicle", e.target.value)}
+                                    placeholder="차량 입력"
+                                />
+                            </div>
+
+                            <div className="flex flex-col gap-1">
+                                <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">비고</label>
+                                <input
+                                    type="text"
+                                    className="w-full px-3 py-2 bg-transparent dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg text-[13px]"
+                                    value={t.remarks || ""}
                                     onChange={(e) => handleUpdate(t.id, "remarks", e.target.value)}
-                                    placeholder="내용 입력"
+                                    placeholder="비고 입력"
                                 />
                             </div>
                         </div>

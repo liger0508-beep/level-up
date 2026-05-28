@@ -90,6 +90,7 @@ const menuItems = [
             { key: "attendance", title: "출석 체크", href: "/operations/attendance" },
             { key: "todo-list", title: "To-Do 리스트", href: "/operations/todos" },
             { key: "course-management", title: "골프IQ", href: "/course-management" },
+            { key: "course-info", title: "코스 정보", href: "/course-info" },
             { key: "reports", title: "선수 레포트", href: "/operations/reports" },
         ],
     },

@@ -212,7 +212,7 @@ export async function castVote(pollId: string, optionId: string, userId: string)
     
     if (existingOptionId === optionId) return; // No change
 
-    // 3. Upsert into poll_responses
+    // 3. Insert or Update into poll_responses
     const responseData: any = {
         poll_id: pollId,
         user_id: userId,
@@ -224,17 +224,34 @@ export async function castVote(pollId: string, optionId: string, userId: string)
     }
 
     try {
-        const { error: responseError } = await supabase
-            .from("poll_responses")
-            .upsert([responseData], { 
-                onConflict: poll.isRecurring ? "poll_id,user_id,vote_date" : "poll_id,user_id" 
-            });
-
-        if (responseError) throw responseError;
+        if (existingOptionId) {
+            // Update existing vote
+            let updateQuery = supabase
+                .from("poll_responses")
+                .update({ option_id: optionId })
+                .eq("poll_id", pollId)
+                .eq("user_id", userId);
+            
+            if (poll.isRecurring) {
+                updateQuery = updateQuery.eq("vote_date", voteDateStr);
+            } else {
+                updateQuery = updateQuery.is("vote_date", null);
+            }
+            
+            const { error: updateError } = await updateQuery;
+            if (updateError) throw updateError;
+        } else {
+            // Insert new vote
+            const { error: insertError } = await supabase
+                .from("poll_responses")
+                .insert([responseData]);
+            
+            if (insertError) throw insertError;
+        }
     } catch (error: any) {
-        if (error.message?.includes("unique or exclusion constraint")) {
-            console.error("Database schema mismatch: Recurring polls require a (poll_id, user_id, vote_date) unique constraint.");
-            throw new Error("데이터베이스 제약 조건 설정이 필요합니다. 관리자에게 문의하거나 제공된 SQL을 실행해 주세요.");
+        if (error.code === '23505' || error.message?.includes("unique")) {
+            console.error("Database constraint error:", error);
+            throw new Error("데이터베이스 제약 조건 설정이 필요합니다. 관리자에게 문의하거나 제공된 SQL(migrations 폴더)을 실행해 주세요.");
         }
         throw error;
     }

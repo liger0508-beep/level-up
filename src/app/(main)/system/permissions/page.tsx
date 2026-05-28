@@ -97,6 +97,10 @@ const defaultPermissions: MenuPermission[] = [
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
+        menuKey: "course-info", label: "코스 정보", section: "라운지",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+    },
+    {
         menuKey: "reports", label: "선수 레포트", section: "라운지",
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },

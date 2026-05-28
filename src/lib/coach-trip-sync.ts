@@ -12,6 +12,7 @@ export interface CoachTrip {
     category: CoachTripCategory;
     participants: string[];
     remarks: string;
+    vehicle?: string;
 }
 
 /**
@@ -36,7 +37,22 @@ export async function getStoredCoachTrips(): Promise<CoachTrip[]> {
         venue: t.venue,
         category: t.category as CoachTripCategory,
         participants: t.participants || [],
-        remarks: t.remarks || "",
+        remarks: (() => {
+            try {
+                if (t.remarks && t.remarks.startsWith("{")) {
+                    return JSON.parse(t.remarks).remarks || "";
+                }
+                return t.remarks || "";
+            } catch (e) { return t.remarks || ""; }
+        })(),
+        vehicle: (() => {
+            try {
+                if (t.remarks && t.remarks.startsWith("{")) {
+                    return JSON.parse(t.remarks).vehicle || "";
+                }
+                return "";
+            } catch (e) { return ""; }
+        })(),
     }));
 }
 
@@ -66,7 +82,7 @@ export async function saveAllCoachTrips(trips: CoachTrip[], deletedIds: string[]
             venue: t.venue,
             category: t.category,
             participants: t.participants,
-            remarks: t.remarks,
+            remarks: JSON.stringify({ remarks: t.remarks, vehicle: t.vehicle }),
         }));
 
         const { error } = await supabase
@@ -94,7 +110,7 @@ export async function saveCoachTrip(trip: CoachTrip) {
             venue: trip.venue,
             category: trip.category,
             participants: trip.participants,
-            remarks: trip.remarks,
+            remarks: JSON.stringify({ remarks: trip.remarks, vehicle: trip.vehicle }),
         });
 
     if (error) {
@@ -116,7 +132,7 @@ export async function updateCoachTrip(updatedItem: CoachTrip) {
             venue: updatedItem.venue,
             category: updatedItem.category,
             participants: updatedItem.participants,
-            remarks: updatedItem.remarks,
+            remarks: JSON.stringify({ remarks: updatedItem.remarks, vehicle: updatedItem.vehicle }),
         })
         .eq("id", updatedItem.id);
 

@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { BookOpen, ChevronLeft, ChevronRight, MoreVertical, Calendar, Download, AlertCircle, MessageSquare, Send, Flag, MapPin, User, CheckCircle2, Edit2, Trash2, Layers, Paperclip, X, Play, ChevronDown } from "lucide-react";
+import { BookOpen, ChevronLeft, ChevronRight, MoreVertical, Calendar, Download, AlertCircle, MessageSquare, Send, Flag, MapPin, User, CheckCircle2, Edit2, Trash2, Layers, Paperclip, X, Play, ChevronDown, Trophy, AlertTriangle } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { fetchTrainingTemplates, TrainingTemplate } from "@/lib/training-template-sync";
 import { saveTrainingRecord, fetchRecentTrainingsByPlayer, TrainingRecord } from "@/lib/training-sync";
@@ -10,6 +10,7 @@ import { parseMediaUrls, fetchComments, saveComment, updateComment, deleteCommen
 import { cn } from "@/lib/utils";
 import { TrainingType } from "@/components/training/TrainingCard";
 import { uploadFile } from "@/lib/storage-sync";
+import { fetchScoreById, ScoreData } from "@/lib/score-sync";
 
 const typeBadgeConfig: Record<string, { label: string; bg: string; text: string; labelColor: string; accentBorder: string }> = {
     shot: { label: "Shot", bg: "bg-emerald-500", text: "text-white", labelColor: "text-emerald-500", accentBorder: "border-l-emerald-500" },
@@ -59,7 +60,8 @@ export default function TrainingDetailPage() {
     const [reviewData, setReviewData] = useState<{
         scorecardId: string;
         analysis: any[];
-        completedHoles: number[];
+        completedHoles: string[];
+        recentScore: ScoreData | null;
     } | null>(null);
     const [selectedFocusHole, setSelectedFocusHole] = useState<number | null>(null);
     const [expandedReviewIdx, setExpandedReviewIdx] = useState<number | null>(null);
@@ -199,11 +201,13 @@ export default function TrainingDetailPage() {
                     try {
                         const { calculateScorecardAnalysis } = await import("@/lib/score-calculations");
                         const analysis = await calculateScorecardAnalysis(reviewSetting.scorecardId);
+                        const recentScore = await fetchScoreById(reviewSetting.scorecardId);
                         
                         setReviewData({
                             scorecardId: reviewSetting.scorecardId,
                             analysis,
-                            completedHoles: reviewSetting.completedHoles || []
+                            completedHoles: reviewSetting.completedHoles || [],
+                            recentScore
                         });
                     } catch (innerErr) {
                         console.error("Failed to calculate scorecard analysis:", innerErr);
@@ -299,7 +303,27 @@ export default function TrainingDetailPage() {
         
         if (training.title?.includes("[복습]") && reviewData) {
             const completed = reviewData.completedHoles.length;
-            const total = 15;
+            
+            const cats = Object.entries(CATEGORY_TO_FIELD).map(([name, field]) => ({
+                name,
+                sg: reviewData.analysis.reduce((s, h) => s + (h.summary as any)[field], 0)
+            }));
+            const sumPosSG = cats.filter(c => c.sg > 0).reduce((s, c) => s + c.sg, 0);
+            const positiveCats = cats.map(c => ({
+                ...c,
+                percent: c.sg > 0 ? (c.sg / sumPosSG) * 100 : 0
+            })).filter(c => c.sg > 0)
+            .sort((a, b) => b.percent - a.percent)
+            .slice(0, 5);
+
+            let totalTasks = 0;
+            positiveCats.forEach(cat => {
+                const field = CATEGORY_TO_FIELD[cat.name];
+                const len = reviewData.analysis.filter(h => (h.summary as any)[field] > 0).slice(0, 3).length;
+                totalTasks += len;
+            });
+
+            const total = totalTasks || 1;
             return Math.min(Math.round((completed / total) * 100), 100);
         }
 
@@ -548,11 +572,11 @@ export default function TrainingDetailPage() {
                                 <CheckCircle2 size={16} className="text-brand-navy" />
                                 훈련 진행률
                             </h3>
-                            <span className="text-[11px] text-zinc-400 font-medium">
-                                {training.title?.includes("[복습]") && reviewData
-                                    ? `${reviewData.completedHoles.length}회 완료 / 총 15회 기준`
-                                    : `${training.completion_logs?.length || 0}회 완료 / 총 ${training.total_count || 0}회 기준`}
-                            </span>
+                            {!training.title?.includes("[복습]") && (
+                                <span className="text-[11px] text-zinc-400 font-medium">
+                                    {`${training.completion_logs?.length || 0}회 완료 / 총 ${training.total_count || 0}회 기준`}
+                                </span>
+                            )}
                         </div>
                         <div className="w-full h-12 bg-zinc-100 dark:bg-zinc-800 rounded-2xl overflow-hidden relative shadow-inner border border-zinc-200 dark:border-zinc-700">
                             <div 
@@ -701,29 +725,45 @@ export default function TrainingDetailPage() {
                     )}
 
                     {/* ── Review Training Plan UI ── */}
-                    {reviewData && (
-                        <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-6">
-                            <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
-                                <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                                    <BookOpen size={16} className="text-orange-500" />
-                                    복습 훈련 (집중 관리 홀)
-                                </h3>
-                                <span className="text-[11px] text-zinc-400 font-medium">완료: {reviewData.completedHoles.length} / 전체 {reviewData.analysis?.length || 0}개</span>
-                            </div>
+                    {reviewData && (() => {
+                        const cats = Object.entries(CATEGORY_TO_FIELD).map(([name, field]) => ({
+                            name,
+                            sg: reviewData.analysis.reduce((s, h) => s + (h.summary as any)[field], 0)
+                        }));
+                        const sumPosSG = cats.filter(c => c.sg > 0).reduce((s, c) => s + c.sg, 0);
+                        const positiveCats = cats.map(c => ({
+                            ...c,
+                            percent: c.sg > 0 ? (c.sg / sumPosSG) * 100 : 0
+                        })).filter(c => c.sg > 0)
+                        .sort((a, b) => b.percent - a.percent)
+                        .slice(0, 5)
+                        .sort((a, b) => {
+                            const keys = Object.keys(CATEGORY_TO_FIELD);
+                            return keys.indexOf(a.name) - keys.indexOf(b.name);
+                        });
 
-                            <div className="space-y-3">
-                                {(() => {
-                                    const cats = Object.entries(CATEGORY_TO_FIELD).map(([name, field]) => ({
-                                        name,
-                                        sg: reviewData.analysis.reduce((s, h) => s + (h.summary as any)[field], 0)
-                                    }));
-                                    const sumPosSG = cats.filter(c => c.sg > 0).reduce((s, c) => s + c.sg, 0);
-                                    const positiveCats = cats.map(c => ({
-                                        ...c,
-                                        percent: c.sg > 0 ? (c.sg / sumPosSG) * 100 : 0
-                                    })).filter(c => c.sg > 0).sort((a, b) => b.percent - a.percent).slice(0, 5);
+                        let totalTasks = 0;
+                        positiveCats.forEach(cat => {
+                            const field = CATEGORY_TO_FIELD[cat.name];
+                            const len = reviewData.analysis.filter(h => (h.summary as any)[field] > 0).slice(0, 3).length;
+                            totalTasks += len;
+                        });
 
-                                    return positiveCats.map((cat, idx) => {
+                        return (
+                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-6">
+                                <div className="border-b border-zinc-100 dark:border-zinc-800 pb-3 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                                            <BookOpen size={16} className="text-orange-500" />
+                                            복습 훈련 (집중 관리 홀)
+                                        </h3>
+                                        <span className="text-[11px] text-zinc-400 font-medium">완료: {reviewData.completedHoles.length} / 전체 {totalTasks}개</span>
+                                    </div>
+                                    <p className="text-xs text-zinc-500 font-medium">홀별로 복습 훈련을 하고, 훈련 완료 버튼을 눌러주세요.</p>
+                                </div>
+
+                                <div className="space-y-3">
+                                    {positiveCats.map((cat, idx) => {
                                         const catName = cat.name;
                                         const field = CATEGORY_TO_FIELD[catName];
                                         
@@ -767,59 +807,80 @@ export default function TrainingDetailPage() {
 
                                     const isExpanded = expandedReviewIdx === idx;
                                     const rankNumber = idx + 1;
+                                    const isAllCompleted = focusHolesForCat.length > 0 && focusHolesForCat.every(h => reviewData.completedHoles.includes(`${catName}_${h.holeNumber}` as any));
 
                                     return (
-                                        <div key={catName} className="border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-sm">
+                                        <div key={catName} className={cn("border rounded-2xl overflow-hidden shadow-sm transition-colors", isAllCompleted ? "border-indigo-200 dark:border-indigo-800/50" : "border-zinc-200 dark:border-zinc-800")}>
                                             <button 
                                                 onClick={() => {
-                                                    setExpandedReviewIdx(isExpanded ? null : idx);
-                                                    if (!isExpanded && focusHolesForCat.length > 0 && selectedFocusHole === null) {
-                                                        setSelectedFocusHole(focusHolesForCat[0].holeNumber);
+                                                    if (isExpanded) {
+                                                        setExpandedReviewIdx(null);
+                                                    } else {
+                                                        setExpandedReviewIdx(idx);
+                                                        if (focusHolesForCat.length > 0) {
+                                                            setSelectedFocusHole(focusHolesForCat[0].holeNumber);
+                                                        } else {
+                                                            setSelectedFocusHole(null);
+                                                        }
                                                     }
                                                 }}
                                                 className={cn(
                                                     "w-full flex items-center justify-between p-4 transition-colors",
-                                                    isExpanded ? "bg-orange-50 dark:bg-orange-950/20" : "bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                                                    isAllCompleted
+                                                        ? isExpanded 
+                                                            ? "bg-indigo-100/50 dark:bg-indigo-900/30" 
+                                                            : "bg-indigo-50 dark:bg-indigo-900/20 hover:bg-indigo-100/50 dark:hover:bg-indigo-900/30"
+                                                        : isExpanded 
+                                                            ? "bg-orange-50 dark:bg-orange-950/20" 
+                                                            : "bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800"
                                                 )}
                                             >
                                                 <div className="flex items-center gap-3">
                                                     <span className={cn(
-                                                        "flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold shrink-0",
-                                                        "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400"
+                                                        "flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold shrink-0 transition-colors",
+                                                        isAllCompleted
+                                                            ? "bg-indigo-200 text-indigo-700 dark:bg-indigo-500/30 dark:text-indigo-300"
+                                                            : "bg-orange-100 text-orange-600 dark:bg-orange-500/20 dark:text-orange-400"
                                                     )}>
                                                         {rankNumber}
                                                     </span>
-                                                    <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{catName}</span>
-                                                    <span className="text-[11px] font-medium text-orange-500 bg-orange-100 dark:bg-orange-500/20 px-2 py-0.5 rounded-full">
-                                                        {focusHolesForCat.length}개 홀
-                                                    </span>
+                                                    <span className={cn(
+                                                        "text-sm font-bold transition-colors",
+                                                        isAllCompleted ? "text-indigo-900 dark:text-indigo-100" : "text-zinc-900 dark:text-zinc-100"
+                                                    )}>{catName}</span>
                                                 </div>
-                                                <ChevronDown size={18} className={cn("text-zinc-400 transition-transform", isExpanded && "rotate-180")} />
+                                                <div className="flex items-center gap-2">
+                                                    {isAllCompleted && (
+                                                        <span className="text-[10px] font-bold text-indigo-500 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-500/20 px-2 py-0.5 rounded-full">완료</span>
+                                                    )}
+                                                    <ChevronDown size={18} className={cn("transition-transform", isExpanded ? "rotate-180 text-zinc-500" : "text-zinc-400", isAllCompleted && !isExpanded ? "text-indigo-400" : "")} />
+                                                </div>
                                             </button>
 
                                             {isExpanded && (
                                                 <div className="p-4 bg-zinc-50 dark:bg-zinc-800/30 border-t border-zinc-200 dark:border-zinc-800">
-                                                    <div className="grid grid-cols-3 gap-2 mb-4">
+                                                    <div className="grid grid-cols-5 gap-1.5 sm:flex sm:flex-wrap sm:gap-2 mb-4">
                                                         {focusHolesForCat.map((h) => {
                                                             const isHoleSelected = selectedFocusHole === h.holeNumber;
+                                                            const uniqueKey = `${catName}_${h.holeNumber}`;
                                                             return (
                                                                 <button 
                                                                     key={h.holeNumber} 
                                                                     onClick={() => setSelectedFocusHole(h.holeNumber)}
                                                                     className={cn(
-                                                                        "flex flex-col items-center gap-0.5 w-full p-2 rounded-2xl transition-all border-2 relative",
+                                                                        "px-3 py-1.5 rounded-lg border shadow-sm flex flex-col items-center transition-all relative",
                                                                         isHoleSelected 
-                                                                            ? "bg-orange-500 border-zinc-900 text-white shadow-md" 
-                                                                            : "bg-white dark:bg-zinc-800 border-zinc-100 dark:border-zinc-800 text-orange-500 hover:border-orange-200"
+                                                                            ? "bg-orange-500 border-orange-600 scale-105" 
+                                                                            : "bg-white dark:bg-zinc-900 border-orange-200 dark:border-orange-800/50 hover:border-orange-400"
                                                                     )}
                                                                 >
-                                                                    {reviewData.completedHoles.includes(h.holeNumber) && (
-                                                                        <div className="absolute -top-1.5 -right-1.5 bg-emerald-500 text-white rounded-full p-0.5 shadow-sm">
+                                                                    {reviewData.completedHoles.includes(uniqueKey as any) && (
+                                                                        <div className="absolute -top-1.5 -right-1.5 bg-emerald-500 text-white rounded-full p-0.5 shadow-sm z-10">
                                                                             <CheckCircle2 size={10} />
                                                                         </div>
                                                                     )}
-                                                                    <span className={cn("text-[8px] font-black uppercase tracking-tighter", isHoleSelected ? "text-orange-100" : "text-zinc-400")}>HOLE</span>
-                                                                    <span className={cn("text-lg font-black tracking-tighter")}>{h.holeNumber}</span>
+                                                                    <span className={cn("text-[10px] font-bold", isHoleSelected ? "text-orange-100" : "text-zinc-400")}>Hole</span>
+                                                                    <span className={cn("text-sm font-black", isHoleSelected ? "text-white" : "text-orange-600 dark:text-orange-400")}>{h.holeNumber}</span>
                                                                 </button>
                                                             );
                                                         })}
@@ -855,10 +916,11 @@ export default function TrainingDetailPage() {
                                                                         <div className="pt-2 flex justify-end">
                                                                             <button 
                                                                                 onClick={async () => {
-                                                                                    const isCompleted = reviewData.completedHoles.includes(hData.holeNumber);
+                                                                                    const uniqueKey = `${catName}_${hData.holeNumber}`;
+                                                                                    const isCompleted = reviewData.completedHoles.includes(uniqueKey as any);
                                                                                     const newCompleted = isCompleted 
-                                                                                        ? reviewData.completedHoles.filter((h: any) => h !== hData.holeNumber) 
-                                                                                        : [...reviewData.completedHoles, hData.holeNumber];
+                                                                                        ? reviewData.completedHoles.filter((key: any) => key !== uniqueKey) 
+                                                                                        : [...reviewData.completedHoles, uniqueKey] as any[];
                                                                                     
                                                                                     setReviewData({ ...reviewData, completedHoles: newCompleted });
                                                                                     
@@ -876,12 +938,12 @@ export default function TrainingDetailPage() {
                                                                                 }}
                                                                                 className={cn(
                                                                                     "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm active:scale-95",
-                                                                                    reviewData.completedHoles.includes(hData.holeNumber)
+                                                                                    reviewData.completedHoles.includes(`${catName}_${hData.holeNumber}` as any)
                                                                                         ? "bg-emerald-50 text-emerald-600 border border-emerald-200 dark:bg-emerald-900/20 dark:border-emerald-800/50"
                                                                                         : "bg-orange-500 text-white hover:bg-orange-600 border border-orange-600"
                                                                                 )}
                                                                             >
-                                                                                {reviewData.completedHoles.includes(hData.holeNumber) ? (
+                                                                                {reviewData.completedHoles.includes(`${catName}_${hData.holeNumber}` as any) ? (
                                                                                     <>
                                                                                         <CheckCircle2 size={14} />
                                                                                         훈련 완료됨
@@ -900,69 +962,156 @@ export default function TrainingDetailPage() {
                                             )}
                                         </div>
                                     );
-                                });
-                                })()}
+                                })}
                             </div>
                         </section>
-                    )}
+                        );
+                    })()}
 
-                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-6">
-                        <div className="border-b border-zinc-100 dark:border-zinc-800/50 pb-4">
-                            <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 mb-4">훈련 정보</h3>
-                            <div className="grid grid-cols-1 gap-4">
-                                <div className="flex flex-col gap-1">
-                                    <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-tight">훈련명</span>
-                                    <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{training.title}</p>
-                                </div>
-                                <div className="flex flex-col gap-1">
-                                    <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-tight">훈련 기간</span>
-                                    <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                        {training.training_start} ~ {training.training_end}
-                                    </p>
-                                </div>
-                                
-                                {training.templates && training.templates.length > 0 ? (
-                                    <>
-                                        <div className="flex flex-col gap-1">
-                                            <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-tight">훈련 목적</span>
-                                            <div className="space-y-1">
-                                                {training.templates.map((t: any) => t.purpose).filter(Boolean).map((p: string, i: number) => (
-                                                    <p key={i} className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">• {p}</p>
-                                                )) || <p className="text-sm text-zinc-400">등록된 목적이 없습니다.</p>}
-                                            </div>
-                                        </div>
-                                        <div className="flex flex-col gap-1">
-                                            <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-tight">훈련 목표</span>
-                                            <div className="space-y-1">
-                                                {training.templates.map((t: any) => t.goal).filter(Boolean).map((g: string, i: number) => (
-                                                    <p key={i} className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">• {g}</p>
-                                                )) || <p className="text-sm text-zinc-400">등록된 목표가 없습니다.</p>}
-                                            </div>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-700">
-                                        <p className="text-xs text-zinc-500 text-center">연결된 훈련 컨텐츠 정보가 없습니다.</p>
+                    {!training.title?.includes("[복습]") && (
+                        <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-6">
+                            <div className="border-b border-zinc-100 dark:border-zinc-800/50 pb-4">
+                                <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 mb-4">훈련 정보</h3>
+                                <div className="grid grid-cols-1 gap-4">
+                                    <div className="flex flex-col gap-1">
+                                        <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-tight">훈련명</span>
+                                        <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{training.title}</p>
                                     </div>
-                                )}
+                                    <div className="flex flex-col gap-1">
+                                        <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-tight">훈련 기간</span>
+                                        <p className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                                            {training.training_start} ~ {training.training_end}
+                                        </p>
+                                    </div>
+                                    
+                                    {training.templates && training.templates.length > 0 ? (
+                                        <>
+                                            <div className="flex flex-col gap-1">
+                                                <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-tight">훈련 목적</span>
+                                                <div className="space-y-1">
+                                                    {training.templates.map((t: any) => t.purpose).filter(Boolean).map((p: string, i: number) => (
+                                                        <p key={i} className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">• {p}</p>
+                                                    )) || <p className="text-sm text-zinc-400">등록된 목적이 없습니다.</p>}
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col gap-1">
+                                                <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-tight">훈련 목표</span>
+                                                <div className="space-y-1">
+                                                    {training.templates.map((t: any) => t.goal).filter(Boolean).map((g: string, i: number) => (
+                                                        <p key={i} className="text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">• {g}</p>
+                                                    )) || <p className="text-sm text-zinc-400">등록된 목표가 없습니다.</p>}
+                                                </div>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-700">
+                                            <p className="text-xs text-zinc-500 text-center">연결된 훈련 컨텐츠 정보가 없습니다.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {training.content && (
+                                <div className="space-y-4">
+                                    <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                                        <BookOpen size={14} className="text-zinc-400" />
+                                        코치 코멘트 및 상세 내용
+                                    </h3>
+                                    <div className="prose prose-zinc dark:prose-invert max-w-none text-zinc-700 dark:text-zinc-300 whitespace-pre-line leading-relaxed text-sm bg-zinc-50 dark:bg-zinc-800/30 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800">
+                                        {training.content}
+                                    </div>
+                                </div>
+                            )}
+                        </section>
+                    )}
+                </div>
+
+                {reviewData?.recentScore && (
+                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm flex flex-col mb-8">
+                        <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
+                            <Trophy size={18} className="text-amber-500" />
+                            최근 라운드 요약 <span className="text-[11px] font-normal text-zinc-400">({training.player})</span>
+                        </h3>
+                        
+                        <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-[1.5rem] p-5 border border-zinc-100 dark:border-zinc-800 space-y-5 flex-1">
+                            <div className="flex items-center justify-between">
+                                <div className="space-y-0.5">
+                                    <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{reviewData.recentScore.courseName}</p>
+                                    <p className="text-[11px] text-zinc-400 font-medium">{reviewData.recentScore.title}</p>
+                                    <div className="flex items-center gap-1.5 mt-1.5 px-2 py-0.5 w-fit rounded bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold text-zinc-500">
+                                        <Calendar size={10} />
+                                        {reviewData.recentScore.date.replace(/-/g, ".")}
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <div className={cn(
+                                        "text-2xl font-black tracking-tighter leading-none",
+                                        reviewData.recentScore.score < 72 ? "text-red-500" : reviewData.recentScore.score > 72 ? "text-blue-500" : "text-zinc-900 dark:text-zinc-100"
+                                    )}>
+                                        {reviewData.recentScore.score}타
+                                    </div>
+                                    <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mt-1">Final Score</p>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-4 gap-2">
+                                {[
+                                    { label: "티샷", val: reviewData.recentScore.teeShotSG },
+                                    { label: "세컨샷", val: reviewData.recentScore.secondShotSG },
+                                    { label: "그린주변", val: reviewData.recentScore.aroundGreenSG },
+                                    { label: "퍼팅", val: reviewData.recentScore.puttingSG }
+                                ].map((item, i) => (
+                                    <div key={i} className="bg-white dark:bg-zinc-900/50 p-2.5 rounded-xl border border-zinc-100 dark:border-zinc-800/60 text-center">
+                                        <p className="text-[10px] font-bold text-zinc-400 mb-1">{item.label}</p>
+                                        <p className={cn(
+                                            "text-[13px] font-black tracking-tight",
+                                            item.val < 0 ? "text-red-500" : item.val > 0 ? "text-blue-500" : "text-zinc-600 dark:text-zinc-400"
+                                        )}>
+                                            {item.val > 0 ? `+${item.val.toFixed(2)}` : item.val.toFixed(2)}
+                                        </p>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="flex items-start gap-6 pt-1">
+                                <div className="flex-1 space-y-2">
+                                    <div className="flex items-center gap-1.5">
+                                        <Trophy size={14} className="text-amber-500" />
+                                        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight">Strong</span>
+                                    </div>
+                                    <div className="px-3 py-2 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 text-[11px] font-black text-red-600 dark:text-red-400 text-center">
+                                        {reviewData.recentScore.strongPoint}
+                                    </div>
+                                </div>
+
+                                <div className="flex-[2] space-y-2">
+                                    <div className="flex items-center gap-1.5">
+                                        <AlertTriangle size={14} className="text-blue-500" />
+                                        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight">Weak</span>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        {reviewData.recentScore.weakPoints.map((wp, idx) => (
+                                            <div key={idx} className="flex-1 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-[11px] font-black text-blue-600 dark:text-blue-400 text-center">
+                                                {wp}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="pt-2 flex justify-end">
+                                <button 
+                                    type="button"
+                                    onClick={() => router.push(`/scores/${reviewData.scorecardId}`)}
+                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-navy text-white text-[11px] font-bold hover:bg-brand-navy/90 transition-all shadow-md shadow-brand-navy/10 active:scale-95"
+                                >
+                                    상세 분석
+                                    <ChevronRight size={14} />
+                                </button>
                             </div>
                         </div>
-
-                        {training.content && (
-                            <div className="space-y-4">
-                                <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                                    <BookOpen size={14} className="text-zinc-400" />
-                                    코치 코멘트 및 상세 내용
-                                </h3>
-                                <div className="prose prose-zinc dark:prose-invert max-w-none text-zinc-700 dark:text-zinc-300 whitespace-pre-line leading-relaxed text-sm bg-zinc-50 dark:bg-zinc-800/30 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800">
-                                    {training.content}
-                                </div>
-                            </div>
-                        )}
-
-
                     </section>
-                </div>
+                )}
 
                 {/* ── 5. Feedback Section (Identical to Lesson) ── */}
                 <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden mb-8">

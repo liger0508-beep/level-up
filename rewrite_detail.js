@@ -1,8 +1,11 @@
-"use client";
-import { fetchComments, saveComment, updateComment, deleteComment, AnalysisComment } from "@/lib/analysis-sync";
-import { MessageSquare, Send, Paperclip, X } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+const fs = require('fs');
+const path = require('path');
 
+function replaceInDetail(filePath) {
+    const newContent = `"use client";
+import { fetchComments, saveComment, updateComment, deleteComment, AnalysisComment } from "@/lib/analysis-sync";
+import { MessageSquare, Paperclip, X, ChevronDown, ChevronUp } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
@@ -14,17 +17,19 @@ import {
     User,
     Edit2,
     Trash2,
-    Megaphone
+    Megaphone,
+    Map
 } from "lucide-react";
-import { getNoticeById, deleteNotice, NOTICE_TYPE_LABELS, NoticeType, NOTICE_TYPE_COLORS, Notice } from "@/lib/notice-sync";
+import { getCourseInfoById, deleteCourseInfo, CourseInfo } from "@/lib/course-info-sync";
 import { cn } from "@/lib/utils";
 
-export default function NoticeDetailPage() {
+export default function CourseInfoDetailPage() {
     const router = useRouter();
     const params = useParams();
     const { id } = params;
 
-    const [notice, setNotice] = useState<Notice | null>(null);
+    const [courseInfo, setCourseInfo] = useState<CourseInfo | null>(null);
+    const [parsedContent, setParsedContent] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
@@ -35,12 +40,10 @@ export default function NoticeDetailPage() {
     const [isSubmittingComment, setIsSubmittingComment] = useState(false);
     const [newComment, setNewComment] = useState("");
     const [commentFile, setCommentFile] = useState<File | null>(null);
-    const [commentPreviewUrl, setCommentPreviewUrl] = useState<string | null>(null);
     const [currentUser, setCurrentUser] = useState<{ id: string; name: string } | null>(null);
     const commentFileRef = useRef<HTMLInputElement>(null);
+    const [openHoles, setOpenHoles] = useState<Record<number, boolean>>({});
 
-
-    
     useEffect(() => {
         if (id) {
             fetchComments(id as string).then(setComments);
@@ -52,8 +55,15 @@ export default function NoticeDetailPage() {
 
     useEffect(() => {
         if (id) {
-            getNoticeById(id as string).then(data => {
-                setNotice(data);
+            getCourseInfoById(id as string).then(data => {
+                if (data) {
+                    setCourseInfo(data);
+                    try {
+                        setParsedContent(JSON.parse(data.content));
+                    } catch (e) {
+                        setParsedContent({ courseDescription: data.content, courseInput: "", holes: {} });
+                    }
+                }
                 setLoading(false);
             });
         }
@@ -69,11 +79,13 @@ export default function NoticeDetailPage() {
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    
+    const toggleHole = (holeNum: number) => {
+        setOpenHoles(prev => ({ ...prev, [holeNum]: !prev[holeNum] }));
+    };
+
     const handleCommentFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0] ?? null;
         setCommentFile(file);
-        setCommentPreviewUrl(file ? URL.createObjectURL(file) : null);
         e.target.value = "";
     };
 
@@ -95,7 +107,7 @@ export default function NoticeDetailPage() {
 
             if (commentFile) {
                 const { uploadFile } = await import("@/lib/storage-sync");
-                fileUrl = await uploadFile(commentFile, 'records', `comments/${id}`);
+                fileUrl = await uploadFile(commentFile, 'records', \`comments/\${id}\`);
                 fileType = commentFile.type;
             }
 
@@ -106,9 +118,9 @@ export default function NoticeDetailPage() {
                     id: id as string,
                     user_id: user.id,
                     coach_id: user.id,
-                    type: "notice",
+                    type: "courseInfo",
                     category: "system",
-                    title: "Notice Record",
+                    title: "CourseInfo Record",
                     content: ""
                 });
             }
@@ -125,7 +137,6 @@ export default function NoticeDetailPage() {
             setComments(updatedComments);
             setNewComment("");
             setCommentFile(null);
-            setCommentPreviewUrl(null);
         } catch (err) {
             console.error(err);
             alert("댓글 저장에 실패했습니다.");
@@ -160,11 +171,11 @@ export default function NoticeDetailPage() {
 
     const handleDelete = async () => {
         setIsMenuOpen(false);
-        if (window.confirm("공지사항을 삭제하시겠습니까?")) {
+        if (window.confirm("코스 정보를 삭제하시겠습니까?")) {
             try {
-                await deleteNotice(id as string);
+                await deleteCourseInfo(id as string);
                 alert("삭제되었습니다.");
-                router.push("/community");
+                router.push("/course-info");
             } catch (err) {
                 console.error(err);
                 alert("삭제 중 오류가 발생했습니다.");
@@ -173,7 +184,9 @@ export default function NoticeDetailPage() {
     };
 
     if (loading) return <div className="flex items-center justify-center min-h-screen">로딩 중...</div>;
-    if (!notice) return <div className="flex items-center justify-center min-h-screen">공지사항을 찾을 수 없습니다.</div>;
+    if (!courseInfo || !parsedContent) return <div className="flex items-center justify-center min-h-screen">코스 정보를 찾을 수 없습니다.</div>;
+
+    const { courseDescription, courseInput, holes } = parsedContent;
 
     return (
         <div className="min-h-screen bg-white dark:bg-zinc-950 pb-20">
@@ -188,9 +201,9 @@ export default function NoticeDetailPage() {
                             <ChevronLeft size={24} />
                         </button>
                         <div className="flex items-center gap-2">
-                            <Megaphone size={18} className="text-brand-navy dark:text-brand-navy-light shrink-0" />
+                            <Map size={18} className="text-brand-navy dark:text-brand-navy-light shrink-0" />
                             <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
-                                공지 상세
+                                코스 정보 상세
                             </h1>
                         </div>
                     </div>
@@ -206,7 +219,7 @@ export default function NoticeDetailPage() {
                         {isMenuOpen && (
                             <div className="absolute right-0 mt-2 w-36 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-lg overflow-hidden z-50 animate-in fade-in zoom-in-95 origin-top-right duration-100">
                                 <Link
-                                    href={`/community/${id}/edit`}
+                                    href={\`/course-info/\${id}/edit\`}
                                     className="w-full text-left px-4 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 flex items-center gap-2 transition-colors"
                                 >
                                     <Edit2 size={16} className="text-zinc-400" />
@@ -226,32 +239,18 @@ export default function NoticeDetailPage() {
             </header>
 
             <main className="max-w-3xl mx-auto px-4 sm:px-8 py-6 space-y-6">
-                {/* ── Notice Info ── */}
+                {/* ── CourseInfo Info ── */}
                 <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-5">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                            <span className={cn(
-                                "text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider border",
-                                NOTICE_TYPE_COLORS[notice.type].bg,
-                                NOTICE_TYPE_COLORS[notice.type].text,
-                                NOTICE_TYPE_COLORS[notice.type].border
-                            )}>
-                                {NOTICE_TYPE_LABELS[notice.type]}
-                            </span>
-                            <span className="text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-700">
-                                {notice.branch}
-                            </span>
-                            {notice.isImportant && (
-                                <span className="text-[10px] font-bold text-red-500 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 px-2 py-1 rounded-full">
-                                    중요
-                                </span>
-                            )}
-                        </div>
-                    </div>
-
+                    
                     <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-zinc-50 leading-tight">
-                        {notice.title}
+                        {courseInfo.title}
                     </h2>
+                    
+                    {courseInput && (
+                        <div className="inline-block bg-zinc-100 dark:bg-zinc-800 text-sm font-semibold text-zinc-700 dark:text-zinc-300 px-4 py-2 rounded-xl">
+                            {courseInput}
+                        </div>
+                    )}
 
                     <div className="flex items-center gap-4 pt-5 border-t border-zinc-100 dark:border-zinc-800/50">
                         <div className="flex items-center gap-2 flex-1">
@@ -260,7 +259,7 @@ export default function NoticeDetailPage() {
                             </div>
                             <div>
                                 <p className="text-[10px] text-zinc-500 font-medium leading-none mb-1">작성자</p>
-                                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100 leading-none">{notice.author}</p>
+                                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100 leading-none">{courseInfo.author || "알 수 없음"}</p>
                             </div>
                         </div>
                         <div className="w-px h-8 bg-zinc-200 dark:bg-zinc-800"></div>
@@ -270,21 +269,53 @@ export default function NoticeDetailPage() {
                             </div>
                             <div>
                                 <p className="text-[10px] text-zinc-500 font-medium leading-none mb-1">작성일</p>
-                                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100 leading-none">{notice.date.replace(/-/g, ".")}</p>
+                                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100 leading-none">{courseInfo.date.replace(/-/g, ".")}</p>
                             </div>
                         </div>
                     </div>
                 </section>
 
-                {/* ── Content (Rich Text) ── */}
-                <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-3xl shadow-sm min-h-[200px]">
-                    <div
-                        className="prose prose-sm sm:prose-base prose-zinc dark:prose-invert max-w-none text-zinc-700 dark:text-zinc-300 leading-relaxed"
-                        dangerouslySetInnerHTML={{ __html: notice.content }}
-                    />
+                {/* ── Content (Text) ── */}
+                <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-3xl shadow-sm min-h-[150px]">
+                    <div className="whitespace-pre-wrap text-sm sm:text-base text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                        {courseDescription || "작성된 상세 내용이 없습니다."}
+                    </div>
+                </section>
+                
+                {/* ── Hole Information Accordion ── */}
+                <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-4">
+                    <h3 className="text-lg font-bold text-zinc-800 dark:text-zinc-200 mb-4">홀별 추가 정보</h3>
+                    <div className="space-y-3">
+                        {Array.from({ length: 18 }, (_, i) => i + 1).map((hole) => {
+                            const hasInfo = !!holes[hole];
+                            return (
+                                <div key={hole} className="border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-zinc-50 dark:bg-zinc-800/50">
+                                    <button
+                                        type="button"
+                                        onClick={() => toggleHole(hole)}
+                                        className="w-full flex items-center justify-between px-4 py-3 text-sm font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <span>{hole}번 홀</span>
+                                            {hasInfo && (
+                                                <span className="text-[10px] bg-brand-navy text-white px-2 py-0.5 rounded-full">정보 있음</span>
+                                            )}
+                                        </div>
+                                        {openHoles[hole] ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                                    </button>
+                                    {openHoles[hole] && (
+                                        <div className="p-4 pt-0 border-t border-zinc-200 dark:border-zinc-800">
+                                            <div className="p-4 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap">
+                                                {holes[hole] || "등록된 추가 정보가 없습니다."}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
                 </section>
 
-                
                 {/* ── Feedback Section ── */}
                 <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden mb-8">
                     <div className="flex items-center gap-2 px-5 pt-4 pb-3 border-b border-zinc-100 dark:border-zinc-800">
@@ -371,10 +402,9 @@ export default function NoticeDetailPage() {
                     </div>
                 </section>
 
-                {/* ── Footer Actions ── */}
                 <div className="flex justify-center pt-4">
                     <button
-                        onClick={() => router.push("/community")}
+                        onClick={() => router.push("/course-info")}
                         className="px-8 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-all active:scale-95"
                     >
                         목록으로 돌아가기
@@ -384,3 +414,9 @@ export default function NoticeDetailPage() {
         </div>
     );
 }
+`;
+    fs.writeFileSync(filePath, newContent, 'utf-8');
+}
+
+replaceInDetail(path.join(__dirname, 'src/app/(main)/course-info/[id]/page.tsx'));
+console.log("Detail page rewritten.");

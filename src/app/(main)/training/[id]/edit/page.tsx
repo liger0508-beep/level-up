@@ -341,10 +341,10 @@ export default function EditTrainingPage() {
 
                             {selectedTemplates.length > 0 && (
                                 <div className="flex flex-wrap gap-1.5 mb-2">
-                                    {selectedTemplates.map((val) => {
+                                    {selectedTemplates.map((val, index) => {
                                         const template = dbTemplates.find(t => t.id === val);
                                         return (
-                                            <span key={val} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 text-xs font-medium border border-blue-200 dark:border-blue-800">
+                                            <span key={`${val}-${index}`} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 text-xs font-medium border border-blue-200 dark:border-blue-800">
                                                 {template?.title || val}
                                                 <button type="button" onClick={() => handleTemplateRemove(val)} className="hover:text-blue-600 dark:hover:text-blue-100 transition-colors"><X size={12} /></button>
                                             </span>

@@ -99,7 +99,7 @@ const SectionHeader = ({ title, icon: Icon, badge }: { title: string; icon: any;
 
 const IndicatorCard = ({ label, value, unit, icon: Icon, colorClass = "text-brand-navy" }: { label: string; value: string | number; unit?: string; icon: any; colorClass?: string }) => (
     <div className="bg-zinc-50/50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800/50 p-4 rounded-2xl flex flex-col justify-between h-full">
-        <div className="flex items-center gap-1.5 mb-3 text-[12px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-tight">
+        <div className="flex items-center gap-1.5 mb-3 text-[12px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-tight">
             <Icon size={14} className="text-zinc-400 shrink-0" />
             {label}
         </div>
@@ -182,11 +182,15 @@ export default function ScoreDetailPage() {
     const [commentPreviewUrl, setCommentPreviewUrl] = useState<string | null>(null);
     const commentFileRef = useRef<HTMLInputElement>(null);
 
-    const roundToTwo = (num: number | undefined) => {
+    const roundToOne = (num: number | undefined) => {
         if (num === undefined || num === null) return "0";
-        const val = Number(Math.round(Number(num + "e2")) + "e-2");
-        // If it's a whole number, return without decimal points
-        return val % 1 === 0 ? val.toString() : val.toFixed(2);
+        const val = Number(Math.round(Number(num + "e1")) + "e-1");
+        return val % 1 === 0 ? val.toString() : val.toFixed(1);
+    };
+
+    const formatScore = (val: number, decimals: number = 2) => {
+        if (val === 0) return "0";
+        return (val > 0 ? "+" : "") + val.toFixed(decimals);
     };
 
     const getRelevantShots = (holeNumber: number, category: string) => {
@@ -526,10 +530,10 @@ export default function ScoreDetailPage() {
                         scorePar5,
                         avgRemainingDists,
                         sectorChanges: [
-                            { type: "티샷", value: roundToTwo(teeSG) },
-                            { type: "세컨샷", value: roundToTwo(secondSG) },
-                            { type: "그린주변샷", value: roundToTwo(greenSG) },
-                            { type: "퍼팅", value: roundToTwo(puttingSG) }
+                            { type: "티샷", value: formatScore(teeSG, 2), items: cats.slice(0, 2) },
+                            { type: "세컨샷", value: formatScore(secondSG, 2), items: cats.slice(2, 6) },
+                            { type: "그린주변샷", value: formatScore(greenSG, 2), items: cats.slice(6, 9) },
+                            { type: "퍼팅", value: formatScore(puttingSG, 2), items: cats.slice(9, 13) }
                         ],
                         contributions: categoriesWithPercent,
                         strongPoint,
@@ -545,7 +549,7 @@ export default function ScoreDetailPage() {
                                 .map(h => h.holeNumber);
 
                             return {
-                                rank: `${i + 1}순위`,
+                                rank: `${i + 1}`,
                                 label: c.name,
                                 pct: Math.round(c.percent),
                                 time: [35, 25, 25, 20, 10, 5][i] || 5,
@@ -623,15 +627,15 @@ export default function ScoreDetailPage() {
             secondPoint: summary.secondPoint,
             greenPoint: summary.greenPoint,
             puttingPoint: summary.puttingPoint,
-            playContent: roundToTwo(summary.playContent),
-            scoreVsContent: (summary.scoreVsContent > 0 ? "+" : "") + roundToTwo(summary.scoreVsContent),
-            longVsShort: (summary.longVsShort > 0 ? "+" : "") + roundToTwo(summary.longVsShort)
+            playContent: roundToOne(summary.playContent),
+            scoreVsContent: (summary.scoreVsContent > 0 ? "+" : "") + roundToOne(summary.scoreVsContent),
+            longVsShort: (summary.longVsShort > 0 ? "+" : "") + roundToOne(summary.longVsShort)
         },
         avgMetrics: [
-            { label: "페어웨이 안착률", value: roundToTwo(summary.fairwayHitRate), unit: "%" },
-            { label: "그린 적중률", value: roundToTwo(summary.girRate), unit: "%" },
+            { label: "페어웨이 안착률", value: roundToOne(summary.fairwayHitRate), unit: "%" },
+            { label: "평균 첫 퍼트 거리", value: roundToOne(summary.avgFirstPuttDist), unit: "m" },
+            { label: "그린 적중률", value: roundToOne(summary.girRate), unit: "%" },
             { label: "퍼트수", value: summary.totalPutts, unit: "개" },
-            { label: "평균 첫 퍼트 거리", value: roundToTwo(summary.avgFirstPuttDist), unit: "m" },
             { label: "3퍼트 이상", value: summary.threePuttCount, unit: "회" },
             { label: "패널티/OB", value: summary.penaltyCount, unit: "개" }
         ],
@@ -770,20 +774,41 @@ export default function ScoreDetailPage() {
                 </section>
 
                 {/* Total Score Card */}
-                <div className="relative overflow-hidden bg-brand-navy text-white p-6 rounded-[2.5rem] shadow-lg shadow-brand-navy/10 border border-white/10 h-32 flex items-center">
-                    <div className="absolute right-[-10px] top-[-10px] opacity-10">
-                        <Activity size={100} />
-                    </div>
-                    <div className="relative z-10 flex items-center justify-center w-full">
-                        <div className="absolute left-0">
-                            <span className="text-[11px] font-black uppercase tracking-[0.2em] text-brand-navy-light/60">Score</span>
+                {(() => {
+                    const totalPar = analysis.reduce((sum, h) => sum + h.par, 0);
+                    const scoreDiff = data.totalScore - totalPar;
+                    const scoreDiffStr = scoreDiff > 0 ? `+${scoreDiff}` : scoreDiff === 0 ? "E" : `${scoreDiff}`;
+                    const isUnderPar = scoreDiff < 0;
+                    const isOverPar = scoreDiff > 0;
+                    
+                    const scoreBgClass = isUnderPar ? "bg-red-50 border-red-100 dark:bg-red-900/10 dark:border-red-900/30" : isOverPar ? "bg-blue-50 border-blue-100 dark:bg-blue-900/10 dark:border-blue-900/30" : "bg-zinc-100 border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700";
+                    const scoreTextClass = isUnderPar ? "text-red-500" : isOverPar ? "text-blue-500" : "text-zinc-900 dark:text-zinc-100";
+
+                    return (
+                        <div className={cn("relative overflow-hidden p-6 sm:px-8 rounded-[2.5rem] border flex flex-col justify-between h-32 sm:h-36", scoreBgClass)}>
+                            <div className={cn("absolute right-[-10px] top-[-10px] opacity-[0.05]", scoreTextClass)}>
+                                <Activity size={100} />
+                            </div>
+                            <div className="relative z-10 flex items-center gap-2">
+                                <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center bg-white/60 dark:bg-black/20")}>
+                                    <Activity size={18} className={scoreTextClass} />
+                                </div>
+                                <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-50 uppercase tracking-wide">Score</h2>
+                            </div>
+                            <div className="relative z-10 w-full flex justify-center items-baseline gap-1.5 sm:gap-2 whitespace-nowrap">
+                                <span className={cn("text-4xl sm:text-5xl font-black tracking-tighter", scoreTextClass)}>
+                                    {data.totalScore}
+                                </span>
+                                <span className={cn("text-lg sm:text-xl font-bold", scoreTextClass)}>
+                                    ({scoreDiffStr})
+                                </span>
+                                <span className="text-base sm:text-lg font-bold text-zinc-400">
+                                    / par {totalPar}
+                                </span>
+                            </div>
                         </div>
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-4xl font-black tracking-tighter">{data.totalScore}</span>
-                            <TrendingDown size={22} className="text-brand-navy-light/80" />
-                        </div>
-                    </div>
-                </div>
+                    );
+                })()}
 
                 {/* Summary Boxes */}
                 <div className="grid grid-cols-3 gap-3 sm:gap-5">
@@ -795,18 +820,34 @@ export default function ScoreDetailPage() {
 
                 {/* 부문별 스코어 */}
                 <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60">
-                    <div className="flex items-center justify-between mb-6">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-400">
-                                <Target size={18} />
-                            </div>
-                            <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-50">부문별 스코어</h2>
-                        </div>
-                    </div>
+                    <SectionHeader title="부문별 스코어" icon={Target} />
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {data.sectorChanges.map((sc: any, idx: number) => (
-                            <SectorChangeBadge key={idx} type={sc.type} value={sc.value} />
-                        ))}
+                        {data.sectorChanges.map((sc: any, idx: number) => {
+                            const isPositive = parseFloat(sc.value) > 0;
+                            return (
+                                <div key={idx} className={cn(
+                                    "p-3 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border flex flex-col gap-2 sm:gap-3 transition-all",
+                                    isPositive ? "bg-blue-50/30 border-blue-100 dark:bg-blue-900/10 dark:border-blue-800/30" : "bg-red-50/30 border-red-100 dark:bg-red-900/10 dark:border-red-800/30"
+                                )}>
+                                    <div className="flex flex-col">
+                                        <p className="text-[13px] font-black text-zinc-400 uppercase tracking-tight">{sc.type}</p>
+                                        <p className={cn("text-2xl font-black tracking-tighter text-right mt-1", isPositive ? "text-blue-500" : "text-red-500")}>
+                                            {sc.value}
+                                        </p>
+                                    </div>
+                                    <div className="space-y-1.5 pt-3 mt-1 border-t border-zinc-100/50 dark:border-zinc-800/50">
+                                        {sc.items.map((item: any, iIdx: number) => (
+                                            <div key={iIdx} className="flex justify-between items-center text-[13px] font-bold">
+                                                <span className="text-zinc-500 dark:text-zinc-400">{item.name}</span>
+                                                <span className={item.sg >= 0 ? "text-blue-500" : "text-red-500"}>
+                                                    {item.sg > 0 ? "+" : ""}{item.sg.toFixed(1)}
+                                                </span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 </section>
 
@@ -822,19 +863,23 @@ export default function ScoreDetailPage() {
 
                 {/* Strong / Challenge Points */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-7 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col items-start justify-center gap-1">
-                        <div className="flex items-center gap-2 mb-2">
-                            <TrophyIcon size={18} className="text-red-500" />
-                            <span className="text-[12px] font-black uppercase tracking-tight text-zinc-500 dark:text-zinc-400">Strong Point</span>
-                        </div>
-                        <h3 className="w-full text-left text-2xl font-black text-zinc-900 dark:text-zinc-50 tracking-tighter leading-tight mt-2">{summary.strongPoint}</h3>
-                    </div>
-                    <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-7 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col items-start justify-center gap-1">
+                    <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-7 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col items-start justify-start gap-1">
                         <div className="flex items-center gap-2 mb-4">
-                            <TrendingDown size={18} className="text-brand-navy dark:text-brand-navy-light" />
-                            <span className="text-[12px] font-black uppercase tracking-tight text-zinc-500 dark:text-zinc-400">Challenge Point</span>
+                            <div className="w-8 h-8 rounded-lg bg-red-50 dark:bg-red-900/10 flex items-center justify-center text-red-500">
+                                <TrophyIcon size={18} />
+                            </div>
+                            <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-50 uppercase tracking-wide">Strong Point</h2>
                         </div>
-                        <div className="space-y-4 flex flex-col items-start w-full">
+                        <h3 className="w-full text-center text-2xl font-black text-zinc-900 dark:text-zinc-50 tracking-tighter leading-tight mt-2 flex-1 flex items-center justify-center">{summary.strongPoint}</h3>
+                    </div>
+                    <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-7 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col items-start justify-start gap-1">
+                        <div className="flex items-center gap-2 mb-4">
+                            <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-brand-navy dark:text-brand-navy-light">
+                                <TrendingDown size={18} />
+                            </div>
+                            <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-50 uppercase tracking-wide">Challenge Point</h2>
+                        </div>
+                        <div className="space-y-4 flex flex-col items-start w-full mt-2 flex-1 justify-center">
                             <div className="flex items-center gap-4">
                                 <span className="w-7 h-7 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[12px] font-black text-zinc-500 shrink-0">1</span>
                                 <span className="text-[20px] font-black text-zinc-800 dark:text-zinc-200 tracking-tight">{summary.challengePoint1}</span>
@@ -884,7 +929,7 @@ export default function ScoreDetailPage() {
                                             <span className={cn("text-[11px] font-black px-2 py-0.5 rounded text-white tracking-tight shrink-0", item.color, isBig && "text-[12px] px-3 py-1")}>{item.rank}</span>
                                         </div>
                                         <div className="flex-1 text-center min-w-0 px-2">
-                                            <span className={cn("font-black text-zinc-800 dark:text-zinc-200 block truncate whitespace-nowrap", isBig ? "text-[15px] sm:text-[17px]" : "text-[13px] sm:text-[14px]")}>{item.label}</span>
+                                            <span className={cn("font-black text-zinc-800 dark:text-zinc-200 block break-keep leading-tight", isBig ? "text-[15px] sm:text-[17px]" : "text-[13px] sm:text-[14px]")}>{item.label}</span>
                                         </div>
                                         <div className="flex items-center justify-end gap-2 w-20">
                                             <div className="flex items-baseline gap-0.5">

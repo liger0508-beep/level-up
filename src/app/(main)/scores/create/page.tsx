@@ -244,7 +244,7 @@ function ScoreCreateContent() {
     const [holes, setHoles] = useState<HoleData[]>(
         Array.from({ length: 18 }, () => ({
             par: 0,
-            shots: buildDefaultShots(),
+            shots: [],
         }))
     );
 
@@ -583,7 +583,7 @@ function ScoreCreateContent() {
         setHoles(prev => {
             const next = [...prev];
             let shots = [...next[currentHole - 1].shots];
-            shots[shotIndex] = { ...shots[shotIndex], location, distance: "" };
+            shots[shotIndex] = { ...shots[shotIndex], location };
 
             if (location === "\ud640\uc778") {
                 // 홀인 이후 모든 샷 삭제
@@ -645,11 +645,25 @@ function ScoreCreateContent() {
     };
 
     const holeScore = holeData.par > 0 ? calcHoleScore(holeData.shots, holeData.par) : 0;
-    // 합산 스코어 = 완료된 홀의 실제 타수 합산
-    const totalScore = holes.reduce((acc, h) => {
+    const isCurrentHoleComplete = holeData.shots.findIndex(s => s.location === "홀인" || s.location === "HI") > 0;
+
+    // 합산 스코어 = 1번홀부터 현재 홀까지의 실제 타수 합산
+    const totalScore = holes.slice(0, currentHole).reduce((acc, h) => {
         const idx = h.shots.findIndex(s => s.location === "홀인" || s.location === "HI");
         return acc + (idx > 0 ? idx : 0);
     }, 0);
+
+    const formatRelativeScore = (score: number) => {
+        if (score > 0) return `+${score}`;
+        if (score === 0) return "0";
+        return `${score}`;
+    };
+
+    const getScoreColor = (score: number) => {
+        if (score > 0) return "text-blue-500";
+        if (score < 0) return "text-red-500";
+        return "text-zinc-600 dark:text-zinc-400";
+    };
     const unitSymbol = distanceUnit.includes("미터") ? "m" : "y";
 
     const handleSubmit = async (e: React.FormEvent, submitHolesCount: number = 18) => {
@@ -661,6 +675,21 @@ function ScoreCreateContent() {
         if (!golfCourse.trim()) {
             setValidationError("골프장을 입력해 주세요.");
             // Scroll to validation error if needed (it's near the bottom now)
+            return;
+        }
+
+        // Check for missing holes up to submitHolesCount
+        const missingHoles: number[] = [];
+        for (let i = 0; i < submitHolesCount; i++) {
+            const hasHoleIn = holes[i].shots.some(s => s.location === "홀인" || s.location === "HI");
+            if (!hasHoleIn) {
+                missingHoles.push(i + 1);
+            }
+        }
+
+        if (missingHoles.length > 0) {
+            alert(`다음 홀들이 작성되지 않았습니다: ${missingHoles.join(', ')}번 홀\n해당 홀들을 마저 작성해 주세요.`);
+            setCurrentHole(missingHoles[0]);
             return;
         }
 
@@ -727,7 +756,9 @@ function ScoreCreateContent() {
                 const { error: scErr } = await supabase
                     .from("scorecards")
                     .update({
-                        total_score: computedTotalScore
+                        total_score: computedTotalScore,
+                        is_final: true,
+                        hole_count: submitHolesCount
                     })
                     .eq("id", editId);
                 if (scErr) throw new Error(`스코어카드 업데이트 실패: ${scErr.message}`);
@@ -741,7 +772,9 @@ function ScoreCreateContent() {
                         course_name:   golfCourse,
                         weather:       category,
                         total_score:   computedTotalScore,
-                        distance_unit: distanceUnit.includes("야드") ? "yard" : "meter"
+                        distance_unit: distanceUnit.includes("야드") ? "yard" : "meter",
+                        is_final:      true,
+                        hole_count:    submitHolesCount
                     })
                     .select("id")
                     .single();
@@ -826,13 +859,88 @@ function ScoreCreateContent() {
                     content: `${computedTotalScore}타 기록`,
                     related_id: scorecardId
                 });
+
+                // 8.5 복습 훈련(Review Training) 자동 배정 및 기존 복습 훈련 업데이트
+                try {
+                    const todayStr = formatLocalDate(new Date());
+
+                    // (1) 기존 진행 중인 복습 훈련의 종료일을 오늘로 업데이트
+                    const { data: existingReviews } = await supabase
+                        .from("records")
+                        .select("id")
+                        .eq("type", "training")
+                        .eq("user_id", athleteId)
+                        .ilike("title", "%[복습]%")
+                        .gte("training_end", todayStr);
+
+                    if (existingReviews && existingReviews.length > 0) {
+                        const reviewIds = existingReviews.map(r => r.id);
+                        await supabase
+                            .from("records")
+                            .update({ training_end: todayStr })
+                            .in("id", reviewIds);
+                    }
+
+                    // (2) 새로운 복습 훈련 배정 (18홀/9홀 무관)
+                    const endDt = new Date();
+                    endDt.setDate(endDt.getDate() + 6); // 7일간
+                    const in7DaysStr = formatLocalDate(endDt);
+
+                    const { calculateScorecardAnalysis } = await import("@/lib/score-calculations");
+                    const { fetchScoreById } = await import("@/lib/score-sync");
+                    
+                    const analysis = await calculateScorecardAnalysis(scorecardId as string);
+                    const recentScore = await fetchScoreById(scorecardId as string);
+                    
+                    const CATEGORY_TO_FIELD: Record<string, string> = {
+                        "티샷 비거리": "distSG_DriverDist", "티샷 정확도": "distSG_DriverAcc",
+                        "180M이상": "distSG_180Plus", "150-179M": "distSG_150_179",
+                        "120-149M": "distSG_120_149", "90-119M": "distSG_90_119",
+                        "피치샷": "distSG_Pitch31_89", "벙커": "distSG_Bunker",
+                        "어프로치": "distSG_Approach",
+                        "9M이상": "distSG_Putt9Plus", "4-8M": "distSG_Putt4_8",
+                        "2-3M": "distSG_Putt2_3", "1M": "distSG_Putt1",
+                    };
+                    
+                    let totalReviewTasks = 0;
+                    if (analysis && analysis.length > 0) {
+                        const cats = Object.entries(CATEGORY_TO_FIELD).map(([name, field]) => ({
+                            name,
+                            sg: analysis.reduce((s: any, h: any) => s + (h.summary as any)[field], 0)
+                        }));
+                        const positiveCats = cats.filter(c => c.sg > 0).sort((a, b) => b.sg - a.sg).slice(0, 5);
+
+                        positiveCats.forEach(cat => {
+                            const fieldName = CATEGORY_TO_FIELD[cat.name];
+                            if (fieldName) {
+                                const focusHoles = analysis.filter((h: any) => (h.summary as any)[fieldName] > 0).slice(0, 3);
+                                totalReviewTasks += focusHoles.length;
+                            }
+                        });
+                    }
+
+                    await supabase.from("records").insert({
+                        user_id: athleteId,
+                        coach_id: coachId,
+                        type: "training",
+                        title: `[복습] ${roundDate.replace(/-/g, '.')}, ${golfCourse}`,
+                        category: "review",
+                        content: `스코어카드 기반 자동 생성된 복습 훈련입니다. (${submitHolesCount}홀)`,
+                        training_start: todayStr,
+                        training_end: in7DaysStr,
+                        template_settings: [{ type: "review_scorecard", scorecardId: scorecardId }],
+                        total_count: Math.max(totalReviewTasks, 1)
+                    });
+                } catch (err) {
+                    console.error("복습 훈련 생성 중 오류:", err);
+                }
             }
 
             // 9. 임시 저장 데이터 삭제
             localStorage.removeItem(DRAFT_KEY);
 
             alert("스코어카드가 등록되었습니다.");
-            router.push("/scores");
+            router.replace(`/scores/${scorecardId}`);
 
         } catch (err) {
             console.error("스코어카드 저장 오류:", err);
@@ -1043,8 +1151,8 @@ function ScoreCreateContent() {
 
                         {/* Score Banner */}
                         <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl px-5 py-3 flex justify-between items-center">
-                            <span className="text-sm font-semibold text-brand-navy dark:text-blue-300">이번홀: {holeScore}</span>
-                            <span className="text-sm font-semibold text-brand-navy dark:text-blue-300">합산 스코어: {totalScore}</span>
+                            <span className="text-sm font-semibold text-brand-navy dark:text-blue-300">이번홀: {isCurrentHoleComplete ? <span className={getScoreColor(holeScore)}>{formatRelativeScore(holeScore)}</span> : "-"}</span>
+                            <span className="text-sm font-semibold text-brand-navy dark:text-blue-300">합산 스코어: {totalScore > 0 ? totalScore : "-"}</span>
                         </div>
 
                         {/* Par Selection */}
@@ -1081,81 +1189,91 @@ function ScoreCreateContent() {
 
                             {/* Rows */}
                             <div className="divide-y divide-zinc-50 dark:divide-zinc-800/60">
-                                {holeData.shots.map((shot, idx) => (
-                                    <div key={idx} className="flex flex-col px-2 py-2 gap-2 border-b border-zinc-50 dark:border-zinc-800/60 last:border-0">
-                                        <div className="grid grid-cols-[36px_minmax(0,1fr)_90px] items-center gap-2">
-                                            {/* Shot index */}
-                                            <div className="flex items-center justify-center text-sm font-semibold text-zinc-400">{idx}</div>
+                                {holeData.shots.map((shot, idx) => {
+                                    const prevLoc = holeData.shots[idx - 1]?.location;
+                                    const isDisabled =
+                                        shot.location === "홀인" ||
+                                        (idx === 0 && holeData.par !== 3) ||
+                                        shot.location === "오비" ||
+                                        shot.location === "패널티구역" ||
+                                        prevLoc === "오비";
+                                    
+                                    // Find if this is the very first empty required field
+                                    const isCurrentTarget = holeData.shots.findIndex((s, i) => {
+                                        const pLoc = holeData.shots[i - 1]?.location;
+                                        const isDis = s.location === "홀인" || (i === 0 && holeData.par !== 3) || s.location === "오비" || s.location === "패널티구역" || pLoc === "오비";
+                                        return !isDis && (!s.distance || s.distance.trim() === "");
+                                    }) === idx;
 
-                                            {/* Ball location — native select on desktop, bottom sheet on mobile */}
-                                            {idx === 0 ? (
-                                                <div className="px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-sm font-medium text-zinc-500 text-center border border-zinc-200 dark:border-zinc-700">
-                                                    티박스
-                                                </div>
-                                            ) : (() => {
-                                                const prevLoc = holeData.shots[idx - 1]?.location;
-                                                const isLocLocked = prevLoc === "오비" || prevLoc === "패널티구역";
+                                    const hasError = !isDisabled && distanceErrors.has(idx);
+                                    const shouldHighlight = hasError || isCurrentTarget;
 
-                                                if (isLocLocked) {
-                                                    // 회색 고정 셀 (수정 불가)
+                                    return (
+                                        <div key={idx} className={cn(
+                                            "flex flex-col px-2 py-2 gap-2 border-b border-zinc-50 dark:border-zinc-800/60 last:border-0 transition-colors",
+                                            shouldHighlight ? "bg-red-50 dark:bg-red-900/20" : ""
+                                        )}>
+                                            <div className="grid grid-cols-[36px_minmax(0,1fr)_90px] items-center gap-2">
+                                                {/* Shot index */}
+                                                <div className="flex items-center justify-center text-sm font-semibold text-zinc-400">{idx}</div>
+
+                                                {/* Ball location — native select on desktop, bottom sheet on mobile */}
+                                                {idx === 0 ? (
+                                                    <div className="px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-sm font-medium text-zinc-500 text-center border border-zinc-200 dark:border-zinc-700">
+                                                        티박스
+                                                    </div>
+                                                ) : (() => {
+                                                    const isLocLocked = prevLoc === "오비" || prevLoc === "패널티구역";
+
+                                                    if (isLocLocked) {
+                                                        // 회색 고정 셀 (수정 불가)
+                                                        return (
+                                                            <div className="px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-sm font-medium text-zinc-400 text-center border border-zinc-100 dark:border-zinc-800">
+                                                                {shot.location || "-"}
+                                                            </div>
+                                                        );
+                                                    }
                                                     return (
-                                                        <div className="px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-sm font-medium text-zinc-400 text-center border border-zinc-100 dark:border-zinc-800">
-                                                            {shot.location || "-"}
-                                                        </div>
-                                                    );
-                                                }
-                                                return (
-                                                    <>
-                                                        {/* Desktop: native select */}
-                                                        <div className="relative hidden md:block">
-                                                            <select
-                                                                value={shot.location}
-                                                                onChange={(e) => updateShotLocation(idx, e.target.value)}
-                                                                className="w-full pl-3 pr-7 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm font-medium text-zinc-900 dark:text-zinc-100 text-center focus:outline-none focus:ring-2 focus:ring-brand-navy/30 transition-all appearance-none"
-                                                                style={{ textAlignLast: "center" }}
+                                                        <>
+                                                            {/* Desktop: native select */}
+                                                            <div className="relative hidden md:block">
+                                                                <select
+                                                                    value={shot.location}
+                                                                    onChange={(e) => updateShotLocation(idx, e.target.value)}
+                                                                    className={cn(
+                                                                        "w-full pl-3 pr-7 py-2 rounded-lg border text-sm font-medium text-center focus:outline-none focus:ring-2 transition-all appearance-none",
+                                                                        shouldHighlight ? "bg-white dark:bg-zinc-800 border-red-200 dark:border-red-900/50 text-zinc-900 dark:text-zinc-100 focus:ring-red-300" : "bg-transparent dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:ring-brand-navy/30"
+                                                                    )}
+                                                                    style={{ textAlignLast: "center" }}
+                                                                >
+                                                                    <option value="">-</option>
+                                                                    {BALL_LOCATIONS.map(loc => (
+                                                                        <option key={loc} value={loc}>{loc}</option>
+                                                                    ))}
+                                                                </select>
+                                                                <ChevronDown size={13} className={cn("absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none", shouldHighlight ? "text-red-400" : "text-zinc-400")} />
+                                                            </div>
+
+                                                            {/* Mobile: custom button → bottom sheet */}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setOpenPickerShotIndex(idx)}
+                                                                className={cn(
+                                                                    "md:hidden w-full flex items-center justify-between pl-3 pr-2 py-2 rounded-lg border text-sm font-medium transition-colors",
+                                                                    shouldHighlight ? "bg-white dark:bg-zinc-800 border-red-200 dark:border-red-900/50 text-zinc-900 dark:text-zinc-100" : "bg-transparent dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 hover:border-brand-navy/40"
+                                                                )}
                                                             >
-                                                                <option value="">-</option>
-                                                                {BALL_LOCATIONS.map(loc => (
-                                                                    <option key={loc} value={loc}>{loc}</option>
-                                                                ))}
-                                                            </select>
-                                                            <ChevronDown size={13} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
-                                                        </div>
+                                                                <span className="flex-1 text-center truncate">{shot.location || "-"}</span>
+                                                                <ChevronDown size={13} className={cn("shrink-0 ml-1", shouldHighlight ? "text-red-400" : "text-zinc-400")} />
+                                                            </button>
+                                                        </>
+                                                    );
+                                                })()}
 
-                                                        {/* Mobile: custom button → bottom sheet */}
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setOpenPickerShotIndex(idx)}
-                                                            className="md:hidden w-full flex items-center justify-between pl-3 pr-2 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm font-medium text-zinc-900 dark:text-zinc-100 hover:border-brand-navy/40 transition-colors"
-                                                        >
-                                                            <span className="flex-1 text-center truncate">{shot.location || "-"}</span>
-                                                            <ChevronDown size={13} className="text-zinc-400 shrink-0 ml-1" />
-                                                        </button>
-                                                    </>
-                                                );
-                                            })()}
-
-                                            {/* Distance Input */}
-                                            <div className="relative w-full">
-                                                {(() => {
-                                                    const prevLoc = holeData.shots[idx - 1]?.location;
-                                                    const isDisabled =
-                                                        shot.location === "홀인" ||
-                                                        (idx === 0 && holeData.par !== 3) ||
-                                                        shot.location === "오비" ||
-                                                        shot.location === "패널티구역" ||
-                                                        prevLoc === "오비";
-                                                    
-                                                    // Find if this is the very first empty required field
-                                                    const isCurrentTarget = holeData.shots.findIndex((s, i) => {
-                                                        const pLoc = holeData.shots[i - 1]?.location;
-                                                        const isDis = s.location === "홀인" || (i === 0 && holeData.par !== 3) || s.location === "오비" || s.location === "패널티구역" || pLoc === "오비";
-                                                        return !isDis && (!s.distance || s.distance.trim() === "");
-                                                    }) === idx;
-
-                                                    const hasError = !isDisabled && distanceErrors.has(idx);
-                                                    const shouldHighlight = hasError || isCurrentTarget;
-                                                    return (
+                                                {/* Distance Input */}
+                                                <div className="relative w-full">
+                                                    {(() => {
+                                                        return (
                                                         <input
                                                             type="number"
                                                             value={shot.distance}
@@ -1175,7 +1293,7 @@ function ScoreCreateContent() {
                                                                 isDisabled
                                                                     ? "bg-zinc-50 dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 text-zinc-300"
                                                                     : shouldHighlight
-                                                                        ? "bg-red-50 dark:bg-red-900/20 border-red-400 dark:border-red-500 text-zinc-900 dark:text-zinc-100 focus:ring-red-300"
+                                                                        ? "bg-white dark:bg-red-900/40 border-red-400 dark:border-red-500 text-zinc-900 dark:text-zinc-100 focus:ring-red-300"
                                                                         : "bg-transparent dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:ring-brand-navy/30"
                                                             )}
                                                         />
@@ -1185,8 +1303,9 @@ function ScoreCreateContent() {
                                             </div>
                                         </div>
                                     </div>
-                                ))}
-                            </div>
+                                );
+                            })}
+                        </div>
                         </div>
                         )}
 
@@ -1236,25 +1355,6 @@ function ScoreCreateContent() {
                                     <div className="px-4 py-2.5 text-sm font-bold text-zinc-900 dark:text-white border-l border-zinc-200 dark:border-zinc-800 text-center flex items-center justify-center">점수</div>
                                 </div>
                                 
-                                {/* Shot 0 (Attempt) */}
-                                {currentAnalysis.shots.length > 0 && (
-                                    <div className="grid grid-cols-[40px_1.5fr_1fr] border-b border-zinc-100 dark:border-zinc-800/60 items-stretch">
-                                        <div className="px-2 py-2 text-sm font-bold text-zinc-500 dark:text-zinc-400 text-center flex items-center justify-center bg-zinc-50/30 dark:bg-zinc-800/20">
-                                            0
-                                        </div>
-                                        <div className="px-4 py-2 flex flex-col justify-center pl-6 sm:pl-8 border-l border-zinc-100 dark:border-zinc-800/60">
-                                            <div className="flex items-center gap-2">
-                                                <span className="w-1 h-3 bg-zinc-300 dark:bg-zinc-600 rounded-full shrink-0"></span>
-                                                <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300 truncate">
-                                                    {(holeData.shots[0]?.location || "-").replace('그린 주변 어프로치', '어프로치').replace('그린 주변 벙커', '벙커')} {holeData.shots[0]?.distance ? `/ ${holeData.shots[0].distance}${unitSymbol}` : ""}
-                                                </span>
-                                            </div>
-                                        </div>
-                                        <div className="px-4 py-2 text-sm font-bold border-l border-zinc-100 dark:border-zinc-800/60 text-center flex items-center justify-center text-zinc-400">
-                                            -
-                                        </div>
-                                    </div>
-                                )}
 
                                 {/* Shot-by-shot SG */}
                                 {currentAnalysis.shots.map((shot: any, i: number) => (
@@ -1265,8 +1365,8 @@ function ScoreCreateContent() {
                                         <div className="px-4 py-2 flex flex-col justify-center pl-6 sm:pl-8 border-l border-zinc-100 dark:border-zinc-800/60">
                                             <div className="flex items-center gap-2">
                                                 <span className="w-1 h-3 bg-orange-500 rounded-full shrink-0"></span>
-                                                <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300 truncate">
-                                                    {(holeData.shots[i+1]?.location || "홀인").replace('그린 주변 어프로치', '어프로치').replace('그린 주변 벙커', '벙커')} {holeData.shots[i+1]?.distance && holeData.shots[i+1]?.location !== "홀인" ? `/ ${holeData.shots[i+1].distance}${unitSymbol}` : ""}
+                                                <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">
+                                                    {(holeData.shots[i]?.location || "-").replace('그린 주변 어프로치', '어프로치').replace('그린 주변 벙커', '벙커').replace('티박스', '티샷')} {holeData.shots[i]?.distance && holeData.shots[i]?.location !== "홀인" ? `/ ${holeData.shots[i].distance}${unitSymbol}` : ""}
                                                 </span>
                                             </div>
                                         </div>
@@ -1375,7 +1475,7 @@ function ScoreCreateContent() {
                             <textarea
                                 value={holeData.shots[editingMemoIndex]?.memo || ""}
                                 onChange={(e) => updateShotMemo(editingMemoIndex, e.target.value)}
-                                placeholder="샷에 대한 원인이나 결과 등을 상세히 기록해 주세요"
+                                placeholder="샷에 대한 원인이나 결과 등을 간단히 기록해 주세요"
                                 className="w-full h-32 px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400/60 dark:placeholder:text-zinc-600/60 focus:outline-none focus:ring-2 focus:ring-brand-navy/30 transition-all resize-none"
                                 autoFocus
                             />

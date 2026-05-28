@@ -102,42 +102,18 @@ function CreateLessonContent() {
 
     // ── Consolidate Mount Logic (Draft + Params) ──────────────────
     useEffect(() => {
-        // 1. Check if we should resume from draft
-        // Should resume if: 1) We set a flag before navigating away, or 2) It's a page reload
-        const navEntries = window.performance.getEntriesByType("navigation") as PerformanceNavigationTiming[];
-        const isReload = navEntries.length > 0 && navEntries[0].type === "reload";
-        const isResumeNavigation = sessionStorage.getItem("resume_lesson_create") === "true";
-        
-        const shouldClear = !isReload && !isResumeNavigation;
-        
-        if (shouldClear) {
-            localStorage.removeItem(DRAFT_KEY);
-        }
-        
-        // Always consume the flag
-        sessionStorage.removeItem("resume_lesson_create");
-
-        // 2. Load Draft from LocalStorage
-        const draft = localStorage.getItem(DRAFT_KEY);
+        // Load Draft from SessionStorage
+        const draft = sessionStorage.getItem(DRAFT_KEY);
         if (draft) {
             try {
                 const data = JSON.parse(draft);
-                // Only load if updated within the last 10 minutes
-                const isRecent = data.updatedAt && (new Date().getTime() - new Date(data.updatedAt).getTime() < 10 * 60 * 1000);
-                
-                if (isRecent) {
-                    if (data.selectedPlayers && data.selectedPlayers.length > 0) {
-                        setSelectedPlayers(data.selectedPlayers);
-                    }
-                    if (data.selectedPart) setSelectedPart(data.selectedPart as LessonType);
-                    if (data.lessonDate) setLessonDate(data.lessonDate);
-                    if (data.startSlot) setStartSlot(data.startSlot);
-                    if (data.endSlot) setEndSlot(data.endSlot);
-                    if (data.period) setPeriod(data.period);
-                    if (data.lessonContent) setLessonContent(data.lessonContent);
-                } else {
-                    localStorage.removeItem(DRAFT_KEY);
-                }
+                if (data.selectedPlayers) setSelectedPlayers(data.selectedPlayers);
+                if (data.selectedPart) setSelectedPart(data.selectedPart as LessonType);
+                if (data.lessonDate) setLessonDate(data.lessonDate);
+                if (data.startSlot) setStartSlot(data.startSlot);
+                if (data.endSlot) setEndSlot(data.endSlot);
+                if (data.period) setPeriod(data.period);
+                if (data.lessonContent) setLessonContent(data.lessonContent);
             } catch (e) {
                 console.error("Failed to load lesson draft:", e);
             }
@@ -277,10 +253,9 @@ function CreateLessonContent() {
             startSlot,
             endSlot,
             period,
-            lessonContent,
-            updatedAt: new Date().toLocaleString('sv-SE').replace(' ', 'T')
+            lessonContent
         };
-        localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+        sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
     }, [selectedPlayers, selectedPart, lessonDate, startSlot, endSlot, period, lessonContent, isAborting]);
 
     useEffect(() => {
@@ -372,7 +347,7 @@ function CreateLessonContent() {
 
     const handleAbort = () => {
         setIsAborting(true);
-        localStorage.removeItem(DRAFT_KEY);
+        sessionStorage.removeItem(DRAFT_KEY);
         router.back();
     };
 
@@ -458,7 +433,7 @@ function CreateLessonContent() {
             }
 
             // Clear Draft on success
-            localStorage.removeItem(DRAFT_KEY);
+            sessionStorage.removeItem(DRAFT_KEY);
 
             if (redirectToTraining) {
                 const lastPlayer = selectedPlayers[selectedPlayers.length - 1];

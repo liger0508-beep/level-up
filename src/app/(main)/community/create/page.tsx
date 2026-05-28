@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
@@ -65,6 +65,38 @@ export default function CreateNoticePage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
 
+    const [isDraftLoaded, setIsDraftLoaded] = useState(false);
+    const DRAFT_KEY = "gla_community_draft";
+
+    useEffect(() => {
+        try {
+            const draft = sessionStorage.getItem(DRAFT_KEY);
+            if (draft) {
+                const parsed = JSON.parse(draft);
+                if (parsed.type) setType(parsed.type);
+                if (parsed.branch) setBranch(parsed.branch);
+                if (parsed.title) setTitle(parsed.title);
+                if (parsed.content) setContent(parsed.content);
+                if (parsed.isImportant !== undefined) setIsImportant(parsed.isImportant);
+                if (parsed.startDate) setStartDate(parsed.startDate);
+                if (parsed.endDate !== undefined) setEndDate(parsed.endDate);
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsDraftLoaded(true);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!isDraftLoaded) return;
+        try {
+            sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+                type, branch, title, content, isImportant, startDate, endDate
+            }));
+        } catch (e) {}
+    }, [isDraftLoaded, type, branch, title, content, isImportant, startDate, endDate]);
+
     useMemo(() => {
         const supabase = createClient();
         supabase.auth.getUser().then(({ data }) => {
@@ -106,6 +138,7 @@ export default function CreateNoticePage() {
                 endDate,
             });
             alert("공지사항이 등록되었습니다.");
+            sessionStorage.removeItem(DRAFT_KEY);
             router.push("/community");
         } catch (err) {
             console.error(err);

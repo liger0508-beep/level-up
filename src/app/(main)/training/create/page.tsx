@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import { useState, useMemo, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, Calendar, Upload, Search, X, Layers, Image as ImageIcon } from "lucide-react";
+import { ChevronLeft, Calendar, Upload, Search, X, Layers, Image as ImageIcon, Map } from "lucide-react";
 import { TrainingType } from "@/components/training/TrainingCard";
 import { cn } from "@/lib/utils";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
@@ -61,13 +61,67 @@ function CreateTrainingContent() {
 
     const [trainingDate, setTrainingDate] = useState(() => formatLocalDate());
     const [trainingTime, setTrainingTime] = useState("12:00");
-    const [termStart, setTermStart] = useState("");
-    const [termEnd, setTermEnd] = useState("");
+    const [termStart, setTermStart] = useState(() => formatLocalDate());
+    const [termEnd, setTermEnd] = useState(() => {
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + 6);
+        return formatLocalDate(endDate);
+    });
     const [selectedPart, setSelectedPart] = useState<string>("");
     const [selectedTrainingType, setSelectedTrainingType] = useState<string>("basic");
     const [selectedTemplates, setSelectedTemplates] = useState<string[]>([]);
     const [trainingComment, setTrainingComment] = useState("");
     const [totalCount, setTotalCount] = useState(7);
+    const [isDraftLoaded, setIsDraftLoaded] = useState(false);
+    const DRAFT_KEY = "gla_training_draft";
+
+    // Restore draft on mount
+    useEffect(() => {
+        try {
+            const draft = sessionStorage.getItem(DRAFT_KEY);
+            if (draft) {
+                const parsed = JSON.parse(draft);
+                if (parsed.selectedPlayers) setSelectedPlayers(parsed.selectedPlayers);
+                if (parsed.selectedPart) setSelectedPart(parsed.selectedPart);
+                if (parsed.selectedTrainingType) setSelectedTrainingType(parsed.selectedTrainingType);
+                if (parsed.selectedTemplates) setSelectedTemplates(parsed.selectedTemplates);
+                if (parsed.templateSettings) setTemplateSettings(parsed.templateSettings);
+                if (parsed.trainingDate) setTrainingDate(parsed.trainingDate);
+                if (parsed.trainingTime) setTrainingTime(parsed.trainingTime);
+                if (parsed.termStart) setTermStart(parsed.termStart);
+                if (parsed.termEnd) setTermEnd(parsed.termEnd);
+                if (parsed.trainingComment) setTrainingComment(parsed.trainingComment);
+                if (parsed.totalCount) setTotalCount(parsed.totalCount);
+            }
+        } catch (e) {
+            console.error("Failed to load draft:", e);
+        } finally {
+            setIsDraftLoaded(true);
+        }
+    }, []);
+
+    // Save draft on change
+    useEffect(() => {
+        if (!isDraftLoaded) return;
+        try {
+            const draft = {
+                selectedPlayers,
+                selectedPart,
+                selectedTrainingType,
+                selectedTemplates,
+                templateSettings,
+                trainingDate,
+                trainingTime,
+                termStart,
+                termEnd,
+                trainingComment,
+                totalCount
+            };
+            sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+        } catch (e) {
+            console.error("Failed to save draft:", e);
+        }
+    }, [isDraftLoaded, selectedPlayers, selectedPart, selectedTrainingType, selectedTemplates, templateSettings, trainingDate, trainingTime, termStart, termEnd, trainingComment, totalCount]);
 
     // Initialize state from search params
     useEffect(() => {
@@ -82,10 +136,14 @@ function CreateTrainingContent() {
         const dateParam = searchParams.get("date");
         const startParam = searchParams.get("start");
 
-        if (playerParam) setSelectedPlayers([playerParam]);
-        if (typeParam) setSelectedPart(typeParam);
-        if (dateParam) setTrainingDate(dateParam);
-        if (startParam) setTrainingTime(startParam);
+        const hasDraft = !!sessionStorage.getItem(DRAFT_KEY);
+
+        if (!hasDraft) {
+            if (playerParam) setSelectedPlayers([playerParam]);
+            if (typeParam) setSelectedPart(typeParam);
+            if (dateParam) setTrainingDate(dateParam);
+            if (startParam) setTrainingTime(startParam);
+        }
 
         // Fetch current user name
         const supabase = createClient();
@@ -113,16 +171,6 @@ function CreateTrainingContent() {
             }
         });
     }, [searchParams, router]);
-
-    // Set default training period to 1 week from trainingDate
-    useEffect(() => {
-        if (trainingDate) {
-            setTermStart(trainingDate);
-            const endDate = new Date(trainingDate);
-            endDate.setDate(endDate.getDate() + 6); // 1 week including start date
-            setTermEnd(formatLocalDate(endDate));
-        }
-    }, [trainingDate]);
 
     // Fetch recent trainings when players change
     useEffect(() => {
@@ -262,6 +310,7 @@ function CreateTrainingContent() {
             }
 
             alert(`${selectedPlayers.length}명의 훈련이 등록되었습니다.`);
+            sessionStorage.removeItem(DRAFT_KEY);
             router.push("/training");
             router.refresh();
         } catch (error: any) {
@@ -334,9 +383,19 @@ function CreateTrainingContent() {
 
                             {/* 3. Training Type Selection */}
                             <div className="space-y-2 md:col-span-2">
-                                <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                    훈련 유형 <span className="text-brand-red">*</span>
-                                </label>
+                                <div className="flex items-center justify-between">
+                                    <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                                        훈련 유형 <span className="text-brand-red">*</span>
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => router.push("/course-info")}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-xs font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                                    >
+                                        <Map size={14} className="text-brand-navy" />
+                                        코스 정보 확인
+                                    </button>
+                                </div>
                                 <div className="flex flex-wrap gap-2">
                                     {trainingTypeOptions.map((opt) => (
                                         <button
@@ -365,7 +424,22 @@ function CreateTrainingContent() {
                                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
                                     <DatePickerInput
                                         value={trainingDate}
-                                        onChange={(e) => setTrainingDate(e.target.value)}
+                                        onChange={(e) => {
+                                            const newDate = e.target.value;
+                                            setTrainingDate(newDate);
+                                            if (!sessionStorage.getItem(DRAFT_KEY)) {
+                                                setTermStart(newDate);
+                                                const endDate = new Date(newDate);
+                                                endDate.setDate(endDate.getDate() + 6);
+                                                setTermEnd(formatLocalDate(endDate));
+                                            } else {
+                                                // If draft exists but user manually changes date
+                                                setTermStart(newDate);
+                                                const endDate = new Date(newDate);
+                                                endDate.setDate(endDate.getDate() + 6);
+                                                setTermEnd(formatLocalDate(endDate));
+                                            }
+                                        }}
                                         required
                                         className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all text-center"
                                     />
@@ -392,21 +466,48 @@ function CreateTrainingContent() {
                                 </div>
                             ) : recentTrainings.length > 0 ? (
                                 <div className="grid gap-3">
-                                    {recentTrainings.map((train) => (
-                                        <div key={train.id} className="bg-white dark:bg-zinc-900 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800 shadow-sm flex items-start gap-3">
-                                            <div className="w-1.5 h-10 rounded-full bg-brand-navy/20 shrink-0 mt-1" />
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <span className="text-[11px] font-bold text-brand-navy uppercase">{train.type}</span>
-                                                    <span className="text-[10px] text-zinc-400">{new Date(train.created_at).toLocaleDateString()}</span>
+                                    {recentTrainings.map((train) => {
+                                        const progressPercent = Math.min(100, Math.round(((train.completion_logs?.length || 0) / (train.total_count || 7)) * 100));
+                                        
+                                        let displayType = train.type;
+                                        let displayTitle = train.title;
+                                        let trainingMethod = "";
+                                        
+                                        const match = train.title.match(/^\[(.*?)\]\s*(.*)$/);
+                                        if (match) {
+                                            trainingMethod = match[1];
+                                            displayTitle = match[2];
+                                        }
+
+                                        return (
+                                        <div key={train.id} className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-zinc-100 dark:border-zinc-800 shadow-sm relative flex flex-col gap-1">
+                                            {/* Line 1: Type | Method */}
+                                            <div className="text-[11px] font-bold text-zinc-500 uppercase tracking-wide">
+                                                {displayType} {trainingMethod ? `| ${trainingMethod}` : ""}
+                                            </div>
+                                            
+                                            {/* Line 2: Title */}
+                                            <div className="text-sm font-bold text-zinc-900 dark:text-zinc-100 pr-16 truncate">
+                                                {displayTitle}
+                                            </div>
+                                            
+                                            {/* Line 3: Progress Rate */}
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <div className="flex-1 h-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden max-w-[120px]">
+                                                    <div className="h-full bg-blue-500 rounded-full" style={{ width: `${progressPercent}%` }} />
                                                 </div>
-                                                <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100 truncate mb-1">{train.title}</div>
-                                                <div className="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-1 italic">
-                                                    "{train.content || "코멘트 없음"}"
-                                                </div>
+                                                <span className="text-[11px] font-bold text-blue-500">
+                                                    {progressPercent}% 진행
+                                                </span>
+                                            </div>
+
+                                            {/* Date: Bottom Right */}
+                                            <div className="absolute bottom-4 right-4 text-[10px] text-zinc-400">
+                                                {new Date(train.created_at).toLocaleDateString()}
                                             </div>
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             ) : (
                                 <div className="py-6 text-center border border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl">
@@ -454,10 +555,10 @@ function CreateTrainingContent() {
 
                             {selectedTemplates.length > 0 && (
                                 <div className="flex flex-wrap gap-1.5 mb-2">
-                                    {selectedTemplates.map((val) => {
+                                    {selectedTemplates.map((val, index) => {
                                         const template = dbTemplates.find(t => t.id === val);
                                         return (
-                                            <span key={val} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 text-xs font-medium border border-blue-200 dark:border-blue-800">
+                                            <span key={`${val}-${index}`} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 text-xs font-medium border border-blue-200 dark:border-blue-800">
                                                 {template?.title || val}
                                                 <button 
                                                     type="button" 

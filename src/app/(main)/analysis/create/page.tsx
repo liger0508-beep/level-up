@@ -57,7 +57,28 @@ function CreateAnalysisContent() {
     const [currentCoachName, setCurrentCoachName] = useState("코치");
     const [analysisHistory, setAnalysisHistory] = useState<AnalysisRecord[]>([]);
 
-    // Initialize state from search params
+    const [isDraftLoaded, setIsDraftLoaded] = useState(false);
+    const DRAFT_KEY = "gla_analysis_draft";
+
+    useEffect(() => {
+        try {
+            const draft = sessionStorage.getItem(DRAFT_KEY);
+            if (draft) {
+                const parsed = JSON.parse(draft);
+                if (parsed.selectedPlayer) setSelectedPlayer(parsed.selectedPlayer);
+                if (parsed.selectedPart) setSelectedPart(parsed.selectedPart);
+                if (parsed.analysisDate) setAnalysisDate(parsed.analysisDate);
+                if (parsed.startSlot) setStartSlot(parsed.startSlot);
+                if (parsed.endSlot) setEndSlot(parsed.endSlot);
+                if (parsed.period) setPeriod(parsed.period);
+                if (parsed.analysisContent) setAnalysisContent(parsed.analysisContent);
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsDraftLoaded(true);
+        }
+    }, []);
     useEffect(() => {
         const playerParam = searchParams.get("player");
         const typeParam = searchParams.get("type");
@@ -178,6 +199,15 @@ function CreateAnalysisContent() {
     const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
     const [isUploading, setIsUploading] = useState(false);
 
+    useEffect(() => {
+        if (!isDraftLoaded) return;
+        try {
+            sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+                selectedPlayer, selectedPart, analysisDate, startSlot, endSlot, period, analysisContent
+            }));
+        } catch (e) {}
+    }, [isDraftLoaded, selectedPlayer, selectedPart, analysisDate, startSlot, endSlot, period, analysisContent]);
+
     // Filter players based on search query (No longer used as AthleteSearch handles it)
     const visiblePlayers = useMemo(() => {
         return [];
@@ -275,6 +305,7 @@ function CreateAnalysisContent() {
             }
 
             alert(`분석이 성공적으로 등록되었습니다.`);
+            sessionStorage.removeItem(DRAFT_KEY);
             router.push("/analysis");
         } catch (err: any) {
             console.error("Submit failed:", err);

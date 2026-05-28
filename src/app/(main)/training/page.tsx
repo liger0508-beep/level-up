@@ -286,12 +286,22 @@ export default function TrainingsPage() {
                 relevantTrainings = records.filter(r => assignedNames.includes(r.playerName));
             }
             
-            const completedCount = relevantTrainings.filter(r => r.completion_logs && r.completion_logs.length > 0).length;
+            const isTrainingCompleted = (r: any) => {
+                if (r.title?.includes("[복습]")) {
+                    const reviewSetting = (r.template_settings || []).find((s: any) => s.type === "review_scorecard");
+                    if (reviewSetting) {
+                        const completed = reviewSetting.completedHoles?.length || 0;
+                        const total = (r.total_count === 7 && completed > 7) ? completed : Math.max(r.total_count || 1, 1);
+                        return completed > 0 && completed >= total;
+                    }
+                }
+                return r.completion_logs && r.completion_logs.length > 0;
+            };
+
+            const completedCount = relevantTrainings.filter(isTrainingCompleted).length;
             const thisMonth = relevantTrainings.filter(r => r.date.startsWith(currentMonth)).length;
             const thisMonthCompleted = relevantTrainings.filter(r => 
-                r.date.startsWith(currentMonth) && 
-                r.completion_logs && 
-                r.completion_logs.length > 0
+                r.date.startsWith(currentMonth) && isTrainingCompleted(r)
             ).length;
             const rate = relevantTrainings.length > 0 ? (completedCount / relevantTrainings.length) * 100 : 0;
 

@@ -58,6 +58,15 @@ export function TrainingTable({ trainings, totalCount, onUpdate }: TrainingTable
     };
 
     const calculateProgress = (training: TrainingRecord) => {
+        if (training.title?.includes("[복습]")) {
+            const reviewSetting = (training.template_settings || []).find((s: any) => s.type === "review_scorecard");
+            if (reviewSetting) {
+                const completed = reviewSetting.completedHoles?.length || 0;
+                // If old record still has total_count=7 but more completed, fallback to completed
+                const total = (training.total_count === 7 && completed > 7) ? completed : Math.max(training.total_count || 1, 1);
+                return Math.min(Math.round((completed / total) * 100), 100);
+            }
+        }
         const total = training.total_count || 7;
         const logs = getLogs(training.completion_logs);
         const completed = logs.length;
@@ -154,20 +163,20 @@ export function TrainingTable({ trainings, totalCount, onUpdate }: TrainingTable
                                     {cfg.label.charAt(0)}
                                 </div>
 
-                                {/* 2. Core Info (Centered) */}
-                                <div className="flex items-center justify-center gap-1 flex-1 min-w-0">
+                                {/* 2. Core Info */}
+                                <div className="flex items-center justify-start gap-2 flex-1 min-w-0 ml-3">
                                     <div className="flex items-center shrink-0">
                                         {training.title?.includes("[기본기]") && <span className="text-[12px] font-black text-brand-red">기본기</span>}
                                         {training.title?.includes("[예습]") && <span className="text-[12px] font-black text-brand-navy">예습</span>}
                                         {training.title?.includes("[복습]") && <span className="text-[12px] font-black text-zinc-500">복습</span>}
                                         {(training.title?.includes("[기본기]") || training.title?.includes("[예습]") || training.title?.includes("[복습]")) && (
-                                            <span className="mx-1 text-zinc-300">|</span>
+                                            <span className="mx-2 text-zinc-300">|</span>
                                         )}
                                     </div>
                                     <span className="text-[13px] font-bold text-zinc-900 dark:text-zinc-100 truncate">
                                         {training.playerName}
                                     </span>
-                                    <span className="mx-1 text-zinc-300">|</span>
+                                    <span className="mx-2 text-zinc-300">|</span>
                                     <span className="text-[12px] font-black text-brand-navy shrink-0">
                                         {calculateProgress(training)}%
                                     </span>

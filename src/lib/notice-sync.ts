@@ -50,6 +50,7 @@ export async function getNotices(): Promise<Notice[]> {
             *,
             users!notices_author_id_fkey (name)
         `)
+        .neq("type", "course_info")
         .order("created_at", { ascending: false });
 
     if (error) {

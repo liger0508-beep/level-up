@@ -74,7 +74,8 @@ export function CoachTripCalendar({ trips }: CoachTripCalendarProps) {
             const searchMatch = !searchQuery ||
                 t.participants.some(p => p.toLowerCase().includes(searchQuery.toLowerCase())) ||
                 t.venue.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                t.remarks.toLowerCase().includes(searchQuery.toLowerCase());
+                t.remarks.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                (t.vehicle || "").toLowerCase().includes(searchQuery.toLowerCase());
 
             return searchMatch;
         }).sort((a, b) => {
@@ -190,26 +191,41 @@ export function CoachTripCalendar({ trips }: CoachTripCalendarProps) {
                                     colors.border
                                 )}
                             >
-                                {/* Info row: Category + Venue + Date + Remarks */}
-                                <div className="flex items-center justify-start gap-2 flex-nowrap overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] mb-3">
+                                {/* Row 1: Category */}
+                                <div className="mb-3">
                                     <span className={cn("text-[10px] font-bold px-2.5 py-1 rounded-full uppercase shrink-0", colors.bg, colors.text)}>
                                         {t.category}
                                     </span>
+                                </div>
+
+                                {/* Row 2: Venue + Date + Vehicle */}
+                                <div className="flex items-center justify-start gap-2 flex-wrap mb-2">
                                     <h3 className="font-bold text-sm sm:text-base text-zinc-900 dark:text-zinc-50 shrink-0">{t.venue || "장소 미정"}</h3>
-                                    <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 font-medium whitespace-nowrap bg-transparent dark:bg-zinc-800/80 px-2.5 py-1.5 rounded-lg shrink-0">
+                                    <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 font-medium bg-transparent dark:bg-zinc-800/80 px-2.5 py-1 rounded-lg shrink-0">
                                         <Calendar size={13} className="shrink-0 text-zinc-400" />
                                         <span>{start.slice(5)} {start !== end && `~ ${end.slice(5)}`}</span>
                                     </div>
-                                    {t.remarks && (
-                                        <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 whitespace-nowrap shrink-0">
-                                            <Info size={13} className="shrink-0" />
-                                            <span>{t.remarks}</span>
+                                    {t.vehicle && (
+                                        <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 font-medium bg-transparent dark:bg-zinc-800/80 px-2.5 py-1 rounded-lg shrink-0">
+                                            <Car size={13} className="shrink-0 text-zinc-400" />
+                                            <span>{t.vehicle}</span>
                                         </div>
                                     )}
                                 </div>
 
-                                {/* Participants */}
-                                <div className="flex items-center gap-2 bg-transparent dark:bg-zinc-800/50 px-3 py-2.5 rounded-xl border border-zinc-100 dark:border-zinc-800">
+                                {/* Row 3: Remarks (if exists) */}
+                                {t.remarks && (
+                                    <div className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300 font-medium mb-3 pl-1">
+                                        <Info size={13} className="shrink-0 text-zinc-400" />
+                                        <span className="leading-relaxed">{t.remarks}</span>
+                                    </div>
+                                )}
+
+                                {/* Row 4: Participants */}
+                                <div className={cn(
+                                    "flex items-center gap-2 bg-transparent dark:bg-zinc-800/50 px-3 py-2.5 rounded-xl border border-zinc-100 dark:border-zinc-800",
+                                    !t.remarks && "mt-3"
+                                )}>
                                     <Users size={14} className="shrink-0 text-zinc-400" />
                                     <span className="text-xs text-zinc-600 dark:text-zinc-400 font-medium">
                                         {t.participants.length > 0 ? t.participants.join(", ") : "출장자 미지정"}

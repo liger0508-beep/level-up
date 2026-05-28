@@ -104,6 +104,7 @@ export async function fetchRecentTrainingsByPlayer(playerName: string): Promise<
                 training_start,
                 training_end,
                 total_count,
+                completion_logs,
                 users!records_user_id_fkey(name),
                 coach:users!records_coach_id_fkey(name)
             `)
@@ -125,6 +126,7 @@ export async function fetchRecentTrainingsByPlayer(playerName: string): Promise<
             training_start: r.training_start,
             training_end: r.training_end,
             total_count: r.total_count,
+            completion_logs: r.completion_logs,
             playerName: r.users?.name || "알 수 없음",
             coachName: r.coach?.name || "알 수 없음"
         }));
