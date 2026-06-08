@@ -106,41 +106,50 @@ function BottomSheetPicker({ isOpen, onClose, options, value, onSelect, title }:
     // All items: empty + BALL_LOCATIONS (13) = 14 rows
     // Keep each row compact so all fit in ~50vh without scrolling
     const rowCls = (active: boolean) => cn(
-        "w-full px-4 py-[9px] text-[13px] font-medium text-center transition-colors",
+        "w-full px-2 py-3 rounded-xl border text-[14px] font-medium text-center transition-all",
         active
-            ? "bg-brand-navy/5 dark:bg-brand-navy/10 text-brand-navy dark:text-brand-navy-light font-semibold"
-            : "text-zinc-800 dark:text-zinc-200 active:bg-zinc-100 dark:active:bg-zinc-800"
+            ? "bg-brand-navy/10 border-brand-navy/30 text-brand-navy dark:text-brand-navy-light font-bold shadow-sm"
+            : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-100 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 active:bg-zinc-100"
     );
 
     return (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end">
+        <div className="fixed inset-0 z-[60] flex flex-col justify-end">
             {/* Backdrop */}
             <div className="absolute inset-0 bg-black/40" onClick={onClose} />
 
-            {/* Sheet — max 50vh, no overflow */}
+            {/* Sheet */}
             <div
-                className="relative bg-white dark:bg-zinc-900 rounded-t-2xl shadow-2xl flex flex-col"
-                style={{ animation: "slideUp 0.22s ease-out", maxHeight: "52vh" }}
+                className="relative bg-white dark:bg-zinc-900 rounded-t-3xl shadow-2xl flex flex-col"
+                style={{ animation: "slideUp 0.22s ease-out", maxHeight: "90vh" }}
             >
                 {/* Handle */}
-                <div className="flex justify-center pt-2.5 pb-0.5 shrink-0">
-                    <div className="w-8 h-1 rounded-full bg-zinc-200 dark:bg-zinc-700" />
+                <div className="flex justify-center pt-3 pb-1 shrink-0">
+                    <div className="w-10 h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-700" />
                 </div>
 
                 {/* Title */}
                 {title && (
-                    <div className="px-4 py-1.5 border-b border-zinc-100 dark:border-zinc-800 shrink-0">
-                        <p className="text-[11px] font-bold text-zinc-400 dark:text-zinc-500 text-center uppercase tracking-wider">{title}</p>
+                    <div className="px-4 py-3 shrink-0">
+                        <p className="text-[13px] font-bold text-zinc-800 dark:text-zinc-200 text-center">{title}</p>
                     </div>
                 )}
 
                 {/* Options */}
-                <div className="flex-1 flex flex-col py-1 overflow-y-auto">
-                    {options.map(opt => (
-                        <button key={opt} type="button" onClick={() => { onSelect(opt); onClose(); }} className={rowCls(value === opt)}>
-                            {opt}
-                        </button>
-                    ))}
+                <div className="flex-1 grid grid-cols-2 gap-2 px-4 pb-4 pt-1 overflow-y-auto">
+                    <div className="flex flex-col gap-2">
+                        {options.slice(0, Math.ceil(options.length / 2)).map(opt => (
+                            <button key={opt} type="button" onClick={() => { onSelect(opt); onClose(); }} className={rowCls(value === opt)}>
+                                {opt}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="flex flex-col gap-2">
+                        {options.slice(Math.ceil(options.length / 2)).map(opt => (
+                            <button key={opt} type="button" onClick={() => { onSelect(opt); onClose(); }} className={rowCls(value === opt)}>
+                                {opt}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Close */}
@@ -208,8 +217,9 @@ function checkDistanceRequired(idx: number, shot: Shot, shots: Shot[], par: numb
 
 // 이번홀 = PAR - 홀인이 입력된 샷 번호(인덱스)
 function calcHoleScore(shots: Shot[], par: number): number {
-    const idx = shots.findIndex(s => s.location === "\ud640\uc778");
-    if (idx <= 0) return 0; // 홀인 미완료
+    if (!par || par === 0) return 0;
+    const idx = shots.findIndex(s => s.location === "홀인" || s.location === "HI");
+    if (idx < 0) return 0; // 홀인 미완료
     return idx - par;
 }
 
@@ -227,15 +237,18 @@ function ScoreCreateContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const editId = searchParams.get("id");
-    const isEditMode = !!editId;
+    const isEditMode = !!editId && editId !== 'draft';
+
     const [isSaving, setIsSaving] = useState(false);
+    const [validationError, setValidationError] = useState<string | null>(null);
+    const formRef = useRef<HTMLDivElement>(null);
 
     // Player selection
     const [selectedPlayer, setSelectedPlayer] = useState("");
 
     // Form fields
     const [distanceUnit, setDistanceUnit] = useState("미터 (m)");
-    const [roundDate, setRoundDate] = useState(() => formatLocalDate());
+    const [roundDate, setRoundDate] = useState(() => formatLocalDate(new Date()));
     const [category, setCategory] = useState("연습");
     const [golfCourse, setGolfCourse] = useState("");
 
@@ -244,10 +257,9 @@ function ScoreCreateContent() {
     const [holes, setHoles] = useState<HoleData[]>(
         Array.from({ length: 18 }, () => ({
             par: 0,
-            shots: [],
+            shots: buildDefaultShots(),
         }))
     );
-
 
 
 
@@ -256,74 +268,230 @@ function ScoreCreateContent() {
     // Basic info confirmation state
     const [isBasicInfoConfirmed, setIsBasicInfoConfirmed] = useState(isEditMode);
 
-    // ── Auto-save to LocalStorage ──
-    const DRAFT_KEY = "gla_scorecard_draft";
+    const hasFinalized = useRef(false);
+    const draftIdRef = useRef<string | null>(null);
+    const isOriginallyFinal = useRef(false);
 
-    // 1. Load Draft on mount
-    useEffect(() => {
-        if (isEditMode) return;
+    const saveDraftToDB = async (): Promise<boolean> => {
+        if (!selectedPlayer || !golfCourse.trim()) return false;
+        if (isSaving || hasFinalized.current) return false;
+        
+        try {
+            const lastValidHoleIdx = holes.map((h, i) => h.par > 0 ? i : -1).reduce((max, curr) => Math.max(max, curr), -1);
+            const saveHolesCount = lastValidHoleIdx >= 0 ? lastValidHoleIdx + 1 : 1; 
 
-        const saved = localStorage.getItem(DRAFT_KEY);
-        if (saved) {
-            try {
-                const draft = JSON.parse(saved);
-                // Only prompt if there's meaningful data (e.g. course name or a player selected)
-                if (draft.golfCourse || draft.selectedPlayer) {
-                    const confirmLoad = window.confirm(
-                        `작성 중이던 데이터가 있습니다 (${draft.golfCourse || "구장 미정"}).\n불러오시겠습니까?`
-                    );
-                    if (confirmLoad) {
-                        setSelectedPlayer(draft.selectedPlayer || "");
-                        setGolfCourse(draft.golfCourse || "");
-                        setRoundDate(draft.roundDate || formatLocalDate());
-                        setCategory(draft.category || "연습");
-                        setDistanceUnit(draft.distanceUnit || "미터 (m)");
-                        if (draft.holes) setHoles(draft.holes);
-                        if (draft.currentHole) setCurrentHole(draft.currentHole);
-                        setIsBasicInfoConfirmed(true);
-                        setIsInfoExpanded(false);
-                    } else {
-                        localStorage.removeItem(DRAFT_KEY);
-                    }
+            const computedTotalScore = holes.slice(0, saveHolesCount).reduce((acc, h) => {
+                if (h.par === 0) return acc;
+                const idx = h.shots.findIndex(s => s.location === "홀인" || s.location === "HI");
+                return acc + (idx > 0 ? idx : 0);
+            }, 0);
+
+            const supabase = createClient();
+            const { data: userData, error: userErr } = await supabase.from("users").select("id").eq("name", selectedPlayer).single();
+            if (userErr) throw userErr;
+            if (!userData) return false;
+
+            const { data: { user } } = await supabase.auth.getUser();
+            let targetId = draftIdRef.current || editId;
+
+            if (targetId && targetId !== 'draft') {
+                const { error: updateErr } = await supabase.from("scorecards").update({
+                    total_score: computedTotalScore,
+                    is_final: false,
+                    hole_count: saveHolesCount,
+                    round_date: roundDate,
+                    course_name: golfCourse,
+                    weather: category,
+                    distance_unit: distanceUnit.includes("야드") ? "yard" : "meter",
+                }).eq("id", targetId);
+                if (updateErr) throw updateErr;
+            } else {
+                const { data: sc, error: insertErr } = await supabase.from("scorecards").insert({
+                    athlete_id: userData.id,
+                    coach_id: user?.id ?? null,
+                    round_date: roundDate,
+                    course_name: golfCourse,
+                    weather: category,
+                    total_score: computedTotalScore,
+                    distance_unit: distanceUnit.includes("야드") ? "yard" : "meter",
+                    is_final: false,
+                    hole_count: saveHolesCount
+                }).select("id").single();
+                if (insertErr) throw insertErr;
+                if (sc) {
+                    targetId = sc.id;
+                    draftIdRef.current = targetId;
                 }
-            } catch (e) {
-                console.error("Failed to load draft:", e);
             }
+
+            if (!targetId || targetId === 'draft') return false;
+
+            const { error: shotDelErr } = await supabase.from("scorecard_shots").delete().eq("scorecard_id", targetId);
+            if (shotDelErr) throw shotDelErr;
+            const { error: holeDelErr } = await supabase.from("scorecard_holes").delete().eq("scorecard_id", targetId);
+            if (holeDelErr) throw holeDelErr;
+
+            const holesToInsert = holes.slice(0, saveHolesCount)
+                .map((h, idx) => ({ h, idx }))
+                .filter(({ h }) => h.par > 0)
+                .map(({ h, idx }) => {
+                    const calculatedScore = h.par > 0 ? calcHoleScore(h.shots, h.par) + h.par : 0;
+                    return {
+                        scorecard_id: targetId,
+                        hole_number: idx + 1,
+                        par: h.par,
+                        score: calculatedScore > 0 ? calculatedScore : -1,
+                    };
+                });
+
+            let insertedHoles: any[] | null = null;
+            if (holesToInsert.length > 0) {
+                const { data, error: holesErr } = await supabase.from("scorecard_holes").insert(holesToInsert).select("id, hole_number");
+                if (holesErr) throw holesErr;
+                insertedHoles = data;
+            }
+            
+            if (insertedHoles && insertedHoles.length > 0) {
+                const holeIdMap = new Map(insertedHoles.map((h: any) => [h.hole_number, h.id]));
+                const isYard = distanceUnit.includes("야드");
+                const shotsToInsert: any[] = [];
+                
+                holes.slice(0, saveHolesCount).forEach((h, hIdx) => {
+                    const holeNumber = hIdx + 1;
+                    const holeId = holeIdMap.get(holeNumber);
+                    if (!holeId) return;
+
+                    const validShots = h.shots.filter(s => s.location && s.location !== "");
+                    validShots.forEach((shot, sIdx) => {
+                        let distRaw = parseInt(shot.distance, 10);
+                        let distMeter = distRaw;
+                        if (isYard && !isNaN(distRaw)) {
+                            distMeter = Math.round(distRaw * 0.9144);
+                        }
+                        const shotValue = encodeShotValue(shot.location, isNaN(distMeter) ? "" : distMeter.toString(), h.par, sIdx);
+                        const code = LOCATION_ABBR[shot.location] ?? shot.location.toUpperCase();
+
+                        shotsToInsert.push({
+                            hole_id: holeId,
+                            scorecard_id: targetId,
+                            hole_number: holeNumber,
+                            shot_number: sIdx + 1,
+                            shot_value: shotValue,
+                            location_code: code,
+                            distance: (!isNaN(distMeter) && distMeter > 0) ? distMeter : null,
+                            memo: shot.memo || null,
+                        });
+                    });
+                });
+
+                if (shotsToInsert.length > 0) {
+                    const { error: shotsErr } = await supabase.from("scorecard_shots").insert(shotsToInsert);
+                    if (shotsErr) throw shotsErr;
+                }
+            }
+
+            return true;
+        } catch (err: any) {
+            console.error("Draft DB save error:", err, JSON.stringify(err, null, 2));
+            return false;
         }
-    }, [isEditMode]);
+    };
 
-    // 2. Save Draft whenever relevant state changes
-    useEffect(() => {
-        if (isEditMode || isSaving) return;
-
-        // Skip saving if it's completely empty
-        if (!selectedPlayer && !golfCourse && holes.every(h => h.shots.length <= 6)) {
-             // simplified check for empty holes
-        }
-
-        const draft = {
-            selectedPlayer,
-            golfCourse,
-            roundDate,
-            category,
-            distanceUnit,
-            holes,
-            currentHole,
-            updatedAt: new Date().toISOString()
-        };
-        localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
-    }, [selectedPlayer, golfCourse, roundDate, category, distanceUnit, holes, currentHole, isEditMode, isSaving]);
+    // 큐를 이용해 백그라운드에서 순차적으로 저장하도록 처리
+    const saveDraftQueueRef = useRef<Promise<any>>(Promise.resolve());
+    
+    const enqueueSaveDraft = () => {
+        saveDraftQueueRef.current = saveDraftQueueRef.current
+            .then(() => saveDraftToDB())
+            .catch(err => console.error("Draft queue error:", err));
+    };
 
     // Fetch existing data if in edit mode
     useEffect(() => {
-        if (!editId) return;
+        if (!editId || editId === 'draft') return;
 
         const fetchExistingData = async () => {
+            // 로컬 스토리지에서 먼저 확인 (단일 드래프트 및 다중 드래프트 모두 지원)
+            let draft = null;
+            
+            // 1. 새로운 다중 드래프트 스토리지 확인
+            const draftsStr = localStorage.getItem('scorecard_drafts');
+            if (draftsStr) {
+                try {
+                    const drafts = JSON.parse(draftsStr);
+                    if (drafts[editId]) {
+                        draft = drafts[editId];
+                    }
+                } catch (e) {
+                    console.error("Error parsing scorecard_drafts:", e);
+                }
+            }
+
+            // 2. 만약 다중 드래프트에 없으면 이전 방식의 단일 스토리지 확인
+            if (!draft) {
+                const oldDraftStr = localStorage.getItem('scorecard_draft');
+                if (oldDraftStr) {
+                    try {
+                        const oldDraft = JSON.parse(oldDraftStr);
+                        if (oldDraft.id === editId || editId === 'draft') {
+                            draft = oldDraft;
+                        }
+                    } catch (e) {
+                        console.error("Error parsing old scorecard_draft:", e);
+                    }
+                }
+            }
+
+            if (draft) {
+                setSelectedPlayer(draft.player || "");
+                setRoundDate(draft.roundDate || formatLocalDate(new Date()));
+                setGolfCourse(draft.golfCourse || "");
+                setCategory(draft.category || "연습");
+                setDistanceUnit(draft.distanceUnit || "미터 (m)");
+                
+                if (draft.holes && draft.holes.length > 0) {
+                    const newHoles = [...holes];
+                    let lastSavedHole = 1;
+                    draft.holes.forEach((h: any, hIdx: number) => {
+                        if (hIdx >= 0 && hIdx < 18) {
+                            newHoles[hIdx] = {
+                                par: h.par || 0,
+                                shots: Array.isArray(h.shots) ? [...h.shots] : []
+                            };
+                            if (h.par > 0) {
+                                lastSavedHole = hIdx + 1;
+                            }
+                            // 빈 칸이 필요한 경우 추가
+                            const lastShot = newHoles[hIdx].shots[newHoles[hIdx].shots.length - 1];
+                            if (!lastShot || (lastShot.location !== "홀인" && lastShot.location !== "HI")) {
+                                newHoles[hIdx].shots.push({ location: "", distance: "", memo: "" });
+                            }
+                        }
+                    });
+                    
+                    if (lastSavedHole > 0 && lastSavedHole < 18) {
+                        const lastHoleData = newHoles[lastSavedHole - 1];
+                        const isComplete = lastHoleData.shots.some(s => s.location === "홀인" || s.location === "HI");
+                        if (isComplete) {
+                            lastSavedHole += 1;
+                        }
+                    }
+                    
+                    setHoles(newHoles);
+                    setCurrentHole(lastSavedHole);
+                    draftIdRef.current = draft.id;
+                    setIsBasicInfoConfirmed(true);
+                    setIsInfoExpanded(false);
+                    return; // 로컬 데이터로 로드 성공!
+                }
+            }
+
+            // DB에서 로드 시도 (이전 방식)
             const supabase = createClient();
             const { data: sc, error } = await supabase
                 .from("scorecards")
                 .select(`
-                    id, round_date, course_name, total_score, distance_unit, weather,
+                    id, round_date, course_name, total_score, distance_unit, weather, is_final,
                     athlete:users!scorecards_athlete_id_fkey(name),
                     holes:scorecard_holes(
                         id, hole_number, par, score,
@@ -338,6 +506,7 @@ function ScoreCreateContent() {
                 return;
             }
 
+            isOriginallyFinal.current = sc.is_final;
             const athleteName = Array.isArray(sc.athlete) ? (sc.athlete[0] as any)?.name : (sc.athlete as any)?.name;
             setSelectedPlayer(athleteName || "");
             setRoundDate(sc.round_date);
@@ -353,7 +522,6 @@ function ScoreCreateContent() {
                         newHoles[hIdx] = {
                             par: h.par,
                             shots: h.shots.sort((a: any, b: any) => a.shot_number - b.shot_number).map((s: any) => {
-                                // Extract code and distance from shot_value or distance field
                                 const parts = (s.shot_value || "").split(" / ");
                                 const locCode = parts[0];
                                 const locName = Object.keys(LOCATION_ABBR).find(k => LOCATION_ABBR[k] === locCode) || locCode;
@@ -365,14 +533,27 @@ function ScoreCreateContent() {
                                 };
                             })
                         };
-                        // Add empty shot if the last one is not HI
                         const lastShot = newHoles[hIdx].shots[newHoles[hIdx].shots.length - 1];
-                        if (lastShot && lastShot.location !== "홀인" && lastShot.location !== "HI") {
+                        if (!lastShot || (lastShot.location !== "홀인" && lastShot.location !== "HI")) {
                             newHoles[hIdx].shots.push({ location: "", distance: "" });
                         }
                     }
                 });
+                
+                let targetHole = 1;
+                if (sc.holes && sc.holes.length > 0) {
+                    const maxHoleNum = Math.max(...sc.holes.map((h: any) => h.hole_number));
+                    targetHole = maxHoleNum;
+                    const lastHoleData = newHoles[targetHole - 1];
+                    const isComplete = lastHoleData.shots.some((s: any) => s.location === "홀인" || s.location === "HI");
+                    if (isComplete && targetHole < 18) {
+                        targetHole += 1;
+                    }
+                }
+                setCurrentHole(targetHole);
+
                 setHoles(newHoles);
+                draftIdRef.current = sc.id;
                 setIsBasicInfoConfirmed(true);
                 setIsInfoExpanded(false);
             }
@@ -406,7 +587,7 @@ function ScoreCreateContent() {
 
     // Distance validation errors (shot indices with missing distance)
     const [distanceErrors, setDistanceErrors] = useState<Set<number>>(new Set());
-    const [validationError, setValidationError] = useState<string | null>(null);
+
 
     // Flag to enable strict validation for 'Next'/'Swipe' once any save has occurred
     const [hasSaveOccurred, setHasSaveOccurred] = useState(false);
@@ -416,20 +597,27 @@ function ScoreCreateContent() {
         return checkDistanceRequired(idx, shot, holeData.shots, holeData.par);
     };
 
-    const submitFrontNine = (e: React.MouseEvent) => {
+    const submitNineHoles = async (e: React.MouseEvent) => {
         e.preventDefault();
-        const hasFrontData = holes.slice(0, 9).some(h => 
-            h.shots.some(s => s.location !== "" && s.location !== "티박스")
-        );
         
-        if (!hasFrontData) {
-            alert("전반(1~9홀)에 등록할 스코어 데이터가 없습니다.");
+        const completedCount = holes.filter(h => {
+            if (h.par === 0) return false;
+            const hasHoleIn = h.shots.some(s => s.location === "홀인" || s.location === "HI");
+            if (!hasHoleIn) return false;
+            const hasMissingDist = h.shots.some((shot, idx) => {
+                return checkDistanceRequired(idx, shot, h.shots, h.par) && (shot.distance === null || shot.distance === undefined || shot.distance.trim() === "");
+            });
+            return !hasMissingDist;
+        }).length;
+        
+        if (completedCount < 9) {
+            alert(`최소 9개의 홀을 완성해야 합니다. (현재 ${completedCount}개 완료)`);
             return;
         }
 
-        if (!confirm("전반(1~9홀) 스코어만 등록하시겠습니까?")) return;
+        if (!confirm(`작성된 ${completedCount}개의 홀 스코어만 최종 등록하시겠습니까?`)) return;
         
-        handleSubmit(e as any, 9);
+        handleSubmit(e as any, true);
     };
 
     const [showSgTable, setShowSgTable] = useState(false);
@@ -444,11 +632,11 @@ function ScoreCreateContent() {
         });
     }, [holes]);
 
-    const saveCurrentAndNext = (forced: boolean = false, isNext: boolean = true) => {
+    const saveCurrentAndNext = async (forced: boolean = false, isNext: boolean = true) => {
         const currentHoleData = holes[currentHole - 1];
         if (!currentHoleData) return;
-
-        // If not forced (top button / swipe) and no save has occurred yet, allow skip
+        // If not forced (top button / swipe), allow skip only if NO save has occurred yet.
+        // Once the save button is pressed at least once, the user MUST fill out every visited hole before moving next.
         if (!forced && !hasSaveOccurred) {
             if (isNext && currentHole < 18) {
                 setCurrentHole(h => h + 1);
@@ -514,7 +702,11 @@ function ScoreCreateContent() {
 
         setValidationError(null);
 
-        if (forced) setHasSaveOccurred(true);
+        if (forced) {
+            setHasSaveOccurred(true);
+            // 백그라운드 큐에 저장 작업을 넣고 UI는 즉시 넘깁니다
+            enqueueSaveDraft();
+        }
         setDistanceErrors(new Set());
         
         if (isNext) {
@@ -569,6 +761,8 @@ function ScoreCreateContent() {
 
 
     const updatePar = (par: number) => {
+        if (holes[currentHole - 1].par === par) return; // 같은 Par 선택 시 초기화 방지
+        
         setHoles(prev => {
             const next = [...prev];
             next[currentHole - 1] = {
@@ -585,37 +779,22 @@ function ScoreCreateContent() {
             let shots = [...next[currentHole - 1].shots];
             shots[shotIndex] = { ...shots[shotIndex], location };
 
-            if (location === "\ud640\uc778") {
+            if (location === "홀인") {
                 // 홀인 이후 모든 샷 삭제
                 shots = shots.slice(0, shotIndex + 1);
 
-            } else if (location === "\uc624\ube44") {
-                // OB: i+1 = 잠금 회색 "-", i+2 = 편집 가능 새 행 (홀인 디폴트)
-                // i+1 설정
-                if (shotIndex + 1 < shots.length) {
-                    shots[shotIndex + 1] = { location: "-", distance: "" };
-                } else {
-                    shots.push({ location: "-", distance: "" });
-                }
-                // i+1 이후 기존 행 제거 후 i+2 추가
-                shots = shots.slice(0, shotIndex + 2);
-                shots.push({ location: "\ud640\uc778", distance: "" }); // i+2: 편집 가능, 디폴트 홀인
+            } else if (location === "오비") {
+                shots.splice(shotIndex + 1, 0, { location: "-", distance: "" });
+                shots.splice(shotIndex + 2, 0, { location: "페어웨이", distance: "" });
 
-            } else if (location === "\ud328\ub110\ud2f0\uad6c\uc5ed") {
-                // 패널티구역: i+1 = 잠금 회색 "-", i+2 = 편집 가능 새 행 (홀인 디폴트)
-                if (shotIndex + 1 < shots.length) {
-                    shots[shotIndex + 1] = { location: "-", distance: "" };
-                } else {
-                    shots.push({ location: "-", distance: "" });
-                }
-                shots = shots.slice(0, shotIndex + 2);
-                shots.push({ location: "\ud640\uc778", distance: "" }); // i+2: 편집 가능, 디폴트 홀인
+            } else if (location === "패널티구역") {
+                shots.splice(shotIndex + 1, 0, { location: "-", distance: "" });
 
             } else {
                 // 일반: 마지막 행이 채워져 있으면 빈 행 추가
                 const last = shots[shots.length - 1];
-                if (last.location !== "" && last.location !== "\ud640\uc778") {
-                    shots.push({ location: "", distance: "" });
+                if (last.location !== "" && last.location !== "홀인") {
+                    shots.push({ location: "홀인", distance: "" });
                 }
             }
 
@@ -647,15 +826,14 @@ function ScoreCreateContent() {
     const holeScore = holeData.par > 0 ? calcHoleScore(holeData.shots, holeData.par) : 0;
     const isCurrentHoleComplete = holeData.shots.findIndex(s => s.location === "홀인" || s.location === "HI") > 0;
 
-    // 합산 스코어 = 1번홀부터 현재 홀까지의 실제 타수 합산
+    // 합산 스코어 = 1번홀부터 현재 홀까지의 누적 타수 (언더파/오버파)
     const totalScore = holes.slice(0, currentHole).reduce((acc, h) => {
-        const idx = h.shots.findIndex(s => s.location === "홀인" || s.location === "HI");
-        return acc + (idx > 0 ? idx : 0);
+        return acc + calcHoleScore(h.shots, h.par);
     }, 0);
 
     const formatRelativeScore = (score: number) => {
         if (score > 0) return `+${score}`;
-        if (score === 0) return "0";
+        if (score === 0) return "E";
         return `${score}`;
     };
 
@@ -666,7 +844,7 @@ function ScoreCreateContent() {
     };
     const unitSymbol = distanceUnit.includes("미터") ? "m" : "y";
 
-    const handleSubmit = async (e: React.FormEvent, submitHolesCount: number = 18) => {
+    const handleSubmit = async (e: React.FormEvent, isPartial: boolean = false) => {
         if (e && e.preventDefault) e.preventDefault();
         if (!selectedPlayer) {
             alert("선수를 선택해 주세요.");
@@ -678,25 +856,59 @@ function ScoreCreateContent() {
             return;
         }
 
-        // Check for missing holes up to submitHolesCount
+        // Check for missing holes and missing distances
         const missingHoles: number[] = [];
-        for (let i = 0; i < submitHolesCount; i++) {
-            const hasHoleIn = holes[i].shots.some(s => s.location === "홀인" || s.location === "HI");
-            if (!hasHoleIn) {
+        let firstErrorHole = -1;
+        let completedCount = 0;
+
+        for (let i = 0; i < 18; i++) {
+            const h = holes[i];
+            const hasAnyData = h.par > 0;
+
+            if (!hasAnyData) continue; // Skip unplayed holes (par is 0)
+
+            const hasHoleIn = h.shots.some(s => s.location === "홀인" || s.location === "HI");
+            
+            let hasMissingDist = false;
+            if (hasHoleIn) {
+                hasMissingDist = h.shots.some((shot, idx) => {
+                    return checkDistanceRequired(idx, shot, h.shots, h.par) && (shot.distance === null || shot.distance === undefined || shot.distance.trim() === "");
+                });
+            }
+
+            if (!hasHoleIn || hasMissingDist) {
                 missingHoles.push(i + 1);
+                if (firstErrorHole === -1) firstErrorHole = i + 1;
+            } else {
+                completedCount++;
             }
         }
 
         if (missingHoles.length > 0) {
-            alert(`다음 홀들이 작성되지 않았습니다: ${missingHoles.join(', ')}번 홀\n해당 홀들을 마저 작성해 주세요.`);
-            setCurrentHole(missingHoles[0]);
+            alert(`작성 중인 홀(${missingHoles.join(', ')})의 스코어를 전부 입력해주세요.`);
+            setCurrentHole(firstErrorHole);
             return;
         }
 
-        // Global validation for 30m rule across all holes
+        if (isPartial) {
+            if (completedCount < 9) {
+                alert(`최소 9개 이상의 홀을 작성해야 등록할 수 있습니다. (현재 ${completedCount}개)`);
+                return;
+            }
+        } else {
+            if (completedCount < 18) {
+                alert("18홀 스코어를 전부 입력해주세요.");
+                return;
+            }
+        }
+
+        // Global validation for 30m rule across all filled holes
         const allowedCodesAt30m = ["GR", "GB", "GA", "HI", "-"];
-        for (let i = 0; i < submitHolesCount; i++) {
+        for (let i = 0; i < 18; i++) {
             const h = holes[i];
+            const hasAnyData = h.par > 0 || h.shots.some(s => s.location !== "" && s.location !== "티박스");
+            if (!hasAnyData) continue;
+
             let errorMsg: string | null = null;
             
             for (const shot of h.shots) {
@@ -727,7 +939,8 @@ function ScoreCreateContent() {
             }
         }
 
-        const computedTotalScore = holes.slice(0, submitHolesCount).reduce((acc, h) => {
+        const computedTotalScore = holes.reduce((acc, h) => {
+            if (h.par === 0) return acc;
             const idx = h.shots.findIndex(s => s.location === "홀인" || s.location === "HI");
             return acc + (idx > 0 ? idx : 0);
         }, 0);
@@ -750,17 +963,17 @@ function ScoreCreateContent() {
             const coachId = user?.id ?? null;
 
             // 3. 스코어카드 헤더 저장 (Insert or Update)
-            let scorecardId = editId;
+            let scorecardId = draftIdRef.current || editId;
 
-            if (isEditMode) {
+            if (scorecardId && scorecardId !== 'draft') {
                 const { error: scErr } = await supabase
                     .from("scorecards")
                     .update({
                         total_score: computedTotalScore,
                         is_final: true,
-                        hole_count: submitHolesCount
+                        hole_count: completedCount
                     })
-                    .eq("id", editId);
+                    .eq("id", scorecardId);
                 if (scErr) throw new Error(`스코어카드 업데이트 실패: ${scErr.message}`);
             } else {
                 const { data: sc, error: scErr } = await supabase
@@ -774,7 +987,7 @@ function ScoreCreateContent() {
                         total_score:   computedTotalScore,
                         distance_unit: distanceUnit.includes("야드") ? "yard" : "meter",
                         is_final:      true,
-                        hole_count:    submitHolesCount
+                        hole_count:    completedCount
                     })
                     .select("id")
                     .single();
@@ -783,19 +996,22 @@ function ScoreCreateContent() {
             }
 
             // 4. 모든 홀 데이터를 배열로 준비 (Batch Insert용)
-            const holesToInsert = holes.slice(0, submitHolesCount).map((h, idx) => ({
-                scorecard_id: scorecardId,
-                hole_number:  idx + 1,
-                par:          h.par,
-                score:        calcHoleScore(h.shots, h.par) + h.par,
-            }));
+            const holesToInsert = holes
+                .map((h, idx) => ({ h, idx }))
+                .filter(({ h }) => h.par > 0)
+                .map(({ h, idx }) => ({
+                    scorecard_id: scorecardId,
+                    hole_number:  idx + 1,
+                    par:          h.par,
+                    score:        calcHoleScore(h.shots, h.par) + h.par,
+                }));
 
             // 5. 홀 데이터 저장 (수정 시 기존 데이터 삭제 후 재삽입)
-            if (isEditMode) {
+            if (scorecardId && scorecardId !== 'draft') {
                 // 기존 샷 데이터 먼저 삭제
-                await supabase.from("scorecard_shots").delete().eq("scorecard_id", editId);
+                await supabase.from("scorecard_shots").delete().eq("scorecard_id", scorecardId);
                 // 기존 홀 데이터 삭제
-                await supabase.from("scorecard_holes").delete().eq("scorecard_id", editId);
+                await supabase.from("scorecard_holes").delete().eq("scorecard_id", scorecardId);
             }
 
             const { data: insertedHoles, error: holesErr } = await supabase
@@ -810,7 +1026,7 @@ function ScoreCreateContent() {
             const isYard = distanceUnit.includes("야드");
             
             const shotsToInsert: any[] = [];
-            holes.slice(0, submitHolesCount).forEach((h, hIdx) => {
+            holes.forEach((h, hIdx) => {
                 const holeNumber = hIdx + 1;
                 const holeId = holeIdMap.get(holeNumber);
                 if (!holeId) return;
@@ -849,7 +1065,9 @@ function ScoreCreateContent() {
             }
 
             // 8. 기록(records) 테이블에 활동 로그 추가 (최근 업데이트 연동)
-            if (!isEditMode) {
+            // 이미 완료된 스코어카드를 다시 수정하는 경우가 아닐 때만 자동 생성
+            const isInitialSave = !isOriginallyFinal.current;
+            if (isInitialSave) {
                 await supabase.from("records").insert({
                     user_id: athleteId,
                     coach_id: coachId,
@@ -925,7 +1143,7 @@ function ScoreCreateContent() {
                         type: "training",
                         title: `[복습] ${roundDate.replace(/-/g, '.')}, ${golfCourse}`,
                         category: "review",
-                        content: `스코어카드 기반 자동 생성된 복습 훈련입니다. (${submitHolesCount}홀)`,
+                        content: `스코어카드 기반 자동 생성된 복습 훈련입니다. (${completedCount}홀)`,
                         training_start: todayStr,
                         training_end: in7DaysStr,
                         template_settings: [{ type: "review_scorecard", scorecardId: scorecardId }],
@@ -936,9 +1154,10 @@ function ScoreCreateContent() {
                 }
             }
 
-            // 9. 임시 저장 데이터 삭제
-            localStorage.removeItem(DRAFT_KEY);
+            // 9. 로컬 임시 저장 데이터 삭제 (이제 더이상 사용되지 않지만 안전을 위해)
+            localStorage.removeItem("gla_scorecard_draft");
 
+            hasFinalized.current = true;
             alert("스코어카드가 등록되었습니다.");
             router.replace(`/scores/${scorecardId}`);
 
@@ -1152,7 +1371,9 @@ function ScoreCreateContent() {
                         {/* Score Banner */}
                         <div className="bg-blue-50 dark:bg-blue-900/20 rounded-xl px-5 py-3 flex justify-between items-center">
                             <span className="text-sm font-semibold text-brand-navy dark:text-blue-300">이번홀: {isCurrentHoleComplete ? <span className={getScoreColor(holeScore)}>{formatRelativeScore(holeScore)}</span> : "-"}</span>
-                            <span className="text-sm font-semibold text-brand-navy dark:text-blue-300">합산 스코어: {totalScore > 0 ? totalScore : "-"}</span>
+                            <span className={cn("text-sm font-black", totalScore < 0 ? "text-red-500" : totalScore > 0 ? "text-blue-500" : "text-zinc-600 dark:text-zinc-300")}>
+                                합산 스코어: {formatRelativeScore(totalScore)}
+                            </span>
                         </div>
 
                         {/* Par Selection */}
@@ -1366,7 +1587,17 @@ function ScoreCreateContent() {
                                             <div className="flex items-center gap-2">
                                                 <span className="w-1 h-3 bg-orange-500 rounded-full shrink-0"></span>
                                                 <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">
-                                                    {(holeData.shots[i]?.location || "-").replace('그린 주변 어프로치', '어프로치').replace('그린 주변 벙커', '벙커').replace('티박스', '티샷')} {holeData.shots[i]?.distance && holeData.shots[i]?.location !== "홀인" ? `/ ${holeData.shots[i].distance}${unitSymbol}` : ""}
+                                                    {(() => {
+                                                        let loc = holeData.shots[i]?.location || "-";
+                                                        if (loc === "-" && i > 0 && holeData.shots[i - 1]?.location === "오비") {
+                                                            loc = "프로비저널볼";
+                                                        } else {
+                                                            loc = loc.replace('그린 주변 어프로치', '어프로치').replace('그린 주변 벙커', '벙커').replace('티박스', '티샷');
+                                                        }
+                                                        const dist = holeData.shots[i]?.distance;
+                                                        const isHoleIn = holeData.shots[i]?.location === "홀인";
+                                                        return `${loc}${dist && !isHoleIn ? ` / ${dist}${unitSymbol}` : ""}`;
+                                                    })()}
                                                 </span>
                                             </div>
                                         </div>
@@ -1416,29 +1647,29 @@ function ScoreCreateContent() {
                     })()}
 
                     {/* ── Footer Actions ── */}
-                    <div className="flex items-center justify-end gap-3 pt-4 border-t border-zinc-200 dark:border-zinc-800">
+                    <div className="flex items-center justify-end gap-1.5 sm:gap-3 pt-4 border-t border-zinc-200 dark:border-zinc-800 overflow-x-auto scrollbar-hide">
                         <button
                             type="button"
-                            onClick={submitFrontNine}
-                            className="mr-auto px-4 py-2.5 rounded-xl text-sm font-semibold border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                            onClick={submitNineHoles}
+                            className="mr-auto px-2.5 sm:px-4 py-2.5 rounded-xl text-xs sm:text-sm whitespace-nowrap font-semibold border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                         >
-                            전반 스코어만 등록
+                            9홀 스코어만 등록
                         </button>
 
                         <button
                             type="button"
                             onClick={() => router.back()}
-                            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                            className="px-3 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm whitespace-nowrap font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shrink-0"
                         >
                             취소
                         </button>
                         <button
                             type="submit"
                             disabled={!isAllHolesCompleted || isSaving}
-                            className="bg-brand-navy hover:bg-brand-navy/90 disabled:bg-zinc-200 disabled:text-zinc-400 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-600 text-white px-6 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm flex items-center gap-2"
+                            className="bg-brand-navy hover:bg-brand-navy/90 disabled:bg-zinc-200 disabled:text-zinc-400 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-600 text-white px-3 sm:px-6 py-2.5 rounded-xl text-xs sm:text-sm whitespace-nowrap font-semibold transition-colors shadow-sm flex items-center gap-1.5 shrink-0"
                         >
                             {isSaving ? (
-                                <><span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />저장 중...</>
+                                <><span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />저장 중...</>
                             ) : "스코어 등록"}
                         </button>
                     </div>
