@@ -254,7 +254,7 @@ export async function calculateAnalysisFromHoles(sortedHoles: any[]): Promise<Ho
 
             // 3. Position Result (D99)
             let posRes = 0;
-            if (strokeStartF === 'TE' && (strokeLandingF === 'GA' || strokeLandingF === 'GB')) {
+            if (strokeStartF === 'TE' && (strokeLandingF === 'GA' || strokeLandingF === 'GB') && hole.par === 4) {
                 posRes = 0;
             } else if (strokeLandingF === 'GA') {
                 posRes = strokeLandingD <= 10 ? 0.1 : strokeLandingD <= 25 ? 0.35 : strokeLandingD <= 30 ? 0.45 : 0;
