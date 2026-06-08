@@ -254,9 +254,15 @@ export async function calculateAnalysisFromHoles(sortedHoles: any[]): Promise<Ho
 
             // 3. Position Result (D99)
             let posRes = 0;
-            if (strokeLandingF === 'GA') posRes = strokeLandingD <= 10 ? 0.1 : strokeLandingD <= 25 ? 0.35 : strokeLandingD <= 30 ? 0.45 : 0;
-            else if (strokeLandingF === 'GB') posRes = strokeLandingD <= 25 ? 0.6 : strokeLandingD <= 30 ? 0.65 : 0;
-            else posRes = penaltyMap.get(strokeLandingF) || 0;
+            if (strokeStartF === 'TE' && (strokeLandingF === 'GA' || strokeLandingF === 'GB')) {
+                posRes = 0;
+            } else if (strokeLandingF === 'GA') {
+                posRes = strokeLandingD <= 10 ? 0.1 : strokeLandingD <= 25 ? 0.35 : strokeLandingD <= 30 ? 0.45 : 0;
+            } else if (strokeLandingF === 'GB') {
+                posRes = strokeLandingD <= 25 ? 0.6 : strokeLandingD <= 30 ? 0.65 : 0;
+            } else {
+                posRes = penaltyMap.get(strokeLandingF) || 0;
+            }
 
             // 4. Distance Result - Waterfall formula
             const v_d94_f = strokeStartF;
@@ -275,7 +281,11 @@ export async function calculateAnalysisFromHoles(sortedHoles: any[]): Promise<Ho
             let distRes = 0;
             let mainScore = 0;
 
-            if (v_d94_f === 'GB' && (strokeLandingF === 'GB' || strokeLandingF === 'GA')) {
+            if (v_d94_f === 'TE' && strokeLandingF === 'GA' && hole.par === 4) {
+                mainScore = strokeLandingD <= 10 ? -0.9 : strokeLandingD <= 25 ? -0.65 : -0.55;
+            } else if (v_d94_f === 'TE' && strokeLandingF === 'GB' && hole.par === 4) {
+                mainScore = strokeLandingD <= 25 ? -0.4 : strokeLandingD <= 30 ? -0.35 : 0;
+            } else if (v_d94_f === 'GB' && (strokeLandingF === 'GB' || strokeLandingF === 'GA')) {
                 mainScore = v_d94_val >= 26 ? 0.35 : 0.4;
             } else if (v_d94_f === 'GB' && v_d94_txt.includes('/')) {
                 const col = v_d94_val <= 25 ? 'bunker_25m' : 'bunker_30m';
@@ -289,6 +299,8 @@ export async function calculateAnalysisFromHoles(sortedHoles: any[]): Promise<Ho
                 mainScore = Number(row[col as keyof typeof row]) || 0;
             } else if (v_d94_f === 'GR' && strokeLandingLabel === 'HI') {
                 mainScore = -1;
+            } else if (v_d94_f === 'GR' && strokeLandingF !== 'GR' && strokeLandingF !== 'HI') {
+                mainScore = 1;
             } else if (!strokeLandingLabel.includes('/') || ['OB', 'PA', 'PS', 'GA', 'GB', 'HI', ''].includes(strokeLandingF)) {
                 mainScore = 0;
             } else {
@@ -334,49 +346,56 @@ export async function calculateAnalysisFromHoles(sortedHoles: any[]): Promise<Ho
             let adj = 0;
             const v_d110 = nextShotIdxVal; // Next shot's index for adjustment
 
-            // Universal +1 adjustment: IF(AND(nextIdx > (par-2), isNextNumeric), 1, 0)
-            if (v_d110 > (hole.par - 2) && nextShot && nextShot.shot_value.includes('/')) {
-                adj += 1;
+            if (v_d94_f === 'TE' && (strokeLandingF === 'GA' || strokeLandingF === 'GB')) {
+                // If TE -> GA or GB, skip standard adjustments. 
+                // Only Par 3 adjustment might apply later.
+                adj = 0;
+            } else {
+                // Universal +1 adjustment: IF(AND(nextIdx > (par-2), isNextNumeric), 1, 0)
+                if (v_d110 > (hole.par - 2) && nextShot && nextShot.shot_value.includes('/')) {
+                    adj += 1;
+                }
+
+                // Adj 2: Par 5, shotIndex=2, result is NOT OB/PA/PS/-
+                if (hole.par === 5 && shotIndex === 2 && !['OB', 'PA', 'PS', '-'].includes(strokeLandingF) && strokeLandingLabel !== '-') {
+                    adj += -0.25;
+                }
+
+                // Adj 3: Par 5, shotIndex=2, result is GA/GB/GR
+                if (hole.par === 5 && shotIndex === 2 && ['GA', 'GB', 'GR'].includes(strokeLandingF)) {
+                    adj += -0.5;
+                }
+
+                // Adj 4: HI result penalties based on par and shotIndex
+                if (strokeLandingLabel === 'HI') {
+                    if (hole.par === 5 && shotIndex === 2) adj += -3;
+                    else if (hole.par === 5 && shotIndex === 3) adj += -2;
+                    else if (hole.par === 5 && shotIndex >= 4) adj += -1;
+                    else if (hole.par === 4 && shotIndex === 2) adj += -2;
+                    else if (hole.par === 4 && shotIndex >= 3) adj += -1;
+                    else if (hole.par === 3 && shotIndex >= 2) adj += -2;
+                }
+
+                // Adj 5: GA start + HI result bonus
+                if (strokeLandingLabel === 'HI' && v_d94_f === 'GA') {
+                    if (v_d94_val <= 10) adj += -1.1;
+                    else if (v_d94_val <= 25) adj += -1.35;
+                    else if (v_d94_val <= 30) adj += -1.6;
+                }
+
+                // Adj 6: GB start + HI result bonus
+                if (strokeLandingLabel === 'HI' && v_d94_f === 'GB') {
+                    if (v_d94_val <= 25) adj += -1;
+                    else if (v_d94_val <= 30) adj += -1;
+                }
             }
 
-            // Par 3 specific subtraction: - INDEX(on_green, MATCH(...))
+            // Par 3 specific subtraction: - INDEX(on_green, MATCH(...)) 
+            // This applies even if TE -> GA/GB based on user formula structure
             if (hole.par === 3 && v_d110 > (hole.par - 2)) {
                 adj -= (Number(lookupRow(strokeLandingD).on_green) || 0);
             }
 
-            // Adj 2: Par 5, shotIndex=2, result is NOT exactly "-" or other penalties
-            if (hole.par === 5 && shotIndex === 2 && 
-                v_d101_txt !== '-' && !['OB', 'PA', 'PS'].includes(v_d101_f)) {
-                adj += -0.25;
-            }
-
-            // Adj 3: Par 5, shotIndex=2, result is GA/GB/GR
-            if (hole.par === 5 && shotIndex === 2 && ['GA', 'GB', 'GR'].includes(v_d101_f)) {
-                adj += -0.5;
-            }
-
-            // Adj 4: HI result penalties based on par and shotIndex
-            if (strokeLandingLabel === 'HI') {
-                if (hole.par === 5 && shotIndex === 2) adj += -3;
-                else if (hole.par === 5 && shotIndex === 3) adj += -2;
-                else if (hole.par === 5 && shotIndex >= 4) adj += -1;
-                else if (hole.par === 4 && shotIndex === 2) adj += -2;
-                else if (hole.par === 4 && shotIndex >= 3) adj += -1;
-                else if (hole.par === 3 && shotIndex >= 2) adj += -2;
-            }
-
-            // Adj 5: GA start + HI result bonus
-            if (strokeLandingLabel === 'HI' && v_d94_f === 'GA') {
-                if (v_d94_val <= 10) adj += -1.1;
-                else if (v_d94_val <= 25) adj += -1.35;
-                else if (v_d94_val <= 30) adj += -1.6;
-            }
-
-            // Adj 6: GB start + HI result bonus
-            if (strokeLandingLabel === 'HI' && v_d94_f === 'GB') {
-                if (v_d94_val <= 25) adj += -1;
-                else if (v_d94_val <= 30) adj += -1.5;
-            }
             distRes = mainScore + adj;
 
             const shotSG = tryPos + tryDist + posRes + distRes;
