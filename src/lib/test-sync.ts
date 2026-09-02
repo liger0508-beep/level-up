@@ -26,20 +26,20 @@ export interface TestData {
 }
 
 export const TEST_TYPE_LABELS: Record<TestType, string> = {
-    driver: "샷 종합",
-    iron: "샷 종합",
+    driver: "샷",
+    iron: "샷",
     wood_iron: "우드/아이언",
     pitch: "피치샷",
-    approach: "숏게임 종합",
-    bunker: "숏게임 종합",
-    long_putt: "퍼팅 종합",
-    middle_putt: "퍼팅 종합",
-    short_putt: "퍼팅 종합",
-    shot: "샷 종합",
-    around_green: "숏게임 종합",
-    putting: "퍼팅 종합",
+    approach: "숏게임",
+    bunker: "숏게임",
+    long_putt: "퍼팅",
+    middle_putt: "퍼팅",
+    short_putt: "퍼팅",
+    shot: "샷",
+    around_green: "숏게임",
+    putting: "퍼팅",
     physical: "피지컬",
-    short_game: "숏게임 종합",
+    short_game: "숏게임",
     etc: "기타"
 };
 
@@ -203,7 +203,7 @@ export async function fetchTestsByPlayer(playerName: string): Promise<TestRecord
                 coach:users!test_sessions_coach_id_fkey(name)
             `)
             .eq("user_id", userRes.id)
-            .order("created_at", { ascending: false });
+            .order("inserted_at", { ascending: false });
             
         if (error) {
             console.error("fetchTests error:", error);

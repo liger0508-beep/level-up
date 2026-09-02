@@ -54,7 +54,7 @@ export async function fetchCourseRecords(): Promise<CourseManagementRecord[]> {
                 coach:users!records_coach_id_fkey(name)
             `)
             .eq("type", "course_management")
-            .order("created_at", { ascending: false });
+            .order("inserted_at", { ascending: false });
 
         if (error) throw error;
 

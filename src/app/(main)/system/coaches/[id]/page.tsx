@@ -22,6 +22,7 @@ import {
     Hash,
     Users,
     UserCircle,
+    Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -113,6 +114,8 @@ export default function CoachDetailPage() {
     const [editData, setEditData] = useState<CoachDetail | null>(null);
     const [saveMessage, setSaveMessage] = useState("");
     const [availableBranches, setAvailableBranches] = useState<string[]>(["총괄", "오피스", "조이마루점", "구미점"]);
+    const [currentUser, setCurrentUser] = useState<any>(null);
+    const [isResettingPw, setIsResettingPw] = useState(false);
 
     useEffect(() => {
         const fetchCoach = async () => {
@@ -131,6 +134,13 @@ export default function CoachDetailPage() {
                 }
                 setAvailableBranches(allBranches as string[]);
 
+                // Fetch current user
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    const { data: profile } = await supabase.from('users').select('*').eq('id', user.id).single();
+                    if (profile) setCurrentUser(profile);
+                }
+
                 const { data, error } = await supabase
                     .from("users")
                     .select("*")
@@ -146,7 +156,7 @@ export default function CoachDetailPage() {
                         email: data.email || "",
                         loginId: data.login_id || "",
                         branch: data.branch || "미지정",
-                        registeredAt: data.created_at ? data.created_at.split('T')[0] : "",
+                        registeredAt: data.created_at ? ((data.created_at) ? new Date(data.created_at).toLocaleDateString('en-CA', {timeZone: 'Asia/Seoul'}) : "") : "",
                         status: data.status === "휴직" ? "paused" : "active",
                         gender: data.gender === "male" ? "남" : data.gender === "female" ? "여" : (data.gender === "other" ? "기타" : "미지정"),
                         birthDate: data.dob || "",
@@ -212,9 +222,76 @@ export default function CoachDetailPage() {
         setIsEditing(false);
     };
 
+    const handleDelete = async () => {
+        if (!coach || !coachId) return;
+        if (!confirm(`\n코치명: ${coach.name}\n\n정말로 이 코치를 삭제하시겠습니까?\n모든 기록이 삭제됩니다.`)) return;
+        if (currentUser?.name !== '슈퍼관리자') {
+            alert('슈퍼관리자만 사용할 수 있는 기능입니다.');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/admin/delete-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    targetUserId: coachId,
+                    callerName: currentUser.name
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '삭제 실패');
+
+            alert("삭제되었습니다.");
+            router.push("/system/coaches");
+        } catch (err: any) {
+            console.error("Error deleting coach:", err);
+            alert(`삭제에 실패했습니다: ${err.message}`);
+        }
+    };
+
     const updateField = (field: keyof CoachDetail, value: string) => {
         if (editData) {
             setEditData(prev => prev ? ({ ...prev, [field]: value }) : prev);
+        }
+    };
+
+    const handleResetPassword = async () => {
+        if (!coach || !coachId) return;
+        if (currentUser?.name !== '슈퍼관리자') {
+            alert('슈퍼관리자만 사용할 수 있는 기능입니다.');
+            return;
+        }
+
+        const phone = coach.phone || "";
+        const numericPhone = phone.replace(/[^0-9]/g, '');
+        if (numericPhone.length < 4) {
+            alert('연락처 정보가 올바르지 않습니다.');
+            return;
+        }
+        
+        const last4 = numericPhone.slice(-4);
+        if (!confirm(`\n대상: ${coach.name}\n\n정말로 비밀번호를 초기화하시겠습니까?\n비밀번호는 연락처 뒷자리 '${last4}'(으)로 변경됩니다.`)) return;
+
+        try {
+            setIsResettingPw(true);
+            const res = await fetch('/api/admin/reset-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    targetUserId: coachId,
+                    targetPhone: phone,
+                    callerName: currentUser.name
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '비밀번호 초기화 실패');
+            
+            alert(`비밀번호가 '${data.newPassword}'(으)로 초기화되었습니다.`);
+        } catch (err: any) {
+            alert(err.message);
+        } finally {
+            setIsResettingPw(false);
         }
     };
 
@@ -249,7 +326,16 @@ export default function CoachDetailPage() {
                                 <button onClick={handleSave} className="flex items-center gap-1 px-4 py-2 bg-brand-navy text-white text-sm font-semibold rounded-xl">저장</button>
                             </>
                         ) : (
-                            <button onClick={() => setIsEditing(true)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-zinc-600 border border-zinc-200 rounded-xl">수정</button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handleDelete}
+                                    className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-xl transition-colors"
+                                >
+                                    <Trash2 size={14} />
+                                    삭제
+                                </button>
+                                <button onClick={() => setIsEditing(true)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-zinc-600 border border-zinc-200 rounded-xl">수정</button>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -327,9 +413,22 @@ export default function CoachDetailPage() {
                         <InfoRow icon={Calendar} label="생년월일" value={coach.birthDate} editable={isEditing} editValue={editData.birthDate} onEdit={(v) => updateField("birthDate", v)} isEditing={isEditing} />
                     </div>
                     <div className="space-y-0 border-t md:border-t-0 pt-4 md:pt-0">
-                        <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-2">업무 정보</h3>
+                        <div className="flex items-center justify-between mb-2">
+                            <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">업무 정보</h3>
+                            {currentUser?.name === '슈퍼관리자' && (
+                                <button 
+                                    onClick={handleResetPassword}
+                                    disabled={isResettingPw}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 dark:text-red-400 dark:bg-red-500/10 dark:hover:bg-red-500/20 rounded-lg transition-colors border border-red-200 dark:border-red-500/20 disabled:opacity-50"
+                                >
+                                    <Key size={12} />
+                                    {isResettingPw ? "초기화 중..." : "비밀번호 초기화"}
+                                </button>
+                            )}
+                        </div>
                         <InfoRow icon={MapPin} label="소속 지점" value={coach.branch} editable={isEditing} editValue={editData.branch} onEdit={(v) => updateField("branch", v)} isEditing={isEditing} options={availableBranches} />
                         <InfoRow icon={Hash} label="ID" value={coach.loginId} />
+                        <InfoRow icon={Key} label="PW" value="••••••••" />
                     </div>
                 </section>
 

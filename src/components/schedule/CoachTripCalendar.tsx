@@ -106,7 +106,7 @@ export function CoachTripCalendar({ trips }: CoachTripCalendarProps) {
                         className={cn("px-4 py-2 text-sm rounded-full font-semibold border transition-all duration-200 whitespace-nowrap shrink-0",
                             categoryFilter === "all"
                                 ? "bg-brand-navy text-white border-brand-navy shadow-md"
-                                : "bg-transparent text-zinc-600 border-zinc-200 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700"
+                                : "bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700"
                         )}>전체</button>
                     {CATEGORIES.map((cat) => (
                         <button key={cat}
@@ -114,7 +114,7 @@ export function CoachTripCalendar({ trips }: CoachTripCalendarProps) {
                             className={cn("px-4 py-2 text-sm rounded-full font-semibold border transition-all duration-200 whitespace-nowrap shrink-0",
                                 categoryFilter === cat
                                     ? "bg-brand-navy text-white border-brand-navy shadow-md"
-                                    : "bg-transparent text-zinc-600 border-zinc-200 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700"
+                                    : "bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700"
                             )}>{cat}</button>
                     ))}
                 </div>

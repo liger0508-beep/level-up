@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect } from "react";
 import Link from 'next/link';
+import { useRouter } from "next/navigation";
 import { ScoreTable, ScoreData } from "@/components/score/ScoreTable";
 import { BookOpen, Plus, Search, Calendar, ChevronLeft, ChevronRight, BarChart3, Trophy, Loader2 } from "lucide-react";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
@@ -13,6 +14,10 @@ import { DatePresets, DatePresetType } from "@/components/ui/DatePresets";
 // ── Supabase & Data Fetching ───────────────────────────────
 
 export default function ScoresPage() {
+    const router = useRouter();
+    const [showDraftPopup, setShowDraftPopup] = useState(false);
+    const [draftToResume, setDraftToResume] = useState<string | null>(null);
+
     const [searchQuery, setSearchQuery] = useState("");
     const [selectAll, setSelectAll] = useState(true);
     const [allAthletes, setAllAthletes] = useState<string[]>([]);
@@ -23,12 +28,18 @@ export default function ScoresPage() {
     const [activePreset, setActivePreset] = useState<DatePresetType>("custom");
     
     const [allScores, setAllScores] = useState<ScoreData[]>([]);
+    const [todayScores, setTodayScores] = useState<ScoreData[]>([]);
+    const [totalScoreCount, setTotalScoreCount] = useState(0);
+    const [draftScore, setDraftScore] = useState<ScoreData | null>(null);
     const [loading, setLoading] = useState(true);
     const [userRole, setUserRole] = useState<string | null>(null);
+    const [loggedUserName, setLoggedUserName] = useState<string | null>(null);
     const [summaryStats, setSummaryStats] = useState({
         avg: 0,
+        avgRounds: 0,
         best: 0,
         bestPlayerName: "",
+        bestCourseName: "",
         totalRounds: 0,
         thisMonthRounds: 0
     });
@@ -40,16 +51,74 @@ export default function ScoresPage() {
             // 1. Get user role
             const { data: { user } } = await supabase.auth.getUser();
             let role = null;
+            let userName = null;
             if (user) {
-                const { data: profile } = await supabase.from("users").select("role").eq("id", user.id).single();
+                const { data: profile } = await supabase.from("users").select("role, name").eq("id", user.id).single();
                 role = profile?.role || null;
+                userName = profile?.name || null;
                 setUserRole(role);
+                setLoggedUserName(userName);
             }
 
             // 2. Fetch Athletes
             const athletes = await fetchAthletes();
             setAllAthletes(athletes);
-            setSelectedPlayers(new Set(athletes));
+            
+            try {
+                const isFromDetail = sessionStorage.getItem("gla_scores_keep_alive") === "true";
+                if (isFromDetail) {
+                    const stored = sessionStorage.getItem("gla_scores_filter");
+                    if (stored) {
+                        const parsed = JSON.parse(stored);
+                        if (parsed.startDate !== undefined) setStartDate(parsed.startDate);
+                        if (parsed.endDate !== undefined) setEndDate(parsed.endDate);
+                        if (parsed.activePreset) setActivePreset(parsed.activePreset);
+                        
+                        if (role !== 'athlete' && role !== 'parent') {
+                            if (parsed.searchQuery !== undefined) setSearchQuery(parsed.searchQuery);
+                            if (parsed.selectAll !== undefined) setSelectAll(parsed.selectAll);
+                            
+                            if (parsed.selectAll) {
+                                setSelectedPlayers(new Set(athletes));
+                            } else if (parsed.selectedPlayers) {
+                                setSelectedPlayers(new Set(parsed.selectedPlayers));
+                            } else {
+                                setSelectedPlayers(new Set(athletes));
+                            }
+                        } else {
+                            if (userName) setSelectedPlayers(new Set([userName]));
+                            else setSelectedPlayers(new Set());
+                        }
+                    } else {
+                        if (role === 'athlete' || role === 'parent') {
+                            if (userName) setSelectedPlayers(new Set([userName]));
+                            else setSelectedPlayers(new Set());
+                        } else {
+                            setSelectedPlayers(new Set(athletes));
+                        }
+                    }
+                    setTimeout(() => {
+                        sessionStorage.removeItem("gla_scores_keep_alive");
+                    }, 100);
+                } else {
+                    sessionStorage.removeItem("gla_scores_filter");
+                    sessionStorage.removeItem("gla_scores_scroll");
+                    if (role === 'athlete' || role === 'parent') {
+                        if (userName) setSelectedPlayers(new Set([userName]));
+                        else setSelectedPlayers(new Set());
+                    } else {
+                        setSelectedPlayers(new Set(athletes));
+                    }
+                }
+            } catch (e) {
+                console.warn("Failed to restore scores filter", e);
+                if (role === 'athlete' || role === 'parent') {
+                    if (userName) setSelectedPlayers(new Set([userName]));
+                    else setSelectedPlayers(new Set());
+                } else {
+                    setSelectedPlayers(new Set(athletes));
+                }
+            }
 
             // 2.5 Cleanup old drafts (created > 24h ago and not final)
             try {
@@ -63,92 +132,133 @@ export default function ScoresPage() {
                 console.error("Cleanup error:", err);
             }
 
-            // 3. Fetch Scorecards
-            const { data: scorecards, error } = await supabase
+            // 3. Fetch Today's Scores (Lean)
+            const todayStr = formatLocalDate();
+            let todayQuery = supabase
                 .from("scorecards")
                 .select(`
-                    id, 
-                    total_score, 
-                    course_name, 
-                    round_date, 
-                    created_at,
-                    memo,
+                    id, total_score, course_name, round_date, created_at, memo, hole_count, is_final,
                     athlete:users!scorecards_athlete_id_fkey(id, name),
                     coach:users!scorecards_coach_id_fkey(name),
-                    holes:scorecard_holes(score),
-                    hole_count,
-                    is_final
+                    holes:scorecard_holes(score, par)
                 `)
-                .order("round_date", { ascending: false })
-                .order("created_at", { ascending: false });
+                .eq("round_date", todayStr)
+                .neq("is_final", false);
 
-            if (scorecards) {
-                const mapped: ScoreData[] = scorecards.map(s => {
-                    const holes = (s as any).holes || [];
-                    const completedCount = holes.filter((h: any) => h.score > 0 && h.score !== -1).length;
-
-                    return {
-                        id: s.id,
-                        score: s.total_score || 0,
-                        title: `${s.course_name} 라운드`,
-                        playerName: (s.athlete as any)?.name || "미지정",
-                        coachName: (s.coach as any)?.name || "미지정",
-                        courseName: s.course_name,
-                        comment: s.memo || "",
-                        date: s.round_date,
-                        completedHoles: completedCount,
-                        holeCount: (s as any).hole_count || (completedCount > 9 ? 18 : 9),
-                        isFinal: (s as any).is_final
-                    };
-                }).sort((a, b) => {
-                    // 1. Incomplete (Draft) first
-                    if (a.isFinal === false && b.isFinal !== false) return -1;
-                    if (a.isFinal !== false && b.isFinal === false) return 1;
-                    // 2. Then by date descending
-                    if (a.date > b.date) return -1;
-                    if (a.date < b.date) return 1;
-                    return 0;
-                });
-                setAllScores(mapped);
-
-                // Calculate summary
-                const currentMonth = new Date().toISOString().slice(0, 7);
-                const { data: profile } = await supabase.from("users").select("id, role, assigned_athletes").eq("id", user?.id).single();
-                
-                let relevantScores = mapped;
-                if (role === 'athlete') {
-                    relevantScores = mapped.filter(s => (scorecards.find(sc => sc.id === s.id)?.athlete as any)?.id === user?.id);
-                } else if (role === 'coach' && profile?.assigned_athletes) {
+            if (role === 'athlete' && user?.id) {
+                todayQuery = todayQuery.eq("athlete_id", user.id);
+            } else if (role === 'coach') {
+                const { data: profile } = await supabase.from("users").select("assigned_athletes").eq("id", user?.id).single();
+                if (profile?.assigned_athletes) {
                     const assignedNames = profile.assigned_athletes.split(',').map((n: string) => n.trim());
-                    relevantScores = mapped.filter(s => assignedNames.includes(s.playerName));
+                    // we will filter in memory for coach assigned athletes to keep query simple
                 }
+            }
+            const { data: todayData } = await todayQuery;
+            
+            if (todayData) {
+                let filteredToday = todayData;
+                if (role === 'coach') {
+                    const { data: profile } = await supabase.from("users").select("assigned_athletes").eq("id", user?.id).single();
+                    if (profile?.assigned_athletes) {
+                        const assignedNames = profile.assigned_athletes.split(',').map((n: string) => n.trim());
+                        filteredToday = todayData.filter(s => assignedNames.includes((s.athlete as any)?.name));
+                    }
+                }
+                const mappedToday = filteredToday.map(mapScorecardRow);
+                setTodayScores(mappedToday);
+            }
+
+            // 4. Fetch User's Draft
+            let draftQuery = supabase
+                .from("scorecards")
+                .select(`
+                    id, total_score, course_name, round_date, created_at, memo, hole_count, is_final,
+                    athlete:users!scorecards_athlete_id_fkey(id, name),
+                    coach:users!scorecards_coach_id_fkey(name),
+                    holes:scorecard_holes(score, par)
+                `)
+                .eq("is_final", false)
+                .limit(1);
+            
+            if (role === 'athlete' && user?.id) {
+                draftQuery = draftQuery.eq("athlete_id", user.id);
+            } else if (userName) {
+                draftQuery = draftQuery.eq("coach_id", user?.id); // coach's drafts
+            }
+            const { data: draftData } = await draftQuery;
+            if (draftData && draftData.length > 0) {
+                setDraftScore(mapScorecardRow(draftData[0]));
+            }
+
+            // 5. Calculate Stats for the last 30 days
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().slice(0, 10);
+            const currentMonth = new Date().toISOString().slice(0, 7);
+            
+            let statsQuery = supabase
+                .from("scorecards")
+                .select(`
+                    id, total_score, course_name, round_date, hole_count, is_final,
+                    athlete:users!scorecards_athlete_id_fkey(id, name),
+                    holes:scorecard_holes(score)
+                `)
+                .gte("round_date", thirtyDaysAgoStr)
+                .eq("is_final", true)
+                .eq("hole_count", 18);
                 
-                if (relevantScores.length > 0) {
-                    // 통계는 18홀 라운드만 기준으로 계산 (평균, 베스트)
-                    const fullRounds = relevantScores.filter(s => s.holeCount === 18 && s.completedHoles === 18);
-                    
-                    let avg = 0;
+            if (role === 'athlete' && user?.id) {
+                statsQuery = statsQuery.eq("athlete_id", user.id);
+            }
+            const { data: statsData } = await statsQuery;
+
+            if (statsData) {
+                let relevantStats = statsData;
+                if (role === 'coach') {
+                    const { data: profile } = await supabase.from("users").select("assigned_athletes").eq("id", user?.id).single();
+                    if (profile?.assigned_athletes) {
+                        const assignedNames = profile.assigned_athletes.split(',').map((n: string) => n.trim());
+                        relevantStats = statsData.filter(s => assignedNames.includes((s.athlete as any)?.name));
+                    }
+                }
+
+                if (relevantStats.length > 0) {
+                    const fullRounds = relevantStats.filter(s => {
+                        const holes = (s as any).holes || [];
+                        const completedCount = holes.filter((h: any) => h.score > 0 && h.score !== -1).length;
+                        return completedCount === 18;
+                    });
+
+                    let recentAvg = 0;
+                    if (fullRounds.length > 0) {
+                        recentAvg = fullRounds.reduce((sum, s) => sum + (s.total_score || 0), 0) / fullRounds.length;
+                    }
+
                     let bestScore = 0;
                     let bestPlayer = "";
-
+                    let bestCourse = "";
                     if (fullRounds.length > 0) {
-                        avg = fullRounds.reduce((sum, s) => sum + s.score, 0) / fullRounds.length;
-                        bestScore = fullRounds[0].score;
-                        bestPlayer = fullRounds[0].playerName;
+                        bestScore = fullRounds[0].total_score || 0;
+                        bestPlayer = (fullRounds[0].athlete as any)?.name || "";
+                        bestCourse = fullRounds[0].course_name;
                         fullRounds.forEach(s => {
-                            if (s.score < bestScore) {
-                                bestScore = s.score;
-                                bestPlayer = s.playerName;
+                            if ((s.total_score || 0) < bestScore) {
+                                bestScore = s.total_score || 0;
+                                bestPlayer = (s.athlete as any)?.name || "";
+                                bestCourse = s.course_name;
                             }
                         });
                     }
 
-                    const thisMonth = relevantScores.filter(s => s.date.startsWith(currentMonth)).length;
+                    const thisMonth = relevantStats.filter(s => s.round_date.startsWith(currentMonth)).length;
                     setSummaryStats({
-                        avg: Math.round(avg * 10) / 10,
+                        avg: Math.round(recentAvg * 10) / 10,
+                        avgRounds: fullRounds.length,
                         best: bestScore,
                         bestPlayerName: bestPlayer,
-                        totalRounds: relevantScores.length,
+                        bestCourseName: bestCourse,
+                        totalRounds: relevantStats.length,
                         thisMonthRounds: thisMonth
                     });
                 }
@@ -157,6 +267,132 @@ export default function ScoresPage() {
         };
         loadData();
     }, []);
+
+    // Helper for mapping
+    const mapScorecardRow = (s: any): ScoreData => {
+        const holes = s.holes || [];
+        let completedCount = holes.filter((h: any) => h.score > 0 && h.score !== -1).length;
+        
+        if (s.is_final === false && s.hole_count) {
+            completedCount = s.hole_count;
+        }
+
+        let relativeScore = undefined;
+        if (s.is_final === false) {
+            const validHoles = holes.filter((h: any) => h.score > 0 && h.score !== -1 && h.par > 0);
+            if (validHoles.length > 0) {
+                const totalScore = validHoles.reduce((acc: number, h: any) => acc + h.score, 0);
+                const totalPar = validHoles.reduce((acc: number, h: any) => acc + h.par, 0);
+                relativeScore = totalScore - totalPar;
+            } else {
+                relativeScore = s.total_score || 0; // fallback
+            }
+        }
+
+        return {
+            id: s.id,
+            score: s.total_score || 0,
+            title: `${s.course_name} 라운드`,
+            playerName: (s.athlete as any)?.name || "미지정",
+            coachName: (s.coach as any)?.name || "미지정",
+            courseName: s.course_name,
+            comment: s.memo || "",
+            date: s.round_date,
+            createdAt: s.created_at,
+            completedHoles: completedCount,
+            holeCount: s.hole_count || (completedCount > 9 ? 18 : 9),
+            isFinal: s.is_final,
+            relativeScore
+        };
+    };
+
+    // New useEffect for Server-side Pagination
+    useEffect(() => {
+        if (loading || !userRole) return;
+
+        const fetchFilteredScores = async () => {
+            const supabase = createClient();
+            let query = supabase
+                .from("scorecards")
+                .select(`
+                    id, total_score, course_name, round_date, created_at, memo, hole_count, is_final,
+                    athlete:users!scorecards_athlete_id_fkey(id, name),
+                    coach:users!scorecards_coach_id_fkey(name),
+                    holes:scorecard_holes(score, par)
+                `, { count: 'exact' });
+                
+            // Apply Filters
+            if (startDate) query = query.gte("round_date", startDate);
+            if (endDate) query = query.lte("round_date", endDate);
+            
+            if (userRole === 'coach' || userRole === 'admin') {
+                if (!selectAll && selectedPlayers.size > 0) {
+                    const { data: usersData } = await supabase.from("users").select("id").in("name", Array.from(selectedPlayers));
+                    const userIds = usersData?.map(u => u.id) || [];
+                    if (userIds.length > 0) query = query.in("athlete_id", userIds);
+                    else query = query.eq("athlete_id", "00000000-0000-0000-0000-000000000000");
+                }
+            } else if (userRole === 'athlete') {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) query = query.eq("athlete_id", user.id);
+            }
+            
+            // Order: Drafts (false) first, then by round_date DESC, then created_at DESC
+            query = query
+                .order("is_final", { ascending: true })
+                .order("round_date", { ascending: false })
+                .order("created_at", { ascending: false })
+                .limit(displayLimit);
+                
+            const { data, count, error } = await query;
+            if (error || !data) return;
+            
+            setTotalScoreCount(count || 0);
+            
+            const mapped = data.map(mapScorecardRow);
+            
+            // Deduplicate for React keys safety
+            const uniqueMapped = Array.from(new Map(mapped.map(m => [m.id, m])).values());
+            setAllScores(uniqueMapped);
+        };
+
+        fetchFilteredScores();
+    }, [loading, startDate, endDate, selectAll, selectedPlayers, displayLimit, userRole]);
+
+    // Scroll state management
+    useEffect(() => {
+        if (typeof window !== "undefined" && !loading) {
+            const savedScroll = sessionStorage.getItem("gla_scores_scroll");
+            if (savedScroll) {
+                window.scrollTo(0, parseInt(savedScroll, 10));
+                sessionStorage.removeItem("gla_scores_scroll");
+            }
+            
+            const handleScroll = () => {
+                sessionStorage.setItem("gla_scores_scroll", window.scrollY.toString());
+            };
+            window.addEventListener("scroll", handleScroll);
+            return () => window.removeEventListener("scroll", handleScroll);
+        }
+    }, [loading]);
+
+    // Save filter state to sessionStorage whenever it changes
+    useEffect(() => {
+        if (allAthletes.length === 0) return;
+        
+        try {
+            sessionStorage.setItem("gla_scores_filter", JSON.stringify({
+                searchQuery,
+                selectAll,
+                selectedPlayers: Array.from(selectedPlayers),
+                startDate,
+                endDate,
+                activePreset
+            }));
+        } catch (e) {
+            console.warn("Failed to save scores filter", e);
+        }
+    }, [searchQuery, selectAll, selectedPlayers, startDate, endDate, activePreset, allAthletes]);
 
     const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -202,24 +438,7 @@ export default function ScoresPage() {
         return Array.from(new Set([...selectedArr, ...queryMatches]));
     }, [searchQuery, selectedPlayers, selectAll, allAthletes]);
 
-    const todayStr = formatLocalDate();
-    
-    const todayScores = useMemo(() => {
-        return allScores.filter(s => s.date === todayStr);
-    }, [allScores, todayStr]);
-
-    const filteredScores = useMemo(() => {
-        return allScores.filter((l) => {
-            const playerMatch = selectedPlayers.has(l.playerName);
-            const afterStart = !startDate || l.date >= startDate;
-            const beforeEnd = !endDate || l.date <= endDate;
-            return playerMatch && afterStart && beforeEnd;
-        });
-    }, [allScores, selectedPlayers, startDate, endDate]);
-
-    const displayedScores = useMemo(() => {
-        return filteredScores.slice(0, displayLimit);
-    }, [filteredScores, displayLimit]);
+    // Client side filtering is now replaced by server-side filtering
 
     return (
         <div className="p-4 sm:p-8 max-w-4xl mx-auto">
@@ -230,13 +449,21 @@ export default function ScoresPage() {
                         Score
                     </h1>
                 </div>
-                <Link
-                    href="/scores/create"
+                <button
+                    onClick={(e) => {
+                        e.preventDefault();
+                        if (draftScore) {
+                            setDraftToResume(draftScore.id);
+                            setShowDraftPopup(true);
+                        } else {
+                            router.push("/scores/create");
+                        }
+                    }}
                     className="bg-brand-red hover:bg-brand-red-dark text-white px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
                 >
                     <Plus size={18} />
                     작성
-                </Link>
+                </button>
             </div>
 
             {loading ? (
@@ -247,18 +474,20 @@ export default function ScoresPage() {
             ) : (
                 <>
                     {/* ── Analytical Summary ── */}
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-10">
-                        <div className="bg-transparent border border-zinc-200 dark:border-zinc-800 p-5 rounded-[2rem] flex flex-col justify-between min-h-[120px] relative overflow-hidden group hover:border-brand-navy transition-all">
+                    <div className="grid grid-cols-2 gap-3 mb-10">
+                        <div className="bg-white border border-zinc-200 dark:border-zinc-800 p-5 rounded-[2rem] flex flex-col justify-between min-h-[120px] relative overflow-hidden group hover:border-brand-navy transition-all">
                             <div className="flex items-center gap-2 text-zinc-400 mb-2">
                                 <BarChart3 size={16} />
-                                <span className="text-[10px] font-black uppercase tracking-widest">{userRole === 'athlete' ? "나의 평균 타수" : "전체 평균 타수"}</span>
+                                <span className="text-[10px] font-black uppercase tracking-tight whitespace-nowrap">{userRole === 'athlete' ? "나의 평균 타수 (30일)" : "평균 타수 (30일)"}</span>
                             </div>
                             <div className="flex flex-col items-end">
                                 <div className="flex items-baseline gap-1">
                                     <p className={`text-3xl font-black tracking-tighter italic ${summaryStats.avg > 0 ? (summaryStats.avg < 72 ? "text-red-500" : summaryStats.avg > 72 ? "text-blue-500" : "text-zinc-900 dark:text-zinc-50") : "text-zinc-900 dark:text-zinc-50"}`}>
-                                        {summaryStats.avg || "--"}
+                                        {summaryStats.avg > 0 ? summaryStats.avg.toFixed(1) : "--"}
                                     </p>
-                                    <span className="text-xs font-bold text-zinc-400">타</span>
+                                    <span className="text-xs font-bold text-zinc-400">
+                                        타 {summaryStats.avg > 0 ? `(${summaryStats.avgRounds}회)` : ""}
+                                    </span>
                                 </div>
                             </div>
                             <div className="absolute right-[-10px] bottom-[-10px] opacity-[0.03] group-hover:opacity-[0.05] transition-opacity">
@@ -266,15 +495,20 @@ export default function ScoresPage() {
                             </div>
                         </div>
 
-                        <div className="bg-transparent border border-zinc-200 dark:border-zinc-800 p-5 rounded-[2rem] flex flex-col justify-between min-h-[120px] relative overflow-hidden group hover:border-brand-red transition-all">
+                        <div className="bg-white border border-zinc-200 dark:border-zinc-800 p-5 rounded-[2rem] flex flex-col justify-between min-h-[120px] relative overflow-hidden group hover:border-brand-red transition-all">
                             <div className="flex items-center gap-2 text-zinc-400 mb-2">
                                 <Trophy size={16} />
-                                <span className="text-[10px] font-black uppercase tracking-widest">{userRole === 'athlete' ? "나의 베스트" : "최고 기록"}</span>
+                                <span className="text-[10px] font-black uppercase tracking-tight whitespace-nowrap">{userRole === 'athlete' ? "나의 베스트 (30일)" : "최저 타수 (30일)"}</span>
                             </div>
-                            <div className="flex flex-col items-end">
-                                {userRole !== 'athlete' && summaryStats.bestPlayerName && (
-                                    <span className="text-[10px] font-bold text-zinc-400 mb-1">{summaryStats.bestPlayerName} 선수</span>
-                                )}
+                            <div className="flex items-end justify-between w-full relative z-10">
+                                <div className="mb-1">
+                                    {summaryStats.bestPlayerName && (
+                                        <span className="text-[11px] font-bold text-zinc-400">
+                                            {userRole !== 'athlete' ? `${summaryStats.bestPlayerName} ` : ""}
+                                            {summaryStats.bestCourseName ? `(${summaryStats.bestCourseName})` : ""}
+                                        </span>
+                                    )}
+                                </div>
                                 <div className="flex items-baseline gap-1">
                                     <p className={`text-3xl font-black tracking-tighter italic ${summaryStats.best > 0 ? (summaryStats.best < 72 ? "text-red-500" : summaryStats.best > 72 ? "text-blue-500" : "text-zinc-900 dark:text-zinc-50") : "text-zinc-900 dark:text-zinc-50"}`}>
                                         {summaryStats.best || "--"}
@@ -284,22 +518,6 @@ export default function ScoresPage() {
                             </div>
                             <div className="absolute right-[-10px] bottom-[-10px] opacity-[0.03] group-hover:opacity-[0.05] transition-opacity text-brand-red">
                                 <Trophy size={80} />
-                            </div>
-                        </div>
-
-                        <div className="hidden md:flex bg-transparent border border-brand-navy/30 p-5 rounded-[2rem] flex-col justify-between min-h-[120px] relative overflow-hidden group transition-all col-span-1 hover:border-brand-navy">
-                            <div className="flex items-center gap-2 text-brand-navy dark:text-brand-navy-light mb-2">
-                                <Calendar size={16} />
-                                <span className="text-[10px] font-black uppercase tracking-widest">이달의 라운드</span>
-                            </div>
-                            <div className="flex flex-col items-end">
-                                <div className="flex items-baseline gap-1">
-                                    <p className="text-3xl font-black text-brand-navy dark:text-brand-navy-light tracking-tighter italic">{summaryStats.thisMonthRounds}</p>
-                                    <span className="text-xs font-bold text-zinc-400">회</span>
-                                </div>
-                            </div>
-                            <div className="absolute right-[-10px] bottom-[-10px] opacity-[0.03] group-hover:opacity-[0.05] transition-opacity text-brand-navy">
-                                <Calendar size={80} />
                             </div>
                         </div>
                     </div>
@@ -334,6 +552,7 @@ export default function ScoresPage() {
                             <Link
                                 key={s.id}
                                 href={`/scores/${s.id}`}
+                                onClick={() => sessionStorage.setItem("gla_scores_keep_alive", "true")}
                                 className="flex-shrink-0 w-44 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 rounded-2xl shadow-sm hover:border-brand-navy/50 hover:shadow-md transition-all active:scale-95 cursor-pointer group"
                             >
                                 <div className="flex items-center justify-between mb-3">
@@ -343,8 +562,10 @@ export default function ScoresPage() {
                                     <BarChart3 size={14} className="text-zinc-300 group-hover:text-brand-navy transition-colors shrink-0" />
                                 </div>
                                 <div className="text-right">
-                                    <div className={`text-[17px] font-black tracking-tight mb-0.5 ${s.score < (s.holeCount === 9 ? 36 : 72) ? "text-red-500" : s.score > (s.holeCount === 9 ? 36 : 72) ? "text-blue-500" : "text-zinc-900 dark:text-zinc-100"}`}>
-                                        {s.score}타
+                                    <div className={`text-[17px] font-black tracking-tight mb-0.5 ${s.isFinal === false ? (s.relativeScore !== undefined ? (s.relativeScore < 0 ? "text-red-500" : s.relativeScore > 0 ? "text-blue-500" : "text-zinc-900 dark:text-zinc-100") : "text-zinc-900 dark:text-zinc-100") : (s.score < (s.holeCount === 9 ? 36 : 72) ? "text-red-500" : s.score > (s.holeCount === 9 ? 36 : 72) ? "text-blue-500" : "text-zinc-900 dark:text-zinc-100")}`}>
+                                        {s.isFinal === false ? (
+                                            s.relativeScore !== undefined ? (s.relativeScore > 0 ? `+${s.relativeScore}` : s.relativeScore === 0 ? "E" : s.relativeScore) : `${s.score}타`
+                                        ) : `${s.score}타`}
                                         {s.holeCount === 9 ? (
                                             <span className="ml-1 text-[11px] text-zinc-400 font-bold italic tracking-tighter">(9H)</span>
                                         ) : (s.completedHoles !== undefined && s.completedHoles > 0 && s.completedHoles < 18 && (
@@ -388,41 +609,45 @@ export default function ScoresPage() {
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 mt-3">
-                    <label className="w-24 shrink-0 text-center text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                        선수 검색
-                    </label>
-                    <div className="relative flex-1">
-                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                        <input
-                            type="text"
-                            placeholder="선수 검색..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all"
-                        />
-                    </div>
-                </div>
+                {userRole !== 'athlete' && userRole !== 'parent' && (
+                    <>
+                        <div className="flex items-center gap-2 mt-3">
+                            <label className="w-24 shrink-0 text-center text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                                선수 검색
+                            </label>
+                            <div className="relative flex-1">
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                <input
+                                    type="text"
+                                    placeholder="선수 검색..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all"
+                                />
+                            </div>
+                        </div>
 
-                {visiblePlayersArr.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-3 max-h-32 overflow-y-auto pr-1 custom-scrollbar">
-                        {visiblePlayersArr.map((name) => {
-                            const isSelected = selectedPlayers.has(name);
-                            return (
-                                <button
-                                    key={name}
-                                    onClick={() => togglePlayer(name)}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-200 shrink-0
-                                        ${isSelected
-                                            ? "bg-brand-navy/10 text-brand-navy border-brand-navy dark:bg-brand-navy/30 dark:text-white"
-                                            : "bg-white dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-brand-navy"
-                                        }`}
-                                >
-                                    {name}
-                                </button>
-                            );
-                        })}
-                    </div>
+                        {visiblePlayersArr.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-3 max-h-32 overflow-y-auto pr-1 custom-scrollbar" style={{ paddingLeft: '104px' }}>
+                                {visiblePlayersArr.map((name) => {
+                                    const isSelected = selectedPlayers.has(name);
+                                    return (
+                                        <button
+                                            key={name}
+                                            onClick={() => togglePlayer(name)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-200 shrink-0
+                                                ${isSelected
+                                                    ? "bg-brand-navy/10 text-brand-navy border-brand-navy dark:bg-brand-navy/30 dark:text-white"
+                                                    : "bg-white dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-brand-navy"
+                                                }`}
+                                        >
+                                            {name}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
 
@@ -433,7 +658,7 @@ export default function ScoresPage() {
                             조회 결과
                         </h2>
                         <span className="text-xs text-zinc-400 font-medium">
-                            ({filteredScores.length}건)
+                            ({totalScoreCount}건)
                         </span>
                     </div>
                     <DatePresets
@@ -445,17 +670,17 @@ export default function ScoresPage() {
                         }}
                     />
                 </div>
-                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
-                    {displayedScores.length > 0 ? (
+                <div className="mt-2">
+                    {allScores.length > 0 ? (
                         <>
-                            <ScoreTable scores={displayedScores} />
-                            {filteredScores.length > displayLimit && (
+                            <ScoreTable scores={allScores} totalCount={totalScoreCount} />
+                            {totalScoreCount > allScores.length && (
                                 <div className="mt-6 flex justify-center">
                                     <button
                                         onClick={() => setDisplayLimit(prev => prev + 20)}
                                         className="px-6 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-sm font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all active:scale-95"
                                     >
-                                        더 보기 ({filteredScores.length - displayLimit}건 남음)
+                                        더 보기 ({totalScoreCount - allScores.length}건 남음)
                                     </button>
                                 </div>
                             )}
@@ -468,6 +693,37 @@ export default function ScoresPage() {
                 </div>
             </section >
                 </>
+            )}
+
+            {showDraftPopup && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowDraftPopup(false)}>
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 max-w-sm w-full shadow-xl" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-2">작성중인 스코어카드가 있습니다</h3>
+                        <p className="text-sm text-zinc-500 mb-6">스코어카드를 이어서 작성하시겠습니까?</p>
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => {
+                                    setShowDraftPopup(false);
+                                    router.push("/scores/create");
+                                }}
+                                className="flex-1 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 font-semibold text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                            >
+                                신규 작성하기
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    setShowDraftPopup(false);
+                                    if (draftToResume) {
+                                        router.push(`/scores/create?id=${draftToResume}`);
+                                    }
+                                }}
+                                className="flex-1 py-2.5 rounded-xl bg-brand-navy text-white font-semibold text-sm hover:bg-brand-navy-dark transition-colors"
+                            >
+                                이어서 작성하기
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div >
     );

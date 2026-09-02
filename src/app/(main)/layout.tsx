@@ -6,7 +6,7 @@ export default function MainLayout({
     children: React.ReactNode;
 }) {
     return (
-        <div className="flex flex-col md:flex-row min-h-screen bg-white dark:bg-zinc-950">
+        <div className="flex flex-col md:flex-row min-h-screen bg-zinc-50 dark:bg-zinc-950">
             {/* Left Sidebar Menu */}
             <SideNav />
 

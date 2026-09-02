@@ -29,7 +29,8 @@ import {
     getUserVote,
     getPollVoters,
     getRecurringPollHistory,
-    Vote, 
+    Vote,
+    VoteType,
     VOTE_TYPE_LABELS, 
     VOTE_TYPE_COLORS 
 } from "@/lib/vote-sync";
@@ -385,17 +386,24 @@ export default function PollDetailPage() {
                 <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-5">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                            <span className={cn(
-                                "text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider border",
-                                VOTE_TYPE_COLORS[vote.type].bg,
-                                VOTE_TYPE_COLORS[vote.type].text,
-                                VOTE_TYPE_COLORS[vote.type].border
-                            )}>
-                                {VOTE_TYPE_LABELS[vote.type]}
-                            </span>
-                            <span className="text-[10px] font-bold px-3 py-1 rounded-full border bg-zinc-100 text-zinc-500 border-zinc-200">
-                                {vote.branch}
-                            </span>
+                            {vote.type.split(',').map(t => {
+                                const styles = VOTE_TYPE_COLORS[t as VoteType] || VOTE_TYPE_COLORS['all'];
+                                return (
+                                    <span key={t} className={cn(
+                                        "text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider border",
+                                        styles.bg,
+                                        styles.text,
+                                        styles.border
+                                    )}>
+                                        {VOTE_TYPE_LABELS[t as VoteType]}
+                                    </span>
+                                );
+                            })}
+                            {vote.branch.split(',').map(b => (
+                                <span key={b} className="text-[10px] font-bold px-3 py-1 rounded-full border bg-zinc-100 text-zinc-500 border-zinc-200">
+                                    {b}
+                                </span>
+                            ))}
                             {vote.isImportant && (
                                 <span className="text-[10px] font-bold text-red-500 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 px-2 py-1 rounded-full">
                                     중요

@@ -77,10 +77,27 @@ export default function ParentsListPage() {
                         phone: u.phone || "",
                         email: u.email || "",
                         branch: u.branch || "미지정",
-                        registeredAt: u.created_at?.split('T')[0] || "",
+                        registeredAt: ((u.created_at) ? new Date(u.created_at).toLocaleDateString('en-CA', {timeZone: 'Asia/Seoul'}) : "") || "",
                         status: u.status === "비활성화" ? "inactive" : "active",
                     }));
                     setParents(mapped);
+                }
+                const isFromDetail = sessionStorage.getItem("gla_parents_keep_alive") === "true";
+                if (isFromDetail) {
+                    const stored = sessionStorage.getItem("gla_parents_filter");
+                    if (stored) {
+                        try {
+                            const parsed = JSON.parse(stored);
+                            if (parsed.searchQuery !== undefined) setSearchQuery(parsed.searchQuery);
+                            if (parsed.branchFilter !== undefined) setBranchFilter(parsed.branchFilter);
+                        } catch (e) {}
+                    }
+                    setTimeout(() => {
+                        sessionStorage.removeItem("gla_parents_keep_alive");
+                    }, 100);
+                } else {
+                    sessionStorage.removeItem("gla_parents_filter");
+                    sessionStorage.removeItem("gla_parents_scroll");
                 }
             } catch (err) {
                 console.error("Error fetching parents:", err);
@@ -90,6 +107,31 @@ export default function ParentsListPage() {
         }
         fetchData();
     }, []);
+
+    // Save filter state to sessionStorage
+    useEffect(() => {
+        sessionStorage.setItem("gla_parents_filter", JSON.stringify({
+            searchQuery,
+            branchFilter
+        }));
+    }, [searchQuery, branchFilter]);
+
+    // Scroll state management
+    useEffect(() => {
+        if (typeof window !== "undefined" && !loading) {
+            const savedScroll = sessionStorage.getItem("gla_parents_scroll");
+            if (savedScroll) {
+                window.scrollTo(0, parseInt(savedScroll, 10));
+                sessionStorage.removeItem("gla_parents_scroll");
+            }
+            
+            const handleScroll = () => {
+                sessionStorage.setItem("gla_parents_scroll", window.scrollY.toString());
+            };
+            window.addEventListener("scroll", handleScroll);
+            return () => window.removeEventListener("scroll", handleScroll);
+        }
+    }, [loading]);
 
     const filteredParents = useMemo(() => {
         return parents.filter((p) => {
@@ -165,6 +207,7 @@ export default function ParentsListPage() {
                                 <Link
                                     key={parent.id}
                                     href={`/system/parents/${parent.id}`}
+                                    onClick={() => sessionStorage.setItem("gla_parents_keep_alive", "true")}
                                     className="block bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 hover:shadow-md transition-all group"
                                 >
                                     <div className="flex items-center gap-4">

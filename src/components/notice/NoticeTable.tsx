@@ -20,7 +20,10 @@ export function NoticeTable({ notices }: NoticeTableProps) {
                     return (
                         <button
                             key={notice.id}
-                            onClick={() => router.push(`/community/${notice.id}`)}
+                            onClick={() => {
+                                sessionStorage.setItem("gla_community_keep_alive", "true");
+                                router.push(`/community/${notice.id}`);
+                            }}
                             className={cn(
                                 "w-full text-left bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 border-l-4 rounded-xl px-4 py-3.5 hover:shadow-sm active:scale-[0.99] transition-all",
                                 styles.border
@@ -73,7 +76,10 @@ export function NoticeTable({ notices }: NoticeTableProps) {
                             return (
                                 <tr
                                     key={notice.id}
-                                    onClick={() => router.push(`/community/${notice.id}`)}
+                                    onClick={() => {
+                                        sessionStorage.setItem("gla_community_keep_alive", "true");
+                                        router.push(`/community/${notice.id}`);
+                                    }}
                                     className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer"
                                 >
                                     <td className="py-3.5 px-4 text-center text-zinc-500 dark:text-zinc-500">

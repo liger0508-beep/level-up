@@ -63,6 +63,7 @@ export default function AthletesListPage() {
     const [statusFilter, setStatusFilter] = useState<RegistrationStatus | "all">("all");
     const [branchFilter, setBranchFilter] = useState<string>("all");
     const [userRole, setUserRole] = useState<string | null>(null);
+    const [userName, setUserName] = useState<string | null>(null);
     const [openStatusPickerId, setOpenStatusPickerId] = useState<string | null>(null);
 
     // Fetch Athletes and User Role from Supabase
@@ -75,10 +76,11 @@ export default function AthletesListPage() {
                 if (user) {
                     const { data: profile } = await supabase
                         .from('users')
-                        .select('role')
+                        .select('role, name')
                         .eq('id', user.id)
                         .single();
                     setUserRole(profile?.role || null);
+                    setUserName(profile?.name || null);
                 }
 
                 // Fetch athletes
@@ -96,13 +98,31 @@ export default function AthletesListPage() {
                         age: u.dob ? (new Date().getFullYear() - new Date(u.dob).getFullYear()) : 0,
                         email: `${u.name}@gla.com`,
                         branch: u.branch || "미지정",
-                        registeredAt: u.created_at?.split('T')[0] || "",
+                        registeredAt: ((u.created_at) ? new Date(u.created_at).toLocaleDateString('en-CA', {timeZone: 'Asia/Seoul'}) : "") || "",
                         status: u.status === "휴회" ? "paused" : (u.status === "비활성화" ? "inactive" : "active"),
                         coachName: u.coach_name || "담당 없음",
                         level: u.level || "미지정",
                         gender: u.gender === 'male' ? '남' : u.gender === 'female' ? '여' : (u.gender === 'other' ? '기타' : '미지정')
                     }));
                     setAthletes(mapped);
+                }
+                const isFromDetail = sessionStorage.getItem("gla_athletes_keep_alive") === "true";
+                if (isFromDetail) {
+                    const stored = sessionStorage.getItem("gla_athletes_filter");
+                    if (stored) {
+                        try {
+                            const parsed = JSON.parse(stored);
+                            if (parsed.searchQuery !== undefined) setSearchQuery(parsed.searchQuery);
+                            if (parsed.statusFilter !== undefined) setStatusFilter(parsed.statusFilter);
+                            if (parsed.branchFilter !== undefined) setBranchFilter(parsed.branchFilter);
+                        } catch (e) {}
+                    }
+                    setTimeout(() => {
+                        sessionStorage.removeItem("gla_athletes_keep_alive");
+                    }, 100);
+                } else {
+                    sessionStorage.removeItem("gla_athletes_filter");
+                    sessionStorage.removeItem("gla_athletes_scroll");
                 }
             } catch (err) {
                 console.error("Initialization error:", err);
@@ -113,6 +133,32 @@ export default function AthletesListPage() {
 
         initialize();
     }, []);
+
+    // Save filter state to sessionStorage
+    useEffect(() => {
+        sessionStorage.setItem("gla_athletes_filter", JSON.stringify({
+            searchQuery,
+            statusFilter,
+            branchFilter
+        }));
+    }, [searchQuery, statusFilter, branchFilter]);
+
+    // Scroll state management
+    useEffect(() => {
+        if (typeof window !== "undefined" && !loading) {
+            const savedScroll = sessionStorage.getItem("gla_athletes_scroll");
+            if (savedScroll) {
+                window.scrollTo(0, parseInt(savedScroll, 10));
+                sessionStorage.removeItem("gla_athletes_scroll");
+            }
+            
+            const handleScroll = () => {
+                sessionStorage.setItem("gla_athletes_scroll", window.scrollY.toString());
+            };
+            window.addEventListener("scroll", handleScroll);
+            return () => window.removeEventListener("scroll", handleScroll);
+        }
+    }, [loading]);
 
     // Close status picker when clicking outside
     useEffect(() => {
@@ -142,20 +188,28 @@ export default function AthletesListPage() {
 
     const deleteAthlete = async (id: string, name: string) => {
         if (!confirm(`\n선수명: ${name}\n\n정말로 이 선수를 삭제하시겠습니까?\n모든 기록이 삭제됩니다.`)) return;
+        if (userName !== '슈퍼관리자') {
+            alert('슈퍼관리자만 사용할 수 있는 기능입니다.');
+            return;
+        }
 
         try {
-            const { error } = await supabase
-                .from('users')
-                .delete()
-                .eq('id', id);
-
-            if (error) throw error;
+            const res = await fetch('/api/admin/delete-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    targetUserId: id,
+                    callerName: userName
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '삭제 실패');
 
             setAthletes(prev => prev.filter(a => a.id !== id));
             alert("삭제되었습니다.");
-        } catch (err) {
+        } catch (err: any) {
             console.error("Error deleting athlete:", err);
-            alert("삭제에 실패했습니다.");
+            alert(`삭제에 실패했습니다: ${err.message}`);
         }
     };
 
@@ -202,7 +256,7 @@ export default function AthletesListPage() {
                         className={`whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200
                             ${branchFilter === "all"
                                 ? "bg-brand-navy text-white shadow-md border-brand-navy"
-                                : "bg-transparent text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 hover:bg-brand-navy-light dark:hover:bg-brand-navy-dark hover:text-brand-navy dark:hover:text-white"
+                                : "bg-white text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 hover:bg-brand-navy-light dark:hover:bg-brand-navy-dark hover:text-brand-navy dark:hover:text-white"
                             }`}
                     >
                         전체
@@ -214,7 +268,7 @@ export default function AthletesListPage() {
                             className={`whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200
                                 ${branchFilter === branch
                                     ? "bg-brand-navy text-white shadow-md border-brand-navy"
-                                    : "bg-transparent text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 hover:bg-brand-navy-light dark:hover:bg-brand-navy-dark hover:text-brand-navy dark:hover:text-white"
+                                    : "bg-white text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 hover:bg-brand-navy-light dark:hover:bg-brand-navy-dark hover:text-brand-navy dark:hover:text-white"
                                 }`}
                         >
                             {branch}
@@ -291,6 +345,7 @@ export default function AthletesListPage() {
                                 <Link
                                     key={athlete.id}
                                     href={`/system/athletes/${athlete.id}`}
+                                    onClick={() => sessionStorage.setItem("gla_athletes_keep_alive", "true")}
                                     className="block bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 hover:shadow-md hover:border-zinc-300 dark:hover:border-zinc-700 transition-all group"
                                 >
                                     <div className="flex items-center gap-4">

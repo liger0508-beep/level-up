@@ -1,5 +1,6 @@
 import { login } from '../actions'
 import Link from 'next/link'
+import FindAccountSection from './FindAccountSection'
 
 export default async function LoginPage(props: { searchParams: Promise<{ [key: string]: string | undefined }> }) {
     const searchParams = await props.searchParams;
@@ -40,24 +41,18 @@ export default async function LoginPage(props: { searchParams: Promise<{ [key: s
                 </button>
             </form>
 
-            <div className="flex justify-center items-center gap-4 mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800">
-                <Link 
-                    href="/find-id" 
-                    className="text-xs font-bold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors p-2"
+            <FindAccountSection />
+            <div className="flex flex-col mt-6">
+                <p className="text-sm text-center text-zinc-500 dark:text-zinc-400 font-medium mb-3">
+                    계정이 없으신가요?
+                </p>
+                <Link
+                    href="/signup"
+                    className="bg-blue-900 dark:bg-blue-800 text-white hover:bg-blue-800 dark:hover:bg-blue-700 font-semibold rounded-lg px-4 py-3 transition-colors shadow-sm active:scale-[0.98] text-center"
                 >
-                    아이디 찾기
-                </Link>
-                <div className="w-px h-3 bg-zinc-200 dark:bg-zinc-800"></div>
-                <Link 
-                    href="/forgot-password" 
-                    className="text-xs font-bold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors p-2"
-                >
-                    비밀번호 찾기
+                    회원가입
                 </Link>
             </div>
-            <p className="text-sm text-center text-zinc-500 dark:text-zinc-400 mt-2 font-medium">
-                계정이 없으신가요? <Link href="/signup" className="text-zinc-900 dark:text-zinc-100 hover:underline transition-all">회원가입</Link>
-            </p>
         </>
     )
 }

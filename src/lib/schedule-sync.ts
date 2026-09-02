@@ -8,7 +8,7 @@ import { createClient } from "./supabase/client";
  * Fetch all schedule events from the database.
  * Coach/Admin see all events; athletes see only their own.
  */
-export async function getStoredEvents(): Promise<ScheduleEvent[]> {
+export async function getStoredEvents(startDate?: string, endDate?: string): Promise<ScheduleEvent[]> {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
@@ -39,6 +39,13 @@ export async function getStoredEvents(): Promise<ScheduleEvent[]> {
     // Athletes only see their own schedules
     if (role === "athlete" || role === "parent") {
         query = query.eq("user_id", user.id);
+    }
+
+    if (startDate) {
+        query = query.gte("start_time", `${startDate}T00:00:00Z`);
+    }
+    if (endDate) {
+        query = query.lte("start_time", `${endDate}T23:59:59Z`);
     }
 
     const { data, error } = await query;

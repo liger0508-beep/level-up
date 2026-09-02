@@ -2,7 +2,7 @@
 import { fetchComments, saveComment, updateComment, deleteComment, AnalysisComment } from "@/lib/analysis-sync";
 import { MessageSquare, Send, Paperclip, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-
+import "react-quill-new/dist/quill.snow.css";
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
@@ -277,10 +277,10 @@ export default function NoticeDetailPage() {
                 </section>
 
                 {/* ── Content (Rich Text) ── */}
-                <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-3xl shadow-sm min-h-[200px]">
+                <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-3xl shadow-sm min-h-[200px] ql-snow">
                     <div
-                        className="prose prose-sm sm:prose-base prose-zinc dark:prose-invert max-w-none text-zinc-700 dark:text-zinc-300 leading-relaxed"
-                        dangerouslySetInnerHTML={{ __html: notice.content }}
+                        className="ql-editor px-0 py-0 max-w-none text-zinc-700 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap [&>p]:m-0"
+                        dangerouslySetInnerHTML={{ __html: notice.content.replace(/<p>\s*<\/p>/g, '<p><br></p>') }}
                     />
                 </section>
 

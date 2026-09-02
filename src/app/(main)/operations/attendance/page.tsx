@@ -98,19 +98,19 @@ export default function AttendancePage() {
         }
     }
 
-    const filteredAthletes = useMemo(() => {
-        return allAthletes.filter(a => 
-            (a.name.includes(searchQuery) || a.phone?.includes(searchQuery)) &&
-            !attendanceList.some(att => att.athlete_id === a.id)
-        );
-    }, [allAthletes, searchQuery, attendanceList]);
-
     const uncheckedAthletes = useMemo(() => {
         return allAthletes.filter(a => 
             a.branch === selectedBranch &&
-            !attendanceList.some(att => att.athlete_id === a.id)
+            !attendanceList.some(att => att.athlete_id === a.id) &&
+            (a.name.includes(searchQuery) || (a.phone && a.phone.includes(searchQuery)))
         );
-    }, [allAthletes, selectedBranch, attendanceList]);
+    }, [allAthletes, selectedBranch, attendanceList, searchQuery]);
+
+    const filteredAttendanceList = useMemo(() => {
+        return attendanceList.filter(att => 
+            att.athlete_name.includes(searchQuery)
+        );
+    }, [attendanceList, searchQuery]);
 
     // Monthly Stats Logic
     const [statsBranch, setStatsBranch] = useState("조이마루점");
@@ -225,35 +225,23 @@ export default function AttendancePage() {
                         </div>
                     </div>
 
-                    <div className="flex bg-zinc-200/50 dark:bg-zinc-900/50 p-1 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                        <button 
-                            onClick={() => setActiveTab("daily")}
-                            className={cn(
-                                "px-6 py-2 rounded-lg text-sm font-bold transition-all",
-                                activeTab === "daily" ? "bg-white dark:bg-zinc-800 text-brand-navy shadow-sm" : "text-zinc-400 hover:text-zinc-600"
-                            )}
-                        >
-                            일별 현황
-                        </button>
-                        <button 
-                            onClick={() => setActiveTab("stats")}
-                            className={cn(
-                                "px-6 py-2 rounded-lg text-sm font-bold transition-all",
-                                activeTab === "stats" ? "bg-white dark:bg-zinc-800 text-brand-navy shadow-sm" : "text-zinc-400 hover:text-zinc-600"
-                            )}
-                        >
-                            월간 통계
-                        </button>
-                    </div>
-
                     <div className="flex items-center gap-2">
-                        <Link 
-                            href="/operations/attendance/kiosk"
+                        <button 
+                            onClick={() => setActiveTab(activeTab === "daily" ? "stats" : "daily")}
                             className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-sm font-bold text-zinc-700 dark:text-zinc-200 hover:bg-zinc-50 transition-all shadow-sm"
                         >
-                            <Monitor size={18} className="text-zinc-400" />
-                            키오스크 모드
-                        </Link>
+                            {activeTab === "daily" ? (
+                                <>
+                                    <BarChart3 size={18} className="text-zinc-400" />
+                                    월간 통계
+                                </>
+                            ) : (
+                                <>
+                                    <CalendarIcon size={18} className="text-zinc-400" />
+                                    일별 현황
+                                </>
+                            )}
+                        </button>
                     </div>
                 </div>
 
@@ -281,7 +269,7 @@ export default function AttendancePage() {
                                                 key={b}
                                                 onClick={() => setSelectedBranch(b)}
                                                 className={cn(
-                                                    "px-8 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap",
+                                                    "flex-1 px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap",
                                                     selectedBranch === b ? "bg-white dark:bg-zinc-800 text-brand-navy shadow-sm" : "text-zinc-900 dark:text-zinc-100 hover:text-zinc-600"
                                                 )}
                                             >
@@ -300,7 +288,7 @@ export default function AttendancePage() {
                                             statusFilter === "checked" ? "bg-white dark:bg-zinc-800 text-brand-navy shadow-sm" : "text-zinc-900 dark:text-zinc-100 hover:text-zinc-600"
                                         )}
                                     >
-                                        출석 ({attendanceList.length})
+                                        출석 ({filteredAttendanceList.length})
                                     </button>
                                     <button
                                         onClick={() => setStatusFilter("unchecked")}
@@ -328,39 +316,13 @@ export default function AttendancePage() {
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-                            {/* Daily Summary Card */}
-                            <div className="lg:col-span-1 space-y-4">
-                                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-6">
-                                    <div>
-                                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1">Total Attendance</p>
-                                        <p className="text-4xl font-black text-brand-navy dark:text-brand-navy-light">{attendanceList.length}<span className="text-sm ml-1 opacity-40 font-bold">명</span></p>
-                                    </div>
-                                    <div className="h-px bg-zinc-100 dark:bg-zinc-800" />
-                                    <h4 className="text-xs font-bold text-zinc-900 dark:text-zinc-100 uppercase tracking-tight">Today Summary</h4>
-                                    <div className="space-y-3">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-xs text-zinc-500">최초 출석</span>
-                                            <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
-                                                {attendanceList.length > 0 ? format(new Date(attendanceList[attendanceList.length - 1].check_in_at), "HH:mm") : "-"}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-xs text-zinc-500">최근 출석</span>
-                                            <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
-                                                {attendanceList.length > 0 ? format(new Date(attendanceList[0].check_in_at), "HH:mm") : "-"}
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Right: List */}
-                            <div className="lg:col-span-3 space-y-4">
+                        <div className="space-y-4">
+                            {/* List */}
+                            <div className="space-y-4">
                                 <div className="flex items-center justify-between px-2">
-                                    <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                                    <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
                                         {statusFilter === "checked" ? "출석 완료 명단" : "미출석 선수 명단"}
-                                        <span className="text-[11px] font-normal text-zinc-400">({selectedDate})</span>
+                                        {" "}(총 {statusFilter === "checked" ? filteredAttendanceList.length : uncheckedAthletes.length}명)
                                     </h3>
                                 </div>
 
@@ -370,9 +332,9 @@ export default function AttendancePage() {
                                         불러오는 중...
                                     </div>
                                 ) : statusFilter === "checked" ? (
-                                    attendanceList.length > 0 ? (
+                                    filteredAttendanceList.length > 0 ? (
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                            {attendanceList.map(item => (
+                                            {filteredAttendanceList.map(item => (
                                                 <div 
                                                     key={item.id}
                                                     className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 rounded-2xl flex items-center justify-between group hover:shadow-md transition-all animate-in fade-in zoom-in-95 duration-300"
@@ -470,7 +432,7 @@ export default function AttendancePage() {
                                                 key={b}
                                                 onClick={() => setStatsBranch(b)}
                                                 className={cn(
-                                                    "px-8 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap",
+                                                    "flex-1 px-4 py-2 rounded-lg text-xs font-bold transition-all whitespace-nowrap",
                                                     statsBranch === b ? "bg-white dark:bg-zinc-800 text-brand-navy shadow-sm" : "text-zinc-900 dark:text-zinc-100 hover:text-zinc-600"
                                                 )}
                                             >

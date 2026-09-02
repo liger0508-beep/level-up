@@ -19,6 +19,7 @@ import {
     Hash,
     Loader2,
     UserCircle,
+    Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -109,6 +110,8 @@ export default function ParentDetailPage() {
     const [editData, setEditData] = useState<ParentDetail | null>(null);
     const [saveMessage, setSaveMessage] = useState("");
     const [availableBranches, setAvailableBranches] = useState<string[]>(["조이마루점", "구미점"]);
+    const [currentUser, setCurrentUser] = useState<any>(null);
+    const [isResettingPw, setIsResettingPw] = useState(false);
 
     useEffect(() => {
         if (!parentId) return;
@@ -121,6 +124,13 @@ export default function ParentDetailPage() {
                 if (bData) {
                     const unique = Array.from(new Set(bData.map(b => b.branch).filter(v => v && v !== "미지정" && v !== "")));
                     setAvailableBranches(["조이마루점", "구미점", ...unique.filter(v => v !== "조이마루점" && v !== "구미점")]);
+                }
+
+                // Fetch current user
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    const { data: profile } = await supabase.from('users').select('*').eq('id', user.id).single();
+                    if (profile) setCurrentUser(profile);
                 }
 
                 const { data: u, error } = await supabase
@@ -137,7 +147,7 @@ export default function ParentDetailPage() {
                         email: u.email || "",
                         loginId: u.login_id || "",
                         branch: u.branch || "미지정",
-                        registeredAt: u.created_at?.split('T')[0] || "",
+                        registeredAt: ((u.created_at) ? new Date(u.created_at).toLocaleDateString('en-CA', {timeZone: 'Asia/Seoul'}) : "") || "",
                         status: u.status === "비활성화" ? "inactive" : "active",
                         gender: u.gender === 'male' ? '남' : u.gender === 'female' ? '여' : (u.gender === 'other' ? '기타' : '미지정'),
                         memo: u.memo || ""
@@ -190,8 +200,75 @@ export default function ParentDetailPage() {
         setIsEditing(false);
     };
 
+    const handleDelete = async () => {
+        if (!parent || !parentId) return;
+        if (!confirm(`\n학부모명: ${parent.name}\n\n정말로 이 학부모를 삭제하시겠습니까?\n모든 기록이 삭제됩니다.`)) return;
+        if (currentUser?.name !== '슈퍼관리자') {
+            alert('슈퍼관리자만 사용할 수 있는 기능입니다.');
+            return;
+        }
+
+        try {
+            const res = await fetch('/api/admin/delete-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    targetUserId: parentId,
+                    callerName: currentUser.name
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '삭제 실패');
+
+            alert("삭제되었습니다.");
+            router.push("/system/parents");
+        } catch (err: any) {
+            console.error("Error deleting parent:", err);
+            alert(`삭제에 실패했습니다: ${err.message}`);
+        }
+    };
+
     const updateField = (field: keyof ParentDetail, value: string) => {
         setEditData(prev => prev ? ({ ...prev, [field]: value }) : null);
+    };
+
+    const handleResetPassword = async () => {
+        if (!parent || !parentId) return;
+        if (currentUser?.name !== '슈퍼관리자') {
+            alert('슈퍼관리자만 사용할 수 있는 기능입니다.');
+            return;
+        }
+
+        const phone = parent.phone || "";
+        const numericPhone = phone.replace(/[^0-9]/g, '');
+        if (numericPhone.length < 4) {
+            alert('연락처 정보가 올바르지 않습니다.');
+            return;
+        }
+        
+        const last4 = numericPhone.slice(-4);
+        if (!confirm(`\n대상: ${parent.name}\n\n정말로 비밀번호를 초기화하시겠습니까?\n비밀번호는 연락처 뒷자리 '${last4}'(으)로 변경됩니다.`)) return;
+
+        try {
+            setIsResettingPw(true);
+            const res = await fetch('/api/admin/reset-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    targetUserId: parentId,
+                    targetPhone: phone,
+                    callerName: currentUser.name
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '비밀번호 초기화 실패');
+            
+            alert(`비밀번호가 '${data.newPassword}'(으)로 초기화되었습니다.`);
+        } catch (err: any) {
+            alert(err.message);
+        } finally {
+            setIsResettingPw(false);
+        }
     };
 
     if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-brand-navy" /></div>;
@@ -217,9 +294,18 @@ export default function ParentDetailPage() {
                                 <button onClick={handleSave} className="px-4 py-2 bg-brand-navy text-white text-sm font-semibold rounded-xl shadow-sm">저장</button>
                             </>
                         ) : (
-                            <button onClick={() => setIsEditing(true)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-zinc-600 border border-zinc-200 rounded-xl">
-                                <Edit2 size={14} /> 수정
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handleDelete}
+                                    className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 border border-red-100 dark:border-red-500/20 rounded-xl transition-colors"
+                                >
+                                    <Trash2 size={14} />
+                                    삭제
+                                </button>
+                                <button onClick={() => setIsEditing(true)} className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-zinc-600 border border-zinc-200 rounded-xl">
+                                    <Edit2 size={14} /> 수정
+                                </button>
+                            </div>
                         )}
                     </div>
                 </div>
@@ -270,13 +356,26 @@ export default function ParentDetailPage() {
                 </section>
 
                 <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm p-6 divide-y divide-zinc-100 dark:divide-zinc-800/50">
-                    <h3 className="text-base font-bold mb-1">상세 정보</h3>
+                    <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">상세 정보</h3>
+                        {currentUser?.name === '슈퍼관리자' && (
+                            <button 
+                                onClick={handleResetPassword}
+                                disabled={isResettingPw}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 dark:text-red-400 dark:bg-red-500/10 dark:hover:bg-red-500/20 rounded-lg transition-colors border border-red-200 dark:border-red-500/20 disabled:opacity-50"
+                            >
+                                <Key size={12} />
+                                {isResettingPw ? "초기화 중..." : "비밀번호 초기화"}
+                            </button>
+                        )}
+                    </div>
                     <InfoRow icon={User} label="이름" value={parent.name} editable isEditing={isEditing} editValue={editData?.name} onEdit={(v) => updateField("name", v)} />
                     <InfoRow icon={Phone} label="연락처" value={parent.phone} editable isEditing={isEditing} editValue={editData?.phone} onEdit={(v) => updateField("phone", v)} />
                     <InfoRow icon={Mail} label="이메일" value={parent.email} editable isEditing={isEditing} editValue={editData?.email} onEdit={(v) => updateField("email", v)} />
                     <InfoRow icon={User} label="성별" value={parent.gender} editable isEditing={isEditing} editValue={editData?.gender} onEdit={(v) => updateField("gender", v)} options={["남", "여"]} />
                     <InfoRow icon={MapPin} label="소속 지점" value={parent.branch} editable isEditing={isEditing} editValue={editData?.branch} onEdit={(v) => updateField("branch", v)} options={availableBranches} />
                     <InfoRow icon={Hash} label="ID" value={parent.loginId} />
+                    <InfoRow icon={Key} label="PW" value="••••••••" />
                     <InfoRow icon={Clock} label="가입일" value={parent.registeredAt} />
                 </section>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
@@ -53,8 +53,8 @@ export default function CreateVotePage() {
     const router = useRouter();
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const [type, setType] = useState<VoteType>("all");
-    const [branch, setBranch] = useState("전체");
+    const [types, setTypes] = useState<VoteType[]>(["all"]);
+    const [branches, setBranches] = useState<string[]>(["전체"]);
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
     const [isImportant, setIsImportant] = useState(false);
@@ -69,6 +69,41 @@ export default function CreateVotePage() {
     const [options, setOptions] = useState<string[]>(["", ""]);
     const [allowMultiple, setAllowMultiple] = useState(false);
     const [isRecurring, setIsRecurring] = useState(false);
+
+    const [isDraftLoaded, setIsDraftLoaded] = useState(false);
+    const DRAFT_KEY = "gla_polls_draft";
+
+    useEffect(() => {
+        try {
+            const draft = sessionStorage.getItem(DRAFT_KEY);
+            if (draft) {
+                const parsed = JSON.parse(draft);
+                if (parsed.type) setTypes(Array.isArray(parsed.type) ? parsed.type : [parsed.type]);
+                if (parsed.branch) setBranches(Array.isArray(parsed.branch) ? parsed.branch : [parsed.branch]);
+                if (parsed.title) setTitle(parsed.title);
+                if (parsed.description) setDescription(parsed.description);
+                if (parsed.isImportant !== undefined) setIsImportant(parsed.isImportant);
+                if (parsed.startDate) setStartDate(parsed.startDate);
+                if (parsed.endDate !== undefined) setEndDate(parsed.endDate);
+                if (parsed.options) setOptions(parsed.options);
+                if (parsed.allowMultiple !== undefined) setAllowMultiple(parsed.allowMultiple);
+                if (parsed.isRecurring !== undefined) setIsRecurring(parsed.isRecurring);
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsDraftLoaded(true);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!isDraftLoaded) return;
+        try {
+            sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+                type: types, branch: branches, title, description, isImportant, startDate, endDate, options, allowMultiple, isRecurring
+            }));
+        } catch (e) {}
+    }, [isDraftLoaded, types, branches, title, description, isImportant, startDate, endDate, options, allowMultiple, isRecurring]);
 
     const addOption = () => {
         setOptions([...options, ""]);
@@ -91,6 +126,14 @@ export default function CreateVotePage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
+        if (types.length === 0) {
+            alert("투표 대상을 1개 이상 선택해 주세요.");
+            return;
+        }
+        if (branches.length === 0) {
+            alert("지점을 1개 이상 선택해 주세요.");
+            return;
+        }
         if (!title.trim()) {
             alert("투표 제목을 입력해 주세요.");
             return;
@@ -123,8 +166,8 @@ export default function CreateVotePage() {
             }));
 
             await savePoll({
-                type,
-                branch,
+                type: types.join(',') as any,
+                branch: branches.join(','),
                 status: "ongoing",
                 title,
                 description,
@@ -137,6 +180,7 @@ export default function CreateVotePage() {
             });
 
             alert("투표가 등록되었습니다.");
+            sessionStorage.removeItem(DRAFT_KEY);
             router.push("/admin/polls");
         } catch (error: any) {
             console.error("Poll creation error:", error.message || error);
@@ -175,12 +219,24 @@ export default function CreateVotePage() {
                             </label>
                             <div className="flex flex-nowrap overflow-x-auto pb-1 scrollbar-hide gap-2">
                                 {(Object.entries(VOTE_TYPE_LABELS) as [VoteType, string][]).map(([key, label]) => {
-                                    const isActive = type === key;
+                                    const isActive = types.includes(key);
                                     return (
                                         <button
                                             key={key}
                                             type="button"
-                                            onClick={() => setType(key)}
+                                            onClick={() => {
+                                                if (key === 'all') {
+                                                    // 전체 클릭: 전체만 선택
+                                                    setTypes(['all']);
+                                                } else {
+                                                    setTypes(prev => {
+                                                        const without = prev.filter(t => t !== 'all'); // 전체 제거
+                                                        return without.includes(key)
+                                                            ? without.filter(t => t !== key)
+                                                            : [...without, key];
+                                                    });
+                                                }
+                                            }}
                                             className={cn(
                                                 "whitespace-nowrap px-5 py-2 rounded-full text-sm font-bold transition-all border",
                                                 isActive
@@ -201,21 +257,36 @@ export default function CreateVotePage() {
                                 지점 선택 <span className="text-brand-red">*</span>
                             </label>
                             <div className="flex flex-nowrap overflow-x-auto pb-1 scrollbar-hide gap-2">
-                                {["전체", "조이마루", "구미"].map((b) => (
-                                    <button
-                                        key={b}
-                                        type="button"
-                                        onClick={() => setBranch(b)}
-                                        className={cn(
-                                            "whitespace-nowrap px-5 py-2 rounded-full text-sm font-bold transition-all border",
-                                            branch === b
-                                                ? "bg-brand-navy text-white border-brand-navy shadow-sm"
-                                                : "bg-transparent text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50"
-                                        )}
-                                    >
-                                        {b}
-                                    </button>
-                                ))}
+                                {["전체", "조이마루", "구미"].map((b) => {
+                                    const isActive = branches.includes(b);
+                                    return (
+                                        <button
+                                            key={b}
+                                            type="button"
+                                            onClick={() => {
+                                                if (b === '전체') {
+                                                    // 전체 클릭: 전체만 선택
+                                                    setBranches(['전체']);
+                                                } else {
+                                                    setBranches(prev => {
+                                                        const without = prev.filter(x => x !== '전체'); // 전체 제거
+                                                        return without.includes(b)
+                                                            ? without.filter(x => x !== b)
+                                                            : [...without, b];
+                                                    });
+                                                }
+                                            }}
+                                            className={cn(
+                                                "whitespace-nowrap px-5 py-2 rounded-full text-sm font-bold transition-all border",
+                                                isActive
+                                                    ? "bg-brand-navy text-white border-brand-navy shadow-sm"
+                                                    : "bg-transparent text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50"
+                                            )}
+                                        >
+                                            {b}
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
 

@@ -268,6 +268,32 @@ function ScoreCreateContent() {
     // Basic info confirmation state
     const [isBasicInfoConfirmed, setIsBasicInfoConfirmed] = useState(isEditMode);
 
+    useEffect(() => {
+        if (isEditMode) return;
+
+        const checkAthleteLogin = async () => {
+            try {
+                const supabase = createClient();
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) return;
+                
+                const { data: userData } = await supabase
+                    .from("users")
+                    .select("name, role")
+                    .eq("id", user.id)
+                    .single();
+                    
+                if (userData && userData.role === "athlete") {
+                    setSelectedPlayer(userData.name);
+                }
+            } catch (error) {
+                console.error("Error fetching athlete info:", error);
+            }
+        };
+
+        checkAthleteLogin();
+    }, [isEditMode]);
+
     const hasFinalized = useRef(false);
     const draftIdRef = useRef<string | null>(null);
     const isOriginallyFinal = useRef(false);
@@ -297,7 +323,7 @@ function ScoreCreateContent() {
             if (targetId && targetId !== 'draft') {
                 const { error: updateErr } = await supabase.from("scorecards").update({
                     total_score: computedTotalScore,
-                    is_final: false,
+                    is_final: isOriginallyFinal.current ? true : false,
                     hole_count: saveHolesCount,
                     round_date: roundDate,
                     course_name: golfCourse,
@@ -665,6 +691,24 @@ function ScoreCreateContent() {
             return;
         }
 
+        // 1.5. 거리 형식 유효성 검사 (1~999 정수만)
+        let isInvalidDistanceFormat = false;
+        for (const shot of currentHoleData.shots) {
+            if (shot.distance && shot.distance.trim() !== "") {
+                const distStr = shot.distance.trim();
+                // 1~999 자연수만 허용 (0, 음수, 소수점, 1000 이상 차단)
+                if (!/^[1-9][0-9]{0,2}$/.test(distStr)) {
+                    isInvalidDistanceFormat = true;
+                    break;
+                }
+            }
+        }
+
+        if (isInvalidDistanceFormat) {
+            setValidationError("홀까지 거리는 1부터 999 사이의 자연수(소수점 제외)만 입력 가능합니다.");
+            return;
+        }
+
         // 2. 30m 이하 볼 위치 유효성 검사 (사용자 요청)
         const allowedCodesAt30m = ["GR", "GB", "GA", "HI", "-"];
         let isInvalid30mUnder = false;
@@ -746,6 +790,56 @@ function ScoreCreateContent() {
     // Info section collapse
     const [isInfoExpanded, setIsInfoExpanded] = useState(true);
 
+    const [showIntermediateModal, setShowIntermediateModal] = useState(false);
+    const [intermediateSectors, setIntermediateSectors] = useState<any[]>([]);
+
+    const handleOpenIntermediate = async () => {
+        try {
+            const dbHoles = holes.map((h, i) => ({
+                hole_number: i + 1,
+                par: h.par,
+                score: calcHoleScore(h.shots, h.par) + h.par,
+                shots: h.shots.map((s, idx) => ({
+                    shot_number: idx + 1,
+                    shot_value: encodeShotValue(s.location, s.distance || "", h.par, idx),
+                    distance: s.distance ? parseInt(s.distance, 10) : 0
+                }))
+            }));
+            const res = await calculateAnalysisFromHoles(dbHoles);
+            
+            const cats = [
+                { name: "티샷 비거리", sg: res.reduce((s, h) => s + h.summary.distSG_DriverDist, 0) },
+                { name: "티샷 정확도", sg: res.reduce((s, h) => s + h.summary.distSG_DriverAcc, 0) },
+                { name: "180M이상", sg: res.reduce((s, h) => s + h.summary.distSG_180Plus, 0) },
+                { name: "150-179M", sg: res.reduce((s, h) => s + h.summary.distSG_150_179, 0) },
+                { name: "120-149M", sg: res.reduce((s, h) => s + h.summary.distSG_120_149, 0) },
+                { name: "90-119M", sg: res.reduce((s, h) => s + h.summary.distSG_90_119, 0) },
+                { name: "피치샷", sg: res.reduce((s, h) => s + h.summary.distSG_Pitch31_89, 0) },
+                { name: "벙커", sg: res.reduce((s, h) => s + h.summary.distSG_Bunker, 0) },
+                { name: "어프로치", sg: res.reduce((s, h) => s + h.summary.distSG_Approach, 0) },
+                { name: "9M이상", sg: res.reduce((s, h) => s + h.summary.distSG_Putt9Plus, 0) },
+                { name: "4-8M", sg: res.reduce((s, h) => s + h.summary.distSG_Putt4_8, 0) },
+                { name: "2-3M", sg: res.reduce((s, h) => s + h.summary.distSG_Putt2_3, 0) },
+                { name: "1M", sg: res.reduce((s, h) => s + h.summary.distSG_Putt1, 0) },
+            ];
+
+            const teeSG = cats.filter(c => c.name === "티샷 비거리" || c.name === "티샷 정확도").reduce((s, c) => s + c.sg, 0);
+            const secondSG = cats.filter(c => ["180M이상", "150-179M", "120-149M", "90-119M"].includes(c.name)).reduce((s, c) => s + c.sg, 0);
+            const greenSG = cats.filter(c => ["피치샷", "벙커", "어프로치"].includes(c.name)).reduce((s, c) => s + c.sg, 0);
+            const puttingSG = cats.filter(c => ["9M이상", "4-8M", "2-3M", "1M"].includes(c.name)).reduce((s, c) => s + c.sg, 0);
+
+            setIntermediateSectors([
+                { type: "티샷", value: teeSG, items: cats.slice(0, 2) },
+                { type: "세컨샷", value: secondSG, items: cats.slice(2, 6) },
+                { type: "그린주변샷", value: greenSG, items: cats.slice(6, 9) },
+                { type: "퍼팅", value: puttingSG, items: cats.slice(9, 13) }
+            ]);
+            setShowIntermediateModal(true);
+        } catch (err) {
+            console.error("Local SG calc error", err);
+        }
+    };
+
     const handleConfirmBasicInfo = () => {
         if (!selectedPlayer || !roundDate || !golfCourse.trim()) {
             alert("선수명, 일자, 골프장을 모두 입력해주세요.");
@@ -778,6 +872,11 @@ function ScoreCreateContent() {
             const next = [...prev];
             let shots = [...next[currentHole - 1].shots];
             shots[shotIndex] = { ...shots[shotIndex], location };
+
+            // 위치 변경 시, 거리가 필요 없는 옵션(홀인, 오비, 패널티구역, 벌타, - 등)을 선택하면 남은 거리 초기화
+            if (["홀인", "오비", "패널티구역", "벌타", "HI", "OB", "PA", "PS", "-"].includes(location)) {
+                shots[shotIndex] = { ...shots[shotIndex], distance: "" };
+            }
 
             if (location === "홀인") {
                 // 홀인 이후 모든 샷 삭제
@@ -1065,25 +1164,32 @@ function ScoreCreateContent() {
             }
 
             // 8. 기록(records) 테이블에 활동 로그 추가 (최근 업데이트 연동)
-            // 이미 완료된 스코어카드를 다시 수정하는 경우가 아닐 때만 자동 생성
+            // (사용자 요청으로 스코어 작성 시 측정/분석 자동 생성 기능 제거됨)
             const isInitialSave = !isOriginallyFinal.current;
-            if (isInitialSave) {
-                await supabase.from("records").insert({
-                    user_id: athleteId,
-                    coach_id: coachId,
-                    type: "analysis",
-                    title: `${golfCourse} 분석 기록`,
-                    category: category,
-                    content: `${computedTotalScore}타 기록`,
-                    related_id: scorecardId
-                });
 
-                // 8.5 복습 훈련(Review Training) 자동 배정 및 기존 복습 훈련 업데이트
-                try {
-                    const todayStr = formatLocalDate(new Date());
 
-                    // (1) 기존 진행 중인 복습 훈련의 종료일을 오늘로 업데이트
-                    const { data: existingReviews } = await supabase
+            // 8.5 복습 훈련(Review Training) 배정 (미배정 상태일 경우 재저장 시 자동 배정)
+            try {
+                const todayStr = formatLocalDate(new Date());
+                const endDt = new Date();
+                endDt.setDate(endDt.getDate() + 6); // 7일간
+                const in7DaysStr = formatLocalDate(endDt);
+
+                // Check if a review training already exists for this scorecard
+                const { data: existingAllReviews } = await supabase
+                    .from("records")
+                    .select("id, template_settings")
+                    .eq("type", "training")
+                    .eq("user_id", athleteId)
+                    .ilike("title", "%[복습]%");
+
+                const hasReview = existingAllReviews?.some(r => 
+                    r.template_settings && r.template_settings.some((s: any) => s.scorecardId === scorecardId)
+                );
+
+                if (!hasReview) {
+                    // (1) 기존 진행 중인 다른 복습 훈련의 종료일을 오늘로 업데이트
+                    const { data: activeReviews } = await supabase
                         .from("records")
                         .select("id")
                         .eq("type", "training")
@@ -1091,50 +1197,24 @@ function ScoreCreateContent() {
                         .ilike("title", "%[복습]%")
                         .gte("training_end", todayStr);
 
-                    if (existingReviews && existingReviews.length > 0) {
-                        const reviewIds = existingReviews.map(r => r.id);
+                    if (activeReviews && activeReviews.length > 0) {
+                        const reviewIds = activeReviews.map(r => r.id);
                         await supabase
                             .from("records")
                             .update({ training_end: todayStr })
                             .in("id", reviewIds);
                     }
 
-                    // (2) 새로운 복습 훈련 배정 (18홀/9홀 무관)
-                    const endDt = new Date();
-                    endDt.setDate(endDt.getDate() + 6); // 7일간
-                    const in7DaysStr = formatLocalDate(endDt);
-
-                    const { calculateScorecardAnalysis } = await import("@/lib/score-calculations");
-                    const { fetchScoreById } = await import("@/lib/score-sync");
-                    
+                    // (2) 새로운 복습 훈련 배정
+                    const { calculateScorecardAnalysis, generateReviewFocusCategories } = await import("@/lib/score-calculations");
                     const analysis = await calculateScorecardAnalysis(scorecardId as string);
-                    const recentScore = await fetchScoreById(scorecardId as string);
-                    
-                    const CATEGORY_TO_FIELD: Record<string, string> = {
-                        "티샷 비거리": "distSG_DriverDist", "티샷 정확도": "distSG_DriverAcc",
-                        "180M이상": "distSG_180Plus", "150-179M": "distSG_150_179",
-                        "120-149M": "distSG_120_149", "90-119M": "distSG_90_119",
-                        "피치샷": "distSG_Pitch31_89", "벙커": "distSG_Bunker",
-                        "어프로치": "distSG_Approach",
-                        "9M이상": "distSG_Putt9Plus", "4-8M": "distSG_Putt4_8",
-                        "2-3M": "distSG_Putt2_3", "1M": "distSG_Putt1",
-                    };
                     
                     let totalReviewTasks = 0;
                     if (analysis && analysis.length > 0) {
-                        const cats = Object.entries(CATEGORY_TO_FIELD).map(([name, field]) => ({
-                            name,
-                            sg: analysis.reduce((s: any, h: any) => s + (h.summary as any)[field], 0)
-                        }));
-                        const positiveCats = cats.filter(c => c.sg > 0).sort((a, b) => b.sg - a.sg).slice(0, 5);
-
-                        positiveCats.forEach(cat => {
-                            const fieldName = CATEGORY_TO_FIELD[cat.name];
-                            if (fieldName) {
-                                const focusHoles = analysis.filter((h: any) => (h.summary as any)[fieldName] > 0).slice(0, 3);
-                                totalReviewTasks += focusHoles.length;
-                            }
-                        });
+                        const focusCategories = generateReviewFocusCategories(analysis);
+                        for (const major of Object.keys(focusCategories)) {
+                            totalReviewTasks += focusCategories[major].length;
+                        }
                     }
 
                     await supabase.from("records").insert({
@@ -1149,9 +1229,9 @@ function ScoreCreateContent() {
                         template_settings: [{ type: "review_scorecard", scorecardId: scorecardId }],
                         total_count: Math.max(totalReviewTasks, 1)
                     });
-                } catch (err) {
-                    console.error("복습 훈련 생성 중 오류:", err);
                 }
+            } catch (err) {
+                console.error("복습 훈련 생성 중 오류:", err);
             }
 
             // 9. 로컬 임시 저장 데이터 삭제 (이제 더이상 사용되지 않지만 안전을 위해)
@@ -1551,14 +1631,16 @@ function ScoreCreateContent() {
                             >
                                 샷별 점수 확인
                             </button>
-                            <button
-                                type="button"
-                                onClick={() => saveCurrentAndNext(true, true)}
-                                disabled={currentHole === 18}
-                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-brand-navy text-white hover:bg-brand-navy/90 disabled:opacity-40 transition-colors shadow-sm"
-                            >
-                                저장 & 다음홀 <ChevronRight size={16} />
-                            </button>
+                            {currentHole !== 1 && (
+                                <button
+                                    type="button"
+                                    onClick={() => saveCurrentAndNext(true, true)}
+                                    disabled={currentHole === 18}
+                                    className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold bg-brand-navy text-white hover:bg-brand-navy/90 disabled:opacity-40 transition-colors shadow-sm"
+                                >
+                                    저장 & 다음홀 <ChevronRight size={16} />
+                                </button>
+                            )}
                         </div>
 
                         </section>
@@ -1602,8 +1684,8 @@ function ScoreCreateContent() {
                                             </div>
                                         </div>
                                         <div className="relative px-3 py-2 text-sm font-bold border-l border-zinc-100 dark:border-zinc-800/60 text-center flex items-center justify-center">
-                                            <span className={shot.shotSG < 0 ? 'text-red-500' : shot.shotSG > 0 ? 'text-blue-500' : 'text-zinc-600 dark:text-zinc-400'}>
-                                                {shot.shotSG === 0 ? "0.0" : shot.shotSG.toFixed(1)}
+                                            <span className={Number(shot.shotSG.toFixed(1)) < 0 ? 'text-red-500' : Number(shot.shotSG.toFixed(1)) > 0 ? 'text-blue-500' : 'text-zinc-600 dark:text-zinc-400'}>
+                                                {Number(shot.shotSG.toFixed(1)) === 0 ? "0.0" : shot.shotSG.toFixed(1)}
                                             </span>
                                             <button
                                                 type="button"
@@ -1625,8 +1707,8 @@ function ScoreCreateContent() {
                                 <div className="grid grid-cols-[40px_1.5fr_1fr] border-t border-zinc-100 dark:border-zinc-800/60 items-stretch bg-zinc-50/50 dark:bg-zinc-800/30">
                                     <div className="col-span-2 px-4 py-2.5 text-sm font-bold text-zinc-700 dark:text-zinc-300 text-center flex items-center justify-center">총계</div>
                                     <div className="px-4 py-2.5 text-sm font-bold border-l border-zinc-100 dark:border-zinc-800/60 text-center flex items-center justify-center">
-                                        <span className={currentAnalysis.totalSG < 0 ? 'text-red-500' : currentAnalysis.totalSG > 0 ? 'text-blue-500' : 'text-zinc-600 dark:text-zinc-400'}>
-                                            {currentAnalysis.totalSG === 0 ? "0.0" : currentAnalysis.totalSG.toFixed(1)}
+                                        <span className={Number(currentAnalysis.totalSG.toFixed(1)) < 0 ? 'text-red-500' : Number(currentAnalysis.totalSG.toFixed(1)) > 0 ? 'text-blue-500' : 'text-zinc-600 dark:text-zinc-400'}>
+                                            {Number(currentAnalysis.totalSG.toFixed(1)) === 0 ? "0.0" : currentAnalysis.totalSG.toFixed(1)}
                                         </span>
                                     </div>
                                 </div>
@@ -1658,10 +1740,10 @@ function ScoreCreateContent() {
 
                         <button
                             type="button"
-                            onClick={() => router.back()}
-                            className="px-3 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm whitespace-nowrap font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shrink-0"
+                            onClick={handleOpenIntermediate}
+                            className="px-3 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm whitespace-nowrap font-semibold text-brand-navy dark:text-brand-navy-light hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shrink-0"
                         >
-                            취소
+                            중간 점수 확인
                         </button>
                         <button
                             type="submit"
@@ -1676,6 +1758,88 @@ function ScoreCreateContent() {
 
                 </form>
             </div>
+
+            {/* ── Intermediate Modal ── */}
+            {showIntermediateModal && (
+                <div 
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in"
+                    onClick={() => setShowIntermediateModal(false)}
+                >
+                    <div 
+                        className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-[2rem] shadow-xl overflow-hidden animate-in zoom-in-95 max-h-[85vh] flex flex-col"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-100 dark:border-zinc-800">
+                            <div className="flex items-center gap-3">
+                                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">중간 점수 확인</h3>
+                                <div className="flex items-center text-sm font-bold bg-zinc-100 dark:bg-zinc-800 px-3 py-1 rounded-full">
+                                    <span className="text-zinc-600 dark:text-zinc-300 mr-1.5">{String(currentHole).padStart(2, '0')} Hole</span>
+                                    <span className={cn(
+                                        totalScore > 0 ? "text-blue-500" : totalScore < 0 ? "text-red-500" : "text-zinc-500 dark:text-zinc-400"
+                                    )}>
+                                        ({totalScore > 0 ? `+${totalScore}` : totalScore})
+                                    </span>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowIntermediateModal(false)}
+                                className="p-2 -mr-2 rounded-full text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="p-6 overflow-y-auto">
+                            <div className="grid grid-cols-2 gap-4">
+                                {intermediateSectors.map((sector, i) => {
+                                    const valNum = Number(sector.value);
+                                    const isPositive = valNum > 0;
+                                    const isZero = valNum === 0;
+                                    const colorClass = isPositive ? "text-blue-500" : isZero ? "text-zinc-900 dark:text-zinc-100" : "text-red-500";
+                                    const formatScore = (val: number) => {
+                                        if (val === 0) return "0.0";
+                                        return (val > 0 ? "+" : "") + val.toFixed(1);
+                                    };
+                                    const formatScore2 = (val: number) => {
+                                        if (val === 0) return "0.00";
+                                        return (val > 0 ? "+" : "") + val.toFixed(2);
+                                    };
+
+                                    return (
+                                        <div key={i} className={cn("bg-white dark:bg-zinc-800/50 border rounded-3xl p-4 flex flex-col min-h-[160px] relative shadow-sm", isPositive ? "border-blue-100 dark:border-blue-900/30" : isZero ? "border-zinc-200 dark:border-zinc-700" : "border-red-100 dark:border-red-900/30")}>
+                                            <div className="text-sm font-bold text-zinc-500 dark:text-zinc-400 mb-2">
+                                                {sector.type}
+                                            </div>
+                                            <div className="text-right mb-6">
+                                                <span className={cn("text-3xl font-black tracking-tighter", colorClass)}>
+                                                    {formatScore2(valNum)}
+                                                </span>
+                                            </div>
+                                            <div className="flex-1 flex flex-col justify-start space-y-2.5 mt-2">
+                                                {sector.items.map((item: any, j: number) => {
+                                                    const itemNum = Number(item.sg);
+                                                    const itemPos = itemNum > 0;
+                                                    const itemZero = itemNum === 0;
+                                                    const itemColor = itemPos ? "text-blue-500" : itemZero ? "text-zinc-400" : "text-red-500";
+                                                    return (
+                                                        <div key={j} className="flex items-center justify-between">
+                                                            <span className="text-[13px] font-semibold text-zinc-600 dark:text-zinc-300">
+                                                                {item.name}
+                                                            </span>
+                                                            <span className={cn("text-[13px] font-bold", itemColor)}>
+                                                                {formatScore(itemNum)}
+                                                            </span>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ── Bottom Sheet Picker ── */}
             <BottomSheetPicker

@@ -32,6 +32,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { FileUploadButton } from "@/components/ui/FileUploadButton";
+import { PageTitle, SectionTitle, LabelText } from "@/components/ui/Typography";
 
 const CODE_TO_LOCATION: Record<string, string> = {
     "TE": "티박스",
@@ -87,7 +89,7 @@ const SectionHeader = ({ title, icon: Icon, badge }: { title: string; icon: any;
             <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-400">
                 <Icon size={18} />
             </div>
-            <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-50">{title}</h2>
+            <SectionTitle>{title}</SectionTitle>
         </div>
         {badge && (
             <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-brand-navy/5 text-brand-navy dark:bg-brand-navy/20 dark:text-brand-navy-light border border-brand-navy/10">
@@ -228,13 +230,13 @@ export default function ScoreDetailPage() {
 
     const handleDelete = async () => {
         if (!confirm("정말 이 스코어 기록을 삭제하시겠습니까?")) return;
-        
+
         const supabase = createClient();
         const { error } = await supabase
             .from("scorecards")
             .delete()
             .eq("id", params.id);
-            
+
         if (error) {
             alert("삭제 중 오류가 발생했습니다.");
             console.error(error);
@@ -288,7 +290,7 @@ export default function ScoreDetailPage() {
 
             // Ensure the records row exists for this scorecard
             const { data: existingRecord } = await supabase.from("records").select("id").eq("id", id).maybeSingle();
-            
+
             if (!existingRecord) {
                 const { data: sc } = await supabase.from("scorecards").select("athlete_id, coach_id, course_name, total_score").eq("id", id).single();
                 if (sc) {
@@ -301,7 +303,7 @@ export default function ScoreDetailPage() {
                         category: "field",
                         content: `${sc.total_score || 0}타 기록`
                     });
-                    
+
                     if (insertError) {
                         alert("연결된 기록 자동 생성에 실패했습니다: " + insertError.message);
                         setIsSubmittingComment(false);
@@ -346,7 +348,7 @@ export default function ScoreDetailPage() {
         const fetchData = async () => {
             const id = (Array.isArray(params.id) ? params.id[0] : params.id) as string;
             const supabase = createClient();
-            
+
             const { data: sc } = await supabase
                 .from("scorecards")
                 .select(`
@@ -366,7 +368,7 @@ export default function ScoreDetailPage() {
                 try {
                     const result = await calculateScorecardAnalysis(id as string);
                     setAnalysis(result);
-                    
+
                     const totalPoint = result.reduce((sum, h) => sum + h.totalSG, 0);
                     const teePoint = result.reduce((sum, h) => sum + (h.summary.distSG_DriverDist + h.summary.distSG_DriverAcc), 0);
                     const secondPoint = result.reduce((sum, h) => sum + (h.summary.distSG_180Plus + h.summary.distSG_150_179 + h.summary.distSG_120_149 + h.summary.distSG_90_119), 0);
@@ -480,7 +482,7 @@ export default function ScoreDetailPage() {
                                 else if (dist >= 90) { distStats["90-119M"].sum += rem; distStats["90-119M"].count++; }
                                 else if (dist >= 31) { distStats["피치샷"].sum += rem; distStats["피치샷"].count++; }
                             }
-                            
+
                             if (label === 'GB') { distStats["벙커"].sum += rem; distStats["벙커"].count++; }
 
                             if (label !== 'GR' && label !== 'GB' && label !== 'TE' && dist > 0 && dist <= 30) {
@@ -502,10 +504,30 @@ export default function ScoreDetailPage() {
                     }));
 
                     // Points
-                    const strongPoint = [...cats].sort((a, b) => a.sg - b.sg)[0]?.name || "-";
+                    const negativeCats = [...cats].filter(c => c.sg < 0).sort((a, b) => a.sg - b.sg);
                     const positiveCats = categoriesWithPercent.filter(c => c.sg > 0).sort((a, b) => b.percent - a.percent);
-                    const challengePoint1 = positiveCats[0]?.name || "-";
-                    const challengePoint2 = positiveCats[1]?.name || "-";
+
+                    const strongPlan = negativeCats.slice(0, 1).map((c, i) => {
+                        const fieldName = CATEGORY_TO_FIELD[c.name];
+                        const holeNumbers = result
+                            .filter(h => (h.summary as any)[fieldName] < 0)
+                            .sort((a, b) => (a.summary as any)[fieldName] - (b.summary as any)[fieldName])
+                            .slice(0, 5)
+                            .sort((a, b) => a.holeNumber - b.holeNumber)
+                            .map(h => h.holeNumber);
+                        return { label: c.name, holeNumbers };
+                    });
+
+                    const challengePlan = positiveCats.slice(0, 2).map((c, i) => {
+                        const fieldName = CATEGORY_TO_FIELD[c.name];
+                        const holeNumbers = result
+                            .filter(h => (h.summary as any)[fieldName] > 0)
+                            .sort((a, b) => (b.summary as any)[fieldName] - (a.summary as any)[fieldName])
+                            .slice(0, 5)
+                            .sort((a, b) => a.holeNumber - b.holeNumber)
+                            .map(h => h.holeNumber);
+                        return { label: c.name, holeNumbers };
+                    });
 
                     setSummary({
                         totalPoint,
@@ -536,27 +558,8 @@ export default function ScoreDetailPage() {
                             { type: "퍼팅", value: formatScore(puttingSG, 2), items: cats.slice(9, 13) }
                         ],
                         contributions: categoriesWithPercent,
-                        strongPoint,
-                        challengePoint1,
-                        challengePoint2,
-                        trainingPlan: positiveCats.slice(0, 5).map((c, i) => {
-                            const fieldName = CATEGORY_TO_FIELD[c.name];
-                            const holeNumbers = result
-                                .filter(h => (h.summary as any)[fieldName] > 0)
-                                .sort((a, b) => (b.summary as any)[fieldName] - (a.summary as any)[fieldName])
-                                .slice(0, 5)
-                                .sort((a, b) => a.holeNumber - b.holeNumber)
-                                .map(h => h.holeNumber);
-
-                            return {
-                                rank: `${i + 1}`,
-                                label: c.name,
-                                pct: Math.round(c.percent),
-                                time: [35, 25, 25, 20, 10, 5][i] || 5,
-                                color: ["bg-red-500", "bg-orange-500", "bg-emerald-500", "bg-blue-500", "bg-indigo-500", "bg-purple-500"][i] || "bg-zinc-500",
-                                holeNumbers
-                            };
-                        })
+                        strongPlan,
+                        challengePlan
                     });
 
                 } catch (err) {
@@ -618,7 +621,7 @@ export default function ScoreDetailPage() {
     const data = {
         player: scorecard.athlete?.name || "선수",
         coach: scorecard.coach?.name || "코치",
-        date: scorecard.round_date.replace(/-/g, "."),
+        date: scorecard.round_date.slice(5).replace(/-/g, "."),
         title: scorecard.course_name,
         totalScore: scorecard.total_score || analysis.reduce((s, h) => s + h.score, 0),
         summary: {
@@ -633,7 +636,7 @@ export default function ScoreDetailPage() {
         },
         avgMetrics: [
             { label: "페어웨이 안착률", value: roundToOne(summary.fairwayHitRate), unit: "%" },
-            { label: "평균 첫 퍼트 거리", value: roundToOne(summary.avgFirstPuttDist), unit: "m" },
+            { label: "첫 퍼트 거리", value: roundToOne(summary.avgFirstPuttDist), unit: "m" },
             { label: "그린 적중률", value: roundToOne(summary.girRate), unit: "%" },
             { label: "퍼트수", value: summary.totalPutts, unit: "개" },
             { label: "3퍼트 이상", value: summary.threePuttCount, unit: "회" },
@@ -641,7 +644,8 @@ export default function ScoreDetailPage() {
         ],
         sectorChanges: summary.sectorChanges,
         contributions: summary.contributions,
-        trainingPlan: summary.trainingPlan,
+        strongPlan: summary.strongPlan,
+        challengePlan: summary.challengePlan,
         avgRemainingDists: summary.avgRemainingDists,
         notes: (scorecard.holes || [])
             .sort((a: any, b: any) => a.hole_number - b.hole_number)
@@ -690,11 +694,11 @@ export default function ScoreDetailPage() {
                         </button>
                         <div className="flex items-center gap-2">
                             <BarChart3 size={20} className="text-brand-navy dark:text-brand-navy-light shrink-0" />
-                            <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">스코어 상세</h1>
+                            <PageTitle>스코어 상세</PageTitle>
                         </div>
                     </div>
                     <div className="relative">
-                        <button 
+                        <button
                             onClick={() => setIsMoreOpen(!isMoreOpen)}
                             className="p-2 -mr-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
                         >
@@ -746,29 +750,14 @@ export default function ScoreDetailPage() {
                         </span>
                     </div>
 
-                    <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 leading-tight">
+                    <SectionTitle>
                         {data.title}
-                    </h2>
+                    </SectionTitle>
 
-                    <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800/60 flex items-center">
-                        <div className="flex-1 flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500">
-                                <User size={20} />
-                            </div>
-                            <div>
-                                <p className="text-[11px] text-zinc-400 font-medium">담당 코치</p>
-                                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{data.coach}</p>
-                            </div>
-                        </div>
-                        <div className="w-px h-10 bg-zinc-100 dark:bg-zinc-800 mx-4"></div>
-                        <div className="flex-1 flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500">
-                                <User size={20} />
-                            </div>
-                            <div>
-                                <p className="text-[11px] text-zinc-400 font-medium">선수</p>
-                                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{data.player}</p>
-                            </div>
+                    <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800/60 flex items-center justify-end">
+                        <div className="text-right">
+                            <p className="text-[11px] text-zinc-400 font-medium">선수</p>
+                            <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{data.player}</p>
                         </div>
                     </div>
                 </section>
@@ -780,7 +769,7 @@ export default function ScoreDetailPage() {
                     const scoreDiffStr = scoreDiff > 0 ? `+${scoreDiff}` : scoreDiff === 0 ? "E" : `${scoreDiff}`;
                     const isUnderPar = scoreDiff < 0;
                     const isOverPar = scoreDiff > 0;
-                    
+
                     const scoreBgClass = isUnderPar ? "bg-red-50 border-red-100 dark:bg-red-900/10 dark:border-red-900/30" : isOverPar ? "bg-blue-50 border-blue-100 dark:bg-blue-900/10 dark:border-blue-900/30" : "bg-zinc-100 border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700";
                     const scoreTextClass = isUnderPar ? "text-red-500" : isOverPar ? "text-blue-500" : "text-zinc-900 dark:text-zinc-100";
 
@@ -793,7 +782,7 @@ export default function ScoreDetailPage() {
                                 <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center bg-white/60 dark:bg-black/20")}>
                                     <Activity size={18} className={scoreTextClass} />
                                 </div>
-                                <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-50 uppercase tracking-wide">Score</h2>
+                                <SectionTitle>Score</SectionTitle>
                             </div>
                             <div className="relative z-10 w-full flex justify-center items-baseline gap-1.5 sm:gap-2 whitespace-nowrap">
                                 <span className={cn("text-4xl sm:text-5xl font-black tracking-tighter", scoreTextClass)}>
@@ -837,9 +826,9 @@ export default function ScoreDetailPage() {
                                     </div>
                                     <div className="space-y-1.5 pt-3 mt-1 border-t border-zinc-100/50 dark:border-zinc-800/50">
                                         {sc.items.map((item: any, iIdx: number) => (
-                                            <div key={iIdx} className="flex justify-between items-center text-[13px] font-bold">
-                                                <span className="text-zinc-500 dark:text-zinc-400">{item.name}</span>
-                                                <span className={item.sg >= 0 ? "text-blue-500" : "text-red-500"}>
+                                            <div key={iIdx} className="flex justify-between items-center text-[clamp(10px,3.5vw,13px)] font-bold whitespace-nowrap gap-0.5">
+                                                <span className="text-zinc-500 dark:text-zinc-400 truncate">{item.name}</span>
+                                                <span className={cn("shrink-0", item.sg >= 0 ? "text-blue-500" : "text-red-500")}>
                                                     {item.sg > 0 ? "+" : ""}{item.sg.toFixed(1)}
                                                 </span>
                                             </div>
@@ -861,171 +850,315 @@ export default function ScoreDetailPage() {
                     </div>
                 </section>
 
-                {/* Strong / Challenge Points */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-7 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col items-start justify-start gap-1">
-                        <div className="flex items-center gap-2 mb-4">
-                            <div className="w-8 h-8 rounded-lg bg-red-50 dark:bg-red-900/10 flex items-center justify-center text-red-500">
+                {/* Strong Point */}
+                {data.strongPlan && data.strongPlan.length > 0 && (
+                    <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60">
+                        <div className="flex items-center gap-2 mb-6">
+                            <div className="w-8 h-8 rounded-lg bg-red-50 dark:bg-red-900/10 flex items-center justify-center text-red-500 shrink-0">
                                 <TrophyIcon size={18} />
                             </div>
-                            <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-50 uppercase tracking-wide">Strong Point</h2>
+                            <SectionTitle>STRONG POINT</SectionTitle>
                         </div>
-                        <h3 className="w-full text-center text-2xl font-black text-zinc-900 dark:text-zinc-50 tracking-tighter leading-tight mt-2 flex-1 flex items-center justify-center">{summary.strongPoint}</h3>
-                    </div>
-                    <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-7 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col items-start justify-start gap-1">
-                        <div className="flex items-center gap-2 mb-4">
-                            <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-brand-navy dark:text-brand-navy-light">
-                                <TrendingDown size={18} />
-                            </div>
-                            <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-50 uppercase tracking-wide">Challenge Point</h2>
-                        </div>
-                        <div className="space-y-4 flex flex-col items-start w-full mt-2 flex-1 justify-center">
-                            <div className="flex items-center gap-4">
-                                <span className="w-7 h-7 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[12px] font-black text-zinc-500 shrink-0">1</span>
-                                <span className="text-[20px] font-black text-zinc-800 dark:text-zinc-200 tracking-tight">{summary.challengePoint1}</span>
-                            </div>
-                            <div className="flex items-center gap-4">
-                                <span className="w-7 h-7 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[12px] font-black text-zinc-500 shrink-0">2</span>
-                                <span className="text-[20px] font-black text-zinc-800 dark:text-zinc-200 tracking-tight">{summary.challengePoint2}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                        <div className="space-y-3">
+                            {data.strongPlan.map((item: any, idx: number) => {
+                                const validHoles = item.holeNumbers.filter((hn: number) => getRelevantShots(hn, item.label).some((shot: any) => shot.shotSG < 0));
+                                const isExpanded = selectedPlanLabel === item.label;
+                                return (
+                                    <div key={idx} className="space-y-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (isExpanded) {
+                                                    setSelectedPlanLabel(null);
+                                                    setSelectedHoleDetails(null);
+                                                } else {
+                                                    setSelectedPlanLabel(item.label);
+                                                    if (validHoles && validHoles.length > 0) {
+                                                        setSelectedHoleDetails({ holeNumber: validHoles[0], label: item.label });
+                                                    } else {
+                                                        setSelectedHoleDetails(null);
+                                                    }
+                                                }
+                                            }}
+                                            className={cn(
+                                                "w-full bg-white dark:bg-zinc-900 border rounded-2xl flex items-center justify-center p-4 transition-all relative",
+                                                isExpanded ? "border-orange-500 ring-1 ring-orange-500" : "border-zinc-200 dark:border-zinc-800 hover:border-orange-400"
+                                            )}
+                                        >
+                                            <span className="font-black text-[15px] sm:text-[17px] text-zinc-800 dark:text-zinc-200 block break-keep leading-tight text-center">{item.label}</span>
+                                            {isExpanded ? <ChevronUp size={16} className="text-zinc-400 absolute right-4" /> : <ChevronDown size={16} className="text-zinc-400 absolute right-4" />}
+                                        </button>
+                                        {isExpanded && (
+                                            <div className="px-4 py-3 bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/30 rounded-2xl animate-in slide-in-from-top-2 duration-200">
+                                                <div className="grid grid-cols-5 gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
+                                                    {validHoles.map((hn: number) => {
+                                                        const isSelected = selectedHoleDetails?.holeNumber === hn && selectedHoleDetails?.label === item.label;
+                                                        return (
+                                                            <button
+                                                                key={hn}
+                                                                onClick={() => {
+                                                                    if (isSelected) {
+                                                                        setSelectedHoleDetails(null);
+                                                                    } else {
+                                                                        setSelectedHoleDetails({ holeNumber: hn, label: item.label });
+                                                                        setTimeout(() => {
+                                                                            const el = document.getElementById(`hole-detail-${item.label}-${hn}`);
+                                                                            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+                                                                        }, 10);
+                                                                    }
+                                                                }}
+                                                                className={cn(
+                                                                    "px-3 py-1.5 rounded-lg border shadow-sm flex flex-col items-center transition-all",
+                                                                    isSelected
+                                                                        ? "bg-orange-500 border-orange-600 scale-105"
+                                                                        : "bg-white dark:bg-zinc-900 border-orange-200 dark:border-orange-800/50 hover:border-orange-400"
+                                                                )}
+                                                            >
+                                                                <span className={cn("text-[10px] font-bold", isSelected ? "text-orange-100" : "text-zinc-400")}>Hole</span>
+                                                                <span className={cn("text-sm font-black", isSelected ? "text-white" : "text-orange-600 dark:text-orange-400")}>{hn}</span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                    {validHoles.length === 0 && (
+                                                        <span className="text-[11px] text-zinc-400 italic">기록된 홀이 없습니다.</span>
+                                                    )}
+                                                </div>
 
-                {/* 트레이닝 플랜 */}
-                <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60">
-                    <div className="flex items-center justify-between mb-6">
-                        <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-400">
-                                <Calendar size={18} />
-                            </div>
-                            <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-50">트레이닝 플랜</h2>
-                        </div>
-                        <div className="flex items-center gap-1.5 px-3 py-1 bg-zinc-50 dark:bg-zinc-800 rounded-xl">
-                            <Info size={12} className="text-zinc-400" />
-                            <span className="text-[10px] font-bold text-zinc-500">총 2시간</span>
-                        </div>
-                    </div>
-
-                    <div className="space-y-3">
-                        {data.trainingPlan.map((item: any, idx: number) => {
-                            const borderColor = item.color.replace('bg-', 'border-l-');
-                            const isExpanded = selectedPlanLabel === item.label;
-                            const isBig = idx < 2;
-
-                            return (
-                                <div key={idx} className="space-y-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setSelectedPlanLabel(isExpanded ? null : item.label)}
-                                        className={cn(
-                                            "w-full bg-zinc-50/50 dark:bg-zinc-800/50 border border-zinc-100/60 dark:border-zinc-800 border-l-4 rounded-2xl flex items-center justify-between transition-all hover:bg-zinc-100 dark:hover:bg-zinc-800/80",
-                                            borderColor,
-                                            isBig ? "p-6" : "p-4",
-                                            isExpanded && "ring-2 ring-orange-400 ring-offset-2 dark:ring-offset-zinc-950"
-                                        )}
-                                    >
-                                        <div className="flex items-center gap-3 w-20">
-                                            <span className={cn("text-[11px] font-black px-2 py-0.5 rounded text-white tracking-tight shrink-0", item.color, isBig && "text-[12px] px-3 py-1")}>{item.rank}</span>
-                                        </div>
-                                        <div className="flex-1 text-center min-w-0 px-2">
-                                            <span className={cn("font-black text-zinc-800 dark:text-zinc-200 block break-keep leading-tight", isBig ? "text-[15px] sm:text-[17px]" : "text-[13px] sm:text-[14px]")}>{item.label}</span>
-                                        </div>
-                                        <div className="flex items-center justify-end gap-2 w-20">
-                                            <div className="flex items-baseline gap-0.5">
-                                                <span className={cn("font-black text-zinc-900 dark:text-zinc-50 tracking-tighter", isBig ? "text-[15px] sm:text-[17px]" : "text-[13px] sm:text-[14px]")}>{item.time}</span>
-                                                <span className="text-[10px] font-bold text-zinc-400">분</span>
-                                            </div>
-                                            {isExpanded ? <ChevronUp size={16} className="text-zinc-400" /> : <ChevronDown size={16} className="text-zinc-400" />}
-                                        </div>
-                                    </button>
-
-                                    {isExpanded && (
-                                        <div className="px-4 py-3 bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/30 rounded-2xl animate-in slide-in-from-top-2 duration-200">
-                                            <div className="mb-2">
-                                                <span className="text-[11px] font-bold text-orange-600 dark:text-orange-400 uppercase tracking-tighter">집중 관리 홀</span>
-                                            </div>
-                                            <div className="grid grid-cols-5 gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
-                                                {item.holeNumbers.map((hn: number) => {
-                                                    const isSelected = selectedHoleDetails?.holeNumber === hn && selectedHoleDetails?.label === item.label;
-                                                    return (
-                                                        <button
-                                                            key={hn}
-                                                            onClick={() => setSelectedHoleDetails(isSelected ? null : { holeNumber: hn, label: item.label })}
-                                                            className={cn(
-                                                                "px-3 py-1.5 rounded-lg border shadow-sm flex flex-col items-center transition-all",
-                                                                isSelected
-                                                                    ? "bg-orange-500 border-orange-600 scale-105"
-                                                                    : "bg-white dark:bg-zinc-900 border-orange-200 dark:border-orange-800/50 hover:border-orange-400"
-                                                            )}
-                                                        >
-                                                            <span className={cn("text-[10px] font-bold", isSelected ? "text-orange-100" : "text-zinc-400")}>Hole</span>
-                                                            <span className={cn("text-sm font-black", isSelected ? "text-white" : "text-orange-600 dark:text-orange-400")}>{hn}</span>
-                                                        </button>
-                                                    );
-                                                })}
-                                                {item.holeNumbers.length === 0 && (
-                                                    <span className="text-[11px] text-zinc-400 italic">기록된 홀이 없습니다.</span>
+                                                {/* Shot Details for selected hole */}
+                                                {selectedHoleDetails && selectedHoleDetails.label === item.label && (
+                                                    <div
+                                                        className="mt-4 flex overflow-x-auto snap-x snap-mandatory scrollbar-hide gap-4 pb-2"
+                                                        onScroll={(e) => {
+                                                            const container = e.currentTarget;
+                                                            const scrollLeft = container.scrollLeft;
+                                                            const width = container.offsetWidth;
+                                                            const index = Math.round(scrollLeft / (width + 16));
+                                                            if (validHoles[index] && selectedHoleDetails.holeNumber !== validHoles[index]) {
+                                                                setSelectedHoleDetails({ holeNumber: validHoles[index], label: item.label });
+                                                            }
+                                                        }}
+                                                    >
+                                                        {validHoles.map((hn: number) => (
+                                                            <div key={hn} id={`hole-detail-${item.label}-${hn}`} className="w-full shrink-0 snap-center p-4 bg-white dark:bg-zinc-900 rounded-xl border border-orange-200 dark:border-orange-800/50 shadow-inner animate-in fade-in slide-in-from-left-2 duration-300">
+                                                                <div className="flex items-center justify-between mb-3 border-b border-zinc-100 dark:border-zinc-800 pb-2">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">{hn}번 홀 분석</span>
+                                                                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 uppercase">
+                                                                            Par {analysis.find(h => h.holeNumber === hn)?.par}
+                                                                        </span>
+                                                                    </div>
+                                                                    <button onClick={() => setSelectedHoleDetails(null)} className="text-zinc-400 hover:text-zinc-600">
+                                                                        <X size={14} />
+                                                                    </button>
+                                                                </div>
+                                                                <div className="space-y-4">
+                                                                    {getRelevantShots(hn, item.label).filter((shot: any) => shot.shotSG < 0).map((shot: any, sIdx: number) => {
+                                                                        const attemptPos = (shot.shotLabel || "").split('/')[0].trim().toUpperCase();
+                                                                        const landingPos = (shot.landingLabel || "").toUpperCase().trim();
+                                                                        const isPenalty = ["PA", "OB", "PS"].includes(landingPos);
+                                                                        const unit = (shot.shotLabel || "").toUpperCase().includes("GR") ? "m" : "m";
+                                                                        return (
+                                                                            <div key={sIdx} className="space-y-3 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg border border-zinc-100 dark:border-zinc-800/50">
+                                                                                <div className="flex items-center gap-4">
+                                                                                    <div className="flex items-center gap-1.5 w-12 shrink-0">
+                                                                                        <div className="w-1 h-3 bg-zinc-300 rounded-full" />
+                                                                                        <span className="text-[10px] font-bold text-zinc-400 uppercase">시도</span>
+                                                                                    </div>
+                                                                                    <p className="text-xs font-black text-zinc-800 dark:text-zinc-200">
+                                                                                        {(POS_MAP[attemptPos] || attemptPos).replace('그린 주변 어프로치', '어프로치').replace('그린 주변 벙커', '벙커')} {shot.attemptDistance > 0 ? `/ ${shot.attemptDistance}${unit}` : ""}
+                                                                                    </p>
+                                                                                </div>
+                                                                                <div className="flex items-center gap-4">
+                                                                                    <div className="flex items-center gap-1.5 w-12 shrink-0">
+                                                                                        <div className={cn("w-1 h-3 rounded-full", isPenalty ? "bg-red-500" : "bg-orange-500")} />
+                                                                                        <span className={cn("text-[10px] font-bold uppercase", isPenalty ? "text-red-500" : "text-zinc-400")}>
+                                                                                            {isPenalty ? "패널티" : "결과"}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    <p className={cn("text-xs font-black", isPenalty ? "text-red-600 dark:text-red-400" : "text-zinc-800 dark:text-zinc-200")}>
+                                                                                        {isPenalty ? "패널티" : (POS_MAP[landingPos] || landingPos).replace('그린 주변 어프로치', '어프로치').replace('그린 주변 벙커', '벙커')} {shot.remainingDistance > 0 ? `/ ${shot.remainingDistance}${unit}` : ""}
+                                                                                    </p>
+                                                                                </div>
+                                                                                <div className="flex items-center gap-4">
+                                                                                    <div className="flex items-center gap-1.5 w-12 shrink-0">
+                                                                                        <div className="w-1 h-3 bg-zinc-300 dark:bg-zinc-600 rounded-full" />
+                                                                                        <span className="text-[10px] font-bold text-zinc-400 uppercase">점수</span>
+                                                                                    </div>
+                                                                                    <p className={cn("text-xs font-black", shot.shotSG < 0 ? "text-red-500" : shot.shotSG > 0 ? "text-blue-500" : "text-zinc-800 dark:text-zinc-200")}>
+                                                                                        {shot.shotSG > 0 ? "+" : ""}{Number(shot.shotSG || 0).toFixed(1)}
+                                                                                    </p>
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 )}
                                             </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </section>
+                )}
 
-                                            {/* Shot Details for selected hole */}
-                                            {selectedHoleDetails && selectedHoleDetails.label === item.label && (
-                                                <div className="mt-4 p-4 bg-white dark:bg-zinc-900 rounded-xl border border-orange-200 dark:border-orange-800/50 shadow-inner animate-in fade-in slide-in-from-left-2 duration-300">
-                                                    <div className="flex items-center justify-between mb-3 border-b border-zinc-100 dark:border-zinc-800 pb-2">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">{selectedHoleDetails.holeNumber}번 홀 분석</span>
-                                                            <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 uppercase">
-                                                                Par {analysis.find(h => h.holeNumber === selectedHoleDetails.holeNumber)?.par}
-                                                            </span>
-                                                        </div>
-                                                        <button onClick={() => setSelectedHoleDetails(null)} className="text-zinc-400 hover:text-zinc-600">
-                                                            <X size={14} />
-                                                        </button>
-                                                    </div>
-                                                    <div className="space-y-4">                                                        {getRelevantShots(selectedHoleDetails.holeNumber, item.label).map((shot: any, sIdx: number) => {
-                                                            const attemptPos = (shot.shotLabel || "").split('/')[0].trim().toUpperCase();
-                                                            const landingPos = (shot.landingLabel || "").toUpperCase().trim();
-                                                            const isPenalty = ["PA", "OB", "PS"].includes(landingPos);
-                                                            const unit = (shot.shotLabel || "").toUpperCase().includes("GR") ? "m" : "m";
-
-                                                            return (
-                                                                <div key={sIdx} className="space-y-3 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg border border-zinc-100 dark:border-zinc-800/50">
-                                                                    <div className="flex items-center gap-4">
-                                                                        <div className="flex items-center gap-1.5 w-12 shrink-0">
-                                                                            <div className="w-1 h-3 bg-zinc-300 rounded-full" />
-                                                                            <span className="text-[10px] font-bold text-zinc-400 uppercase">시도</span>
-                                                                        </div>
-                                                                        <p className="text-xs font-black text-zinc-800 dark:text-zinc-200">
-                                                                            {(POS_MAP[attemptPos] || attemptPos).replace('그린 주변 어프로치', '어프로치').replace('그린 주변 벙커', '벙커')} {shot.attemptDistance > 0 ? `/ ${shot.attemptDistance}${unit}` : ""}
-                                                                        </p>
-                                                                    </div>
-                                                                    <div className="flex items-center gap-4">
-                                                                        <div className="flex items-center gap-1.5 w-12 shrink-0">
-                                                                            <div className={cn("w-1 h-3 rounded-full", isPenalty ? "bg-red-500" : "bg-orange-500")} />
-                                                                            <span className={cn("text-[10px] font-bold uppercase", isPenalty ? "text-red-500" : "text-zinc-400")}>
-                                                                                {isPenalty ? "패널티" : "결과"}
-                                                                            </span>
-                                                                        </div>
-                                                                        <p className={cn("text-xs font-black", isPenalty ? "text-red-600 dark:text-red-400" : "text-zinc-800 dark:text-zinc-200")}>
-                                                                            {isPenalty ? "패널티" : (POS_MAP[landingPos] || landingPos).replace('그린 주변 어프로치', '어프로치').replace('그린 주변 벙커', '벙커')} {shot.remainingDistance > 0 ? `/ ${shot.remainingDistance}${unit}` : ""}
-                                                                        </p>
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
+                {/* Challenge Point */}
+                {data.challengePlan && data.challengePlan.length > 0 && (
+                    <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60">
+                        <div className="flex items-center gap-2 mb-6">
+                            <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-brand-navy dark:text-brand-navy-light shrink-0">
+                                <TrendingDown size={18} />
+                            </div>
+                            <SectionTitle>CHALLENGE POINT</SectionTitle>
+                        </div>
+                        <div className="space-y-3">
+                            {data.challengePlan.map((item: any, idx: number) => {
+                                const validHoles = item.holeNumbers.filter((hn: number) => getRelevantShots(hn, item.label).some((shot: any) => shot.shotSG > 0));
+                                const isExpanded = selectedPlanLabel === item.label;
+                                return (
+                                    <div key={idx} className="space-y-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (isExpanded) {
+                                                    setSelectedPlanLabel(null);
+                                                    setSelectedHoleDetails(null);
+                                                } else {
+                                                    setSelectedPlanLabel(item.label);
+                                                    if (validHoles && validHoles.length > 0) {
+                                                        setSelectedHoleDetails({ holeNumber: validHoles[0], label: item.label });
+                                                    } else {
+                                                        setSelectedHoleDetails(null);
+                                                    }
+                                                }
+                                            }}
+                                            className={cn(
+                                                "w-full bg-white dark:bg-zinc-900 border rounded-2xl flex items-center justify-center p-4 transition-all relative",
+                                                isExpanded ? "border-sky-500 ring-1 ring-sky-500" : "border-zinc-200 dark:border-zinc-800 hover:border-sky-400"
                                             )}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                </section>
+                                        >
+                                            <span className="font-black text-[15px] sm:text-[17px] text-zinc-800 dark:text-zinc-200 block break-keep leading-tight text-center">{item.label}</span>
+                                            {isExpanded ? <ChevronUp size={16} className="text-zinc-400 absolute right-4" /> : <ChevronDown size={16} className="text-zinc-400 absolute right-4" />}
+                                        </button>
+                                        {isExpanded && (
+                                            <div className="px-4 py-3 bg-sky-50 dark:bg-sky-900/10 border border-sky-100 dark:border-sky-900/30 rounded-2xl animate-in slide-in-from-top-2 duration-200">
+                                                <div className="grid grid-cols-5 gap-1.5 sm:flex sm:flex-wrap sm:gap-2">
+                                                    {validHoles.map((hn: number) => {
+                                                        const isSelected = selectedHoleDetails?.holeNumber === hn && selectedHoleDetails?.label === item.label;
+                                                        return (
+                                                            <button
+                                                                key={hn}
+                                                                onClick={() => {
+                                                                    if (isSelected) {
+                                                                        setSelectedHoleDetails(null);
+                                                                    } else {
+                                                                        setSelectedHoleDetails({ holeNumber: hn, label: item.label });
+                                                                        setTimeout(() => {
+                                                                            const el = document.getElementById(`hole-detail-${item.label}-${hn}`);
+                                                                            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' });
+                                                                        }, 10);
+                                                                    }
+                                                                }}
+                                                                className={cn(
+                                                                    "px-3 py-1.5 rounded-lg border shadow-sm flex flex-col items-center transition-all",
+                                                                    isSelected
+                                                                        ? "bg-sky-500 border-sky-600 scale-105"
+                                                                        : "bg-white dark:bg-zinc-900 border-sky-200 dark:border-sky-800/50 hover:border-sky-400"
+                                                                )}
+                                                            >
+                                                                <span className={cn("text-[10px] font-bold", isSelected ? "text-sky-100" : "text-zinc-400")}>Hole</span>
+                                                                <span className={cn("text-sm font-black", isSelected ? "text-white" : "text-sky-600 dark:text-sky-400")}>{hn}</span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                    {validHoles.length === 0 && (
+                                                        <span className="text-[11px] text-zinc-400 italic">기록된 홀이 없습니다.</span>
+                                                    )}
+                                                </div>
 
-
+                                                {/* Shot Details for selected hole */}
+                                                {selectedHoleDetails && selectedHoleDetails.label === item.label && (
+                                                    <div
+                                                        className="mt-4 flex overflow-x-auto snap-x snap-mandatory scrollbar-hide gap-4 pb-2"
+                                                        onScroll={(e) => {
+                                                            const container = e.currentTarget;
+                                                            const scrollLeft = container.scrollLeft;
+                                                            const width = container.offsetWidth;
+                                                            const index = Math.round(scrollLeft / (width + 16));
+                                                            if (validHoles[index] && selectedHoleDetails.holeNumber !== validHoles[index]) {
+                                                                setSelectedHoleDetails({ holeNumber: validHoles[index], label: item.label });
+                                                            }
+                                                        }}
+                                                    >
+                                                        {validHoles.map((hn: number) => (
+                                                            <div key={hn} id={`hole-detail-${item.label}-${hn}`} className="w-full shrink-0 snap-center p-4 bg-white dark:bg-zinc-900 rounded-xl border border-sky-200 dark:border-sky-800/50 shadow-inner animate-in fade-in slide-in-from-left-2 duration-300">
+                                                                <div className="flex items-center justify-between mb-3 border-b border-zinc-100 dark:border-zinc-800 pb-2">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">{hn}번 홀 분석</span>
+                                                                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-500 uppercase">
+                                                                            Par {analysis.find(h => h.holeNumber === hn)?.par}
+                                                                        </span>
+                                                                    </div>
+                                                                    <button onClick={() => setSelectedHoleDetails(null)} className="text-zinc-400 hover:text-zinc-600">
+                                                                        <X size={14} />
+                                                                    </button>
+                                                                </div>
+                                                                <div className="space-y-4">
+                                                                    {getRelevantShots(hn, item.label).filter((shot: any) => shot.shotSG > 0).map((shot: any, sIdx: number) => {
+                                                                        const attemptPos = (shot.shotLabel || "").split('/')[0].trim().toUpperCase();
+                                                                        const landingPos = (shot.landingLabel || "").toUpperCase().trim();
+                                                                        const isPenalty = ["PA", "OB", "PS"].includes(landingPos);
+                                                                        const unit = (shot.shotLabel || "").toUpperCase().includes("GR") ? "m" : "m";
+                                                                        return (
+                                                                            <div key={sIdx} className="space-y-3 p-3 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg border border-zinc-100 dark:border-zinc-800/50">
+                                                                                <div className="flex items-center gap-4">
+                                                                                    <div className="flex items-center gap-1.5 w-12 shrink-0">
+                                                                                        <div className="w-1 h-3 bg-zinc-300 rounded-full" />
+                                                                                        <span className="text-[10px] font-bold text-zinc-400 uppercase">시도</span>
+                                                                                    </div>
+                                                                                    <p className="text-xs font-black text-zinc-800 dark:text-zinc-200">
+                                                                                        {(POS_MAP[attemptPos] || attemptPos).replace('그린 주변 어프로치', '어프로치').replace('그린 주변 벙커', '벙커')} {shot.attemptDistance > 0 ? `/ ${shot.attemptDistance}${unit}` : ""}
+                                                                                    </p>
+                                                                                </div>
+                                                                                <div className="flex items-center gap-4">
+                                                                                    <div className="flex items-center gap-1.5 w-12 shrink-0">
+                                                                                        <div className={cn("w-1 h-3 rounded-full", isPenalty ? "bg-red-500" : "bg-sky-500")} />
+                                                                                        <span className={cn("text-[10px] font-bold uppercase", isPenalty ? "text-red-500" : "text-zinc-400")}>
+                                                                                            {isPenalty ? "패널티" : "결과"}
+                                                                                        </span>
+                                                                                    </div>
+                                                                                    <p className={cn("text-xs font-black", isPenalty ? "text-red-600 dark:text-red-400" : "text-zinc-800 dark:text-zinc-200")}>
+                                                                                        {isPenalty ? "패널티" : (POS_MAP[landingPos] || landingPos).replace('그린 주변 어프로치', '어프로치').replace('그린 주변 벙커', '벙커')} {shot.remainingDistance > 0 ? `/ ${shot.remainingDistance}${unit}` : ""}
+                                                                                    </p>
+                                                                                </div>
+                                                                                <div className="flex items-center gap-4">
+                                                                                    <div className="flex items-center gap-1.5 w-12 shrink-0">
+                                                                                        <div className="w-1 h-3 bg-zinc-300 dark:bg-zinc-600 rounded-full" />
+                                                                                        <span className="text-[10px] font-bold text-zinc-400 uppercase">점수</span>
+                                                                                    </div>
+                                                                                    <p className={cn("text-xs font-black", shot.shotSG < 0 ? "text-red-500" : shot.shotSG > 0 ? "text-blue-500" : "text-zinc-800 dark:text-zinc-200")}>
+                                                                                        {shot.shotSG > 0 ? "+" : ""}{Number(shot.shotSG || 0).toFixed(1)}
+                                                                                    </p>
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </section>
+                )}
 
 
                 {/* Score Card */}
@@ -1035,7 +1168,7 @@ export default function ScoreDetailPage() {
                             <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-400">
                                 <BookOpen size={18} />
                             </div>
-                            <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-50">Score Card</h2>
+                            <SectionTitle>Score Card</SectionTitle>
                         </div>
 
                         {/* Legend */}
@@ -1064,7 +1197,7 @@ export default function ScoreDetailPage() {
                     </div>
 
                     <div className="overflow-x-auto -mx-6 pb-2 scrollbar-hide">
-                        <table className="w-full min-w-[1000px] lg:min-w-0 border-separate border-spacing-0 text-center">
+                        <table className="w-max border-separate border-spacing-0 text-center">
                             <thead>
                                 <tr className="text-[10px] font-black text-zinc-600 dark:text-zinc-400 uppercase tracking-tighter">
                                     <th className="sticky left-0 z-30 py-2 px-1 bg-white dark:bg-zinc-900 border-y border-zinc-100 dark:border-zinc-800 w-24 sm:w-28 text-left pl-6 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.15)]">Hole</th>
@@ -1073,14 +1206,14 @@ export default function ScoreDetailPage() {
                                         const isHighlighted = fieldName && (h.summary as any)[fieldName] > 0;
                                         return (
                                             <th key={h.hole} className={cn(
-                                                "py-2 px-0.5 sm:px-1 text-[11px] font-black border-y border-zinc-100 dark:border-zinc-800 transition-colors",
+                                                "py-2 px-0.5 sm:px-1 text-[11px] font-black border-y border-zinc-100 dark:border-zinc-800 transition-colors w-10 sm:w-12",
                                                 isHighlighted ? "bg-orange-500 text-white" : "text-zinc-900 dark:text-zinc-50 bg-white dark:bg-zinc-950"
                                             )}>
                                                 {h.hole}
                                             </th>
                                         );
                                     })}
-                                    <th className="py-2 px-2 text-[11px] font-black text-brand-navy dark:text-brand-navy-light border-y border-zinc-100 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-800/80 pr-6">총계</th>
+                                    <th className="py-2 px-2 text-[11px] font-black text-brand-navy dark:text-brand-navy-light border-y border-zinc-100 dark:border-zinc-800 bg-zinc-50/80 dark:bg-zinc-800/80 pr-6 w-16 sm:w-20">총계</th>
                                 </tr>
                             </thead>
                             <tbody className="text-[11px] font-bold text-zinc-700 dark:text-zinc-300">
@@ -1136,11 +1269,11 @@ export default function ScoreDetailPage() {
                                                         </div>
                                                     )}
                                                     <span className={cn(
-                                                        "relative z-10 text-[11px] sm:text-[12px]", 
-                                                        diff <= -2 ? "text-orange-500" : 
-                                                        diff === -1 ? "text-yellow-600 dark:text-yellow-500" : 
-                                                        diff > 0 ? "text-sky-600 dark:text-sky-500" : 
-                                                        "text-zinc-900 dark:text-zinc-100"
+                                                        "relative z-10 text-[11px] sm:text-[12px]",
+                                                        diff <= -2 ? "text-orange-500" :
+                                                            diff === -1 ? "text-yellow-600 dark:text-yellow-500" :
+                                                                diff > 0 ? "text-sky-600 dark:text-sky-500" :
+                                                                    "text-zinc-900 dark:text-zinc-100"
                                                     )}>{h.score}</span>
                                                 </div>
                                             </td>
@@ -1297,7 +1430,7 @@ export default function ScoreDetailPage() {
                                 <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-400">
                                     <MessageSquare size={18} />
                                 </div>
-                                <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-50">샷 노트</h2>
+                                <SectionTitle>샷 노트</SectionTitle>
                             </div>
                         </div>
 
@@ -1420,15 +1553,7 @@ export default function ScoreDetailPage() {
                             </div>
                         )}
                         <div className="flex items-center justify-between">
-                            <button
-                                type="button"
-                                disabled={isSubmittingComment}
-                                onClick={() => commentFileRef.current?.click()}
-                                className="flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-brand-navy transition-colors disabled:opacity-50"
-                            >
-                                <Paperclip size={14} /> 파일 첨부
-                            </button>
-                            <input ref={commentFileRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleCommentFileChange} />
+                            <FileUploadButton iconOnly icon={<Paperclip size={18} />} accept="image/*,video/*" onChange={handleCommentFileChange} disabled={isSubmittingComment} />
                             <button
                                 onClick={handleCommentSubmit}
                                 disabled={(!newComment.trim() && !commentFile) || isSubmittingComment}

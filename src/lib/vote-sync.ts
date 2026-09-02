@@ -43,15 +43,19 @@ export const VOTE_TYPE_COLORS: Record<VoteType, { bg: string; text: string; bord
 
 // ── Database Operations ──────────────────────────────────────
 
-export async function getPolls() {
+export async function getPolls(limit?: number) {
     const supabase = createClient();
-    const { data, error } = await supabase
+    let query = supabase
         .from("polls")
         .select(`
             *,
             users!polls_author_id_fkey (name)
         `)
         .order("created_at", { ascending: false });
+
+    if (limit) query = query.limit(limit);
+
+    const { data, error } = await query;
 
     if (error) {
         console.error("Supabase fetching polls error:", error.message);
@@ -148,6 +152,7 @@ export async function updatePoll(id: string, poll: Partial<Vote>) {
     if (poll.author) updateData.author = poll.author;
     if (poll.isImportant !== undefined) updateData.is_important = poll.isImportant;
     if (poll.isRecurring !== undefined) updateData.is_recurring = poll.isRecurring;
+    if (poll.totalParticipants !== undefined) updateData.total_participants = poll.totalParticipants;
 
     const { data, error } = await supabase
         .from("polls")
@@ -270,7 +275,11 @@ export async function castVote(pollId: string, optionId: string, userId: string)
         return { ...opt, votes: newVotes };
     });
 
-    await updatePoll(pollId, { options: updatedOptions });
+    let newTotalParticipants = poll.totalParticipants;
+    if (!existingOptionId) {
+        newTotalParticipants += 1;
+    }
+    await updatePoll(pollId, { options: updatedOptions, totalParticipants: newTotalParticipants });
 }
 
 export async function getUserVote(pollId: string, userId: string) {

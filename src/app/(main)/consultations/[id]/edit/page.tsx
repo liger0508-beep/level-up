@@ -216,9 +216,18 @@ export default function EditConsultationPage() {
                                     </div>
 
                                     <div className="space-y-3">
-                                        <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 font-mono tracking-tighter uppercase">
+                                        <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 font-mono tracking-tighter uppercase mb-2">
                                             상세 내용 수정
                                         </label>
+                                        <div className="text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-xl border border-zinc-100 dark:border-zinc-800 mb-4">
+                                            <p className="font-bold text-zinc-700 dark:text-zinc-300 mb-2">* 상담 작성시 아래 내용 참고</p>
+                                            <ul className="list-disc list-inside space-y-1">
+                                                <li>시합 관련</li>
+                                                <li>스코어 관련</li>
+                                                <li>훈련 태도 및 참여도 관련</li>
+                                                <li>목표 / 방향 관련</li>
+                                            </ul>
+                                        </div>
                                         <div className="quill-container border-zinc-200 dark:border-zinc-800 pb-16">
                                             <ReactQuill
                                                 theme="snow"
@@ -226,7 +235,7 @@ export default function EditConsultationPage() {
                                                 onChange={setContent}
                                                 modules={quillModules}
                                                 formats={quillFormats}
-                                                className="h-[380px] dark:bg-zinc-800/50"
+                                                className={cn("h-[380px] dark:bg-zinc-800/50", content && content !== "<p><br></p>" ? "hide-placeholder" : "")}
                                                 placeholder="상담 내용을 상세히 입력하세요..."
                                             />
                                         </div>
@@ -359,6 +368,7 @@ export default function EditConsultationPage() {
                 .ql-editor { font-size: 15px; line-height: 1.6; }
                 .ql-toolbar.ql-snow { border-top-left-radius: 12px; border-top-right-radius: 12px; }
                 .ql-container.ql-snow { border-bottom-left-radius: 12px; border-bottom-right-radius: 12px; }
+                .hide-placeholder .ql-editor::before { display: none !important; content: none !important; }
             `}</style>
         </div>
     );

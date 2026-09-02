@@ -69,23 +69,6 @@ export async function checkInAthlete(athleteId: string, branch: string) {
     return { success: true };
 }
 
-export async function checkInByPhone(phone: string, branch: string) {
-    const supabase = createClient();
-    
-    // Find athlete by phone
-    const { data: athlete, error: userError } = await supabase
-        .from("users")
-        .select("id, name")
-        .eq("phone", phone)
-        .eq("role", "athlete")
-        .maybeSingle();
-
-    if (userError || !athlete) {
-        return { success: false, message: "해당 번호의 선수를 찾을 수 없습니다." };
-    }
-
-    return await checkInAthlete(athlete.id, branch);
-}
 
 export async function fetchMonthlyAttendance(athleteId: string, year: number, month: number) {
     const supabase = createClient();

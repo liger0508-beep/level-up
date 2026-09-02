@@ -24,10 +24,13 @@ import { createClient } from "@/lib/supabase/client";
 import { fetchLatestScoreByPlayer, ScoreData } from "@/lib/score-sync";
 import { uploadFile } from "@/lib/storage-sync";
 import { Target, AlertTriangle, FileText, ChevronRight, TrendingDown, TrendingUp } from "lucide-react";
+import { FileUploadButton } from "@/components/ui/FileUploadButton";
+
+import { PageTitle, SectionTitle, LabelText } from "@/components/ui/Typography";
 
 const mockPlayers = ["이수진", "최민준", "김지윤", "박도윤", "이지원", "한상욱"];
 
-type ShotType = "good" | "miss" | "field";
+type ShotType = "good" | "miss";
 
 export default function CreateJournalPage() {
     const router = useRouter();
@@ -61,15 +64,22 @@ export default function CreateJournalPage() {
                 if (data.selectedPlayer) setSelectedPlayer(data.selectedPlayer);
                 if (data.trainingDate) setTrainingDate(data.trainingDate);
                 if (data.shotType) setShotType(data.shotType);
+                if (data.title) setTitle(data.title);
                 if (data.content) setContent(data.content);
-            } catch(e) {}
+            } catch (e) { }
         }
     }, []);
 
+    const isInitialMount = useRef(true);
+
     useEffect(() => {
-        const data = { selectedPlayer, trainingDate, shotType, content };
+        if (isInitialMount.current) {
+            isInitialMount.current = false;
+            return;
+        }
+        const data = { selectedPlayer, trainingDate, shotType, title, content };
         sessionStorage.setItem(JOURNAL_TEMP_KEY, JSON.stringify(data));
-    }, [selectedPlayer, trainingDate, shotType, content]);
+    }, [selectedPlayer, trainingDate, shotType, title, content]);
 
     // ── Fetch Player Journals for Ratio ──────────────────────────
     useEffect(() => {
@@ -81,11 +91,7 @@ export default function CreateJournalPage() {
     }, [selectedPlayer]);
 
     useEffect(() => {
-        if (shotType === "field" && selectedPlayer) {
-            fetchLatestScoreByPlayer(selectedPlayer, trainingDate).then(setLatestScore);
-        } else {
-            setLatestScore(null);
-        }
+        setLatestScore(null);
     }, [shotType, selectedPlayer, trainingDate]);
 
     useEffect(() => {
@@ -182,6 +188,7 @@ export default function CreateJournalPage() {
             sessionStorage.removeItem(JOURNAL_TEMP_KEY);
 
             alert("훈련일지가 등록되었습니다.");
+            sessionStorage.removeItem(JOURNAL_TEMP_KEY);
             router.push("/admin/training-journal");
         } catch (err: any) {
             console.error("Error submitting journal:", err?.message || err);
@@ -197,9 +204,6 @@ export default function CreateJournalPage() {
         }
         if (shotType === "miss") {
             return "미스샷을 반복하지 않도록 훈련중 안된 점을 상세히 기록해 주세요";
-        }
-        if (shotType === "field") {
-            return "라운드중 느낀점을 상세히 기록해 주세요";
         }
         return "훈련 내용을 상세히 기록해 주세요";
     }, [shotType]);
@@ -220,9 +224,9 @@ export default function CreateJournalPage() {
                     </button>
                     <div className="flex items-center gap-2">
                         <BookOpen size={22} className="text-brand-navy dark:text-brand-navy-light" />
-                        <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+                        <PageTitle>
                             훈련일지 작성
-                        </h1>
+                        </PageTitle>
                     </div>
                 </div>
 
@@ -230,9 +234,9 @@ export default function CreateJournalPage() {
 
                     {/* ── 1. 선수 선택 ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-3">
-                        <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                        <LabelText>
                             선수 선택
-                        </label>
+                        </LabelText>
                         {userRole === "athlete" ? (
                             <div className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/50 text-sm font-bold text-zinc-900 dark:text-zinc-100">
                                 {selectedPlayer}
@@ -250,9 +254,9 @@ export default function CreateJournalPage() {
 
                     {/* ── 2. 일지 작성일자 ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-3">
-                        <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                        <LabelText>
                             일지 작성일자 <span className="text-brand-red">*</span>
-                        </label>
+                        </LabelText>
                         <div className="relative">
                             <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
                             <DatePickerInput
@@ -304,10 +308,10 @@ export default function CreateJournalPage() {
 
                     {/* ── 4. 굿샷 / 미스샷 선택 ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-3">
-                        <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                        <LabelText>
                             구분 선택 <span className="text-brand-red">*</span>
-                        </label>
-                        <div className="grid grid-cols-3 gap-3">
+                        </LabelText>
+                        <div className="grid grid-cols-2 gap-3">
                             <button
                                 type="button"
                                 onClick={() => setShotType("good")}
@@ -340,129 +344,20 @@ export default function CreateJournalPage() {
                                 <AlertTriangle size={24} className="mb-0.5" />
                                 <span>미스샷</span>
                             </button>
-                            <button
-                                type="button"
-                                onClick={() => setShotType("field")}
-                                className={cn(
-                                    "relative flex flex-col items-center justify-center gap-2 py-5 rounded-2xl border-2 font-bold text-sm transition-all duration-200 active:scale-95",
-                                    shotType === "field"
-                                        ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-md shadow-indigo-500/10"
-                                        : "border-zinc-200 dark:border-zinc-700 bg-transparent text-zinc-500 dark:text-zinc-400 hover:border-indigo-300"
-                                )}
-                            >
-                                {shotType === "field" && (
-                                    <CheckCircle2 size={16} className="absolute top-3 right-3 text-indigo-500" />
-                                )}
-                                <FileText size={24} className="mb-0.5" />
-                                <span>필드노트</span>
-                            </button>
+                        </div>
+                        <div className="text-[12px] text-zinc-500 mt-2">
+                            * 실수보다 굿샷 내용을 70% 이상 기록하는 것이 효과적입니다.
                         </div>
                     </section>
 
-                    {/* ── Latest Score (Field Note Only) ── */}
-                    {shotType === "field" && (
-                        <div className="mt-5 pt-5 border-t border-zinc-100 dark:border-zinc-800/50">
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-2">
-                                    <Trophy size={14} className="text-amber-500" />
-                                    <h3 className="text-[11px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">최근 스코어 정보</h3>
-                                </div>
-                                {latestScore && (
-                                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold text-zinc-500">
-                                        <Calendar size={10} />
-                                        {latestScore.date.replace(/-/g, ".")}
-                                    </div>
-                                )}
-                            </div>
-                            
-                            {latestScore ? (
-                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-[1.5rem] p-5 border border-zinc-100 dark:border-zinc-800 space-y-5">
-                                    <div className="flex items-center justify-between">
-                                        <div className="space-y-0.5">
-                                            <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{latestScore.courseName}</p>
-                                            <p className="text-[11px] text-zinc-400 font-medium">{latestScore.title}</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className={cn(
-                                                "text-2xl font-black tracking-tighter leading-none",
-                                                latestScore.score < 72 ? "text-red-500" : latestScore.score > 72 ? "text-blue-500" : "text-zinc-900 dark:text-zinc-100"
-                                            )}>
-                                                {latestScore.score}타
-                                            </div>
-                                            <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mt-1">Final Score</p>
-                                        </div>
-                                    </div>
 
-                                    <div className="grid grid-cols-4 gap-2">
-                                        {[
-                                            { label: "티샷", val: latestScore.teeShotSG },
-                                            { label: "세컨샷", val: latestScore.secondShotSG },
-                                            { label: "그린주변", val: latestScore.aroundGreenSG },
-                                            { label: "퍼팅", val: latestScore.puttingSG }
-                                        ].map((item, i) => (
-                                            <div key={i} className="bg-white dark:bg-zinc-900/50 p-2.5 rounded-xl border border-zinc-100 dark:border-zinc-800/60 text-center">
-                                                <p className="text-[10px] font-bold text-zinc-400 mb-1">{item.label}</p>
-                                                <p className={cn(
-                                                    "text-[13px] font-black tracking-tight",
-                                                    item.val < 0 ? "text-red-500" : item.val > 0 ? "text-blue-500" : "text-zinc-600 dark:text-zinc-400"
-                                                )}>
-                                                    {item.val > 0 ? `+${item.val.toFixed(2)}` : item.val.toFixed(2)}
-                                                </p>
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    <div className="flex items-start gap-6 pt-1">
-                                        <div className="flex-1 space-y-2">
-                                            <div className="flex items-center gap-1.5">
-                                                <Trophy size={14} className="text-amber-500" />
-                                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight">Strong</span>
-                                            </div>
-                                            <div className="px-3 py-2 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 text-[11px] font-black text-red-600 dark:text-red-400 text-center">
-                                                {latestScore.strongPoint}
-                                            </div>
-                                        </div>
-
-                                        <div className="flex-[2] space-y-2">
-                                            <div className="flex items-center gap-1.5">
-                                                <AlertTriangle size={14} className="text-blue-500" />
-                                                <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight">Weak</span>
-                                            </div>
-                                            <div className="flex gap-2">
-                                                {latestScore.weakPoints.map((wp, idx) => (
-                                                    <div key={idx} className="flex-1 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-[11px] font-black text-blue-600 dark:text-blue-400 text-center">
-                                                        {wp}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="pt-2 flex justify-end">
-                                        <Link 
-                                            href={`/scores/${latestScore.id}`}
-                                            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-navy text-white text-[11px] font-bold hover:bg-brand-navy/90 transition-all shadow-md shadow-brand-navy/10 active:scale-95"
-                                        >
-                                            상세 분석
-                                            <ChevronRight size={14} />
-                                        </Link>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl p-8 border border-dashed border-zinc-200 dark:border-zinc-800 flex flex-col items-center justify-center gap-2">
-                                    <BarChart3 size={24} className="text-zinc-300 mb-1" />
-                                    <p className="text-xs font-bold text-zinc-400">등록된 최신 스코어가 없습니다.</p>
-                                </div>
-                            )}
-                        </div>
-                    )}
 
                     {/* ── 5. 제목 & 내용 ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-4">
                         <div className="space-y-2">
-                            <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                            <LabelText>
                                 내용 <span className="text-brand-red">*</span>
-                            </label>
+                            </LabelText>
                             <textarea
                                 rows={6}
                                 value={content}
@@ -475,16 +370,16 @@ export default function CreateJournalPage() {
 
                     {/* ── 6. 첨부파일 ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-3">
-                        <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                        <LabelText>
                             첨부파일
-                        </label>
+                        </LabelText>
                         <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
-                            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-dashed border-zinc-300 dark:border-zinc-600 bg-zinc-50 dark:bg-zinc-800 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:border-brand-navy/60 hover:text-brand-navy dark:hover:text-brand-navy-light transition-all w-full justify-center"
+                            className="flex items-center w-fit gap-2 px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
                         >
-                            <Upload size={16} />
-                            파일 선택 (이미지, 영상)
+                            <Upload size={16} className="text-zinc-500" />
+                            파일 추가
                         </button>
                         <input
                             ref={fileInputRef}
@@ -538,15 +433,15 @@ export default function CreateJournalPage() {
                         </button>
                         <button
                             type="submit"
-                            disabled={!isValid}
+                            disabled={!isValid || isSubmitting}
                             className={cn(
                                 "px-6 py-2.5 rounded-xl text-sm font-semibold transition-all shadow-sm",
-                                isValid
+                                (isValid && !isSubmitting)
                                     ? "bg-brand-red hover:bg-brand-red-dark text-white active:scale-95"
                                     : "bg-zinc-200 dark:bg-zinc-700 text-zinc-400 cursor-not-allowed"
                             )}
                         >
-                            등록하기
+                            {isSubmitting ? "등록 중..." : "등록하기"}
                         </button>
                     </div>
 

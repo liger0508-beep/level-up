@@ -43,6 +43,7 @@ export default function TournamentAdminPage() {
     const [hasMounted, setHasMounted] = useState(false);
     const [savedOk, setSavedOk] = useState(false);
     const [deletedIds, setDeletedIds] = useState<string[]>([]);
+    const originalTournamentsRef = useRef<Tournament[]>([]);
 
     // Month navigation
     const today = new Date();
@@ -73,6 +74,7 @@ export default function TournamentAdminPage() {
             });
 
             setAllTournaments(migrated);
+            originalTournamentsRef.current = JSON.parse(JSON.stringify(migrated)); // deep copy
 
             // Initialize playerInput from existing players
             const inputs: Record<string, string> = {};
@@ -172,8 +174,12 @@ export default function TournamentAdminPage() {
     };
 
     const handleSave = async () => {
+        // 0. Clean up completely empty rows (usually newly added but left empty)
+        const validTournaments = allTournaments.filter(t => t.name.trim() || t.date.trim());
+        const validMonthTournaments = monthTournaments.filter(t => t.name.trim() || t.date.trim());
+
         // 1. Required field validation (Name, Date)
-        for (const t of monthTournaments) {
+        for (const t of validMonthTournaments) {
             if (!t.name.trim()) {
                 alert("대회명을 입력해 주세요.");
                 return;
@@ -191,7 +197,7 @@ export default function TournamentAdminPage() {
 
         const normalizedAthletes = athletes.map(a => a.normalize("NFC"));
 
-        monthTournaments.forEach(t => {
+        validMonthTournaments.forEach(t => {
             const raw = playerInput[t.id] ?? "";
             const names = raw.split(",").map(s => s.trim().normalize("NFC")).filter(Boolean);
             
@@ -213,27 +219,50 @@ export default function TournamentAdminPage() {
         }
 
         // 3. Commit latest playerInput to actual players array before saving
-        const toSave = allTournaments.map(t => ({
+        const toSave = validTournaments.map(t => ({
             ...t,
             players: (playerInput[t.id] ?? "").split(",").map((s: string) => s.trim()).filter(Boolean),
-        }));
+        })).filter(t => {
+            const orig = originalTournamentsRef.current.find(o => o.id === t.id);
+            if (!orig) return true; // new tournament
+            return orig.name !== t.name || 
+                   orig.date !== t.date || 
+                   orig.year !== t.year || 
+                   orig.venue !== t.venue || 
+                   orig.category !== t.category || 
+                   JSON.stringify(orig.players) !== JSON.stringify(t.players);
+        });
         
         try {
+            if (toSave.length === 0 && deletedIds.length === 0) {
+                // Nothing changed
+                setSavedOk(true);
+                setTimeout(() => setSavedOk(false), 2500);
+                return;
+            }
             await saveAllTournaments(toSave, deletedIds);
             setDeletedIds([]); // Clear deleted tracking after successful save
             
             // Re-fetch or update local state to ensure consistency
-            setAllTournaments(toSave.sort((a, b) => {
+            const updatedAll = allTournaments.map(t => ({
+                ...t,
+                players: (playerInput[t.id] ?? "").split(",").map((s: string) => s.trim()).filter(Boolean),
+            })).filter(t => t.name.trim() || t.date.trim());
+
+            updatedAll.sort((a, b) => {
                 const aDate = a.date.split("~")[0].trim();
                 const bDate = b.date.split("~")[0].trim();
                 return bDate.localeCompare(aDate);
-            }));
+            });
+            
+            setAllTournaments(updatedAll);
+            originalTournamentsRef.current = JSON.parse(JSON.stringify(updatedAll));
 
             setSavedOk(true);
             setTimeout(() => setSavedOk(false), 2500);
-        } catch (err) {
+        } catch (err: any) {
             console.error("Save failed:", err);
-            alert("저장에 실패했습니다. 다시 시도해 주세요.");
+            alert("저장에 실패했습니다: " + JSON.stringify(err));
         }
     };
 
@@ -315,7 +344,7 @@ export default function TournamentAdminPage() {
                                     onChange={(e) => handleUpdate(t.id, "category", e.target.value as TournamentCategory)}
                                 >
                                     {CATEGORIES.map(cat => (
-                                        <option key={cat} value={cat}>{cat}</option>
+                                        <option key={cat} value={cat} className="text-center">{cat}</option>
                                     ))}
                                 </select>
                             </div>
@@ -434,7 +463,7 @@ export default function TournamentAdminPage() {
                                     onChange={(e) => handleUpdate(t.id, "category", e.target.value as TournamentCategory)}
                                 >
                                     {CATEGORIES.map(cat => (
-                                        <option key={cat} value={cat}>{cat}</option>
+                                        <option key={cat} value={cat} className="text-center">{cat}</option>
                                     ))}
                                 </select>
                                 <button

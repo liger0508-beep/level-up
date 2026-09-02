@@ -57,7 +57,7 @@ const SectionHeader = ({ title, icon: Icon, badge, className }: { title: string;
 );
 
 const IndicatorCard = ({ label, value, unit, icon: Icon, colorClass = "text-brand-navy" }: { label: string; value: string | number; unit?: string; icon: any; colorClass?: string }) => (
-    <div className="bg-zinc-50/50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800/50 p-4 rounded-2xl flex flex-col justify-between h-full">
+    <div className="bg-white dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800/50 p-4 rounded-2xl flex flex-col justify-between h-full">
         <div className="flex items-center gap-1.5 mb-3 text-[14px] font-bold text-zinc-500 dark:text-zinc-400 uppercase tracking-tight">
             <Icon size={14} className="text-zinc-400 shrink-0" />
             {label}
@@ -90,6 +90,8 @@ export default function ScoreStatsPage() {
     const router = useRouter();
     const [mode, setMode] = useState<"score" | "contribution">("score");
     const [loading, setLoading] = useState(true);
+    const [userRole, setUserRole] = useState<string | null>(null);
+    const [userName, setUserName] = useState<string>("");
     
     const [activePreset, setActivePreset] = useState<DatePresetType>("custom");
     const [selectedPlayers, setSelectedPlayers] = useState<Set<string>>(new Set());
@@ -165,9 +167,13 @@ export default function ScoreStatsPage() {
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) return;
             const { data: profile } = await supabase.from("users").select("role, name").eq("id", user.id).single();
-            if (profile && profile.role === 'athlete') {
-                setSelectedPlayers(new Set([profile.name]));
-                handleFetch(new Set([profile.name]));
+            if (profile) {
+                setUserRole(profile.role);
+                setUserName(profile.name);
+                if (profile.role === 'athlete' || profile.role === 'parent') {
+                    setSelectedPlayers(new Set([profile.name]));
+                    handleFetch(new Set([profile.name]));
+                }
             }
             setLoading(false);
         };
@@ -282,21 +288,23 @@ export default function ScoreStatsPage() {
         const greenSG = combinedResult.reduce((s, h) => s + (h.summary.distSG_Pitch31_89 + h.summary.distSG_Bunker + h.summary.distSG_Approach), 0) / numRounds;
         const puttingSG = combinedResult.reduce((s, h) => s + (h.summary.distSG_Putt9Plus + h.summary.distSG_Putt4_8 + h.summary.distSG_Putt2_3 + h.summary.distSG_Putt1), 0) / numRounds;
 
-        const cats = [
-            { name: "티샷 비거리", sg: combinedResult.reduce((s, h) => s + h.summary.distSG_DriverDist, 0) / numRounds },
-            { name: "티샷 정확도", sg: combinedResult.reduce((s, h) => s + h.summary.distSG_DriverAcc, 0) / numRounds },
-            { name: "180M이상", sg: combinedResult.reduce((s, h) => s + h.summary.distSG_180Plus, 0) / numRounds },
-            { name: "150-179M", sg: combinedResult.reduce((s, h) => s + h.summary.distSG_150_179, 0) / numRounds },
-            { name: "120-149M", sg: combinedResult.reduce((s, h) => s + h.summary.distSG_120_149, 0) / numRounds },
-            { name: "90-119M", sg: combinedResult.reduce((s, h) => s + h.summary.distSG_90_119, 0) / numRounds },
-            { name: "피치샷", sg: combinedResult.reduce((s, h) => s + h.summary.distSG_Pitch31_89, 0) / numRounds },
-            { name: "벙커", sg: combinedResult.reduce((s, h) => s + h.summary.distSG_Bunker, 0) / numRounds },
-            { name: "어프로치", sg: combinedResult.reduce((s, h) => s + h.summary.distSG_Approach, 0) / numRounds },
-            { name: "9M이상", sg: combinedResult.reduce((s, h) => s + h.summary.distSG_Putt9Plus, 0) / numRounds },
-            { name: "4-8M", sg: combinedResult.reduce((s, h) => s + h.summary.distSG_Putt4_8, 0) / numRounds },
-            { name: "2-3M", sg: combinedResult.reduce((s, h) => s + h.summary.distSG_Putt2_3, 0) / numRounds },
-            { name: "1M", sg: combinedResult.reduce((s, h) => s + h.summary.distSG_Putt1, 0) / numRounds },
-        ];
+        const CATEGORY_TO_FIELD: Record<string, string> = {
+            "티샷 비거리": "distSG_DriverDist", "티샷 정확도": "distSG_DriverAcc",
+            "180M이상": "distSG_180Plus", "150-179M": "distSG_150_179",
+            "120-149M": "distSG_120_149", "90-119M": "distSG_90_119",
+            "피치샷": "distSG_Pitch31_89", "벙커": "distSG_Bunker",
+            "어프로치": "distSG_Approach",
+            "9M이상": "distSG_Putt9Plus", "4-8M": "distSG_Putt4_8",
+            "2-3M": "distSG_Putt2_3", "1M": "distSG_Putt1",
+        };
+        const cats = Object.entries(CATEGORY_TO_FIELD).map(([name, field]) => {
+            const maxSg = Math.max(...combinedResult.map(h => (h.summary as any)[field] || 0));
+            return {
+                name,
+                sg: combinedResult.reduce((s, h) => s + ((h.summary as any)[field] || 0), 0) / numRounds,
+                maxSg
+            };
+        });
 
         const totalAbsSG = cats.reduce((s, c) => s + Math.abs(c.sg), 0);
         const contributions = cats.map(c => ({
@@ -324,6 +332,42 @@ export default function ScoreStatsPage() {
         const fairwayHitRate = fwHoles.length > 0 ? (fwHits / fwHoles.length) * 100 : 0;
         const girHits = combinedResult.filter(h => h.summary.gir === 'O').length;
         const girRate = combinedResult.length > 0 ? (girHits / combinedResult.length) * 100 : 0;
+
+        const missedGirHoles = combinedResult.filter(h => h.summary.gir !== 'O');
+        const parSaves = missedGirHoles.filter(h => h.score <= h.par).length;
+        const parSaveRate = missedGirHoles.length > 0 ? (parSaves / missedGirHoles.length) * 100 : 0;
+
+        let totalBogeyOrWorseForBounceBack = 0;
+        let totalBounceBacks = 0;
+        let totalBirdieOrBetter = 0;
+
+        activeScs.forEach(sc => {
+            const holes = analysisMap[sc.id] || [];
+            const sortedHoles = [...holes].sort((a, b) => a.holeNumber - b.holeNumber);
+            
+            for (let i = 0; i < sortedHoles.length; i++) {
+                const h = sortedHoles[i];
+                if (h.score > 0 && h.score !== -1) {
+                    if (h.score <= h.par - 1) {
+                        totalBirdieOrBetter++;
+                    }
+                    if (h.score >= h.par + 1) {
+                        if (i + 1 < sortedHoles.length) {
+                            const nextH = sortedHoles[i + 1];
+                            if (nextH.score > 0 && nextH.score !== -1) {
+                                totalBogeyOrWorseForBounceBack++;
+                                if (nextH.score <= nextH.par - 1) {
+                                    totalBounceBacks++;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        const bounceBackRate = totalBogeyOrWorseForBounceBack > 0 ? (totalBounceBacks / totalBogeyOrWorseForBounceBack) * 100 : 0;
+        const avgBirdieOrBetter = numRounds > 0 ? (totalBirdieOrBetter / numRounds) : 0;
 
         const getRelScore = (holes: HoleAnalysis[]) => {
             const played = holes.filter(h => h.score > 0 && h.score !== -1);
@@ -399,7 +443,7 @@ export default function ScoreStatsPage() {
         }));
 
         const strongPoint = [...cats].sort((a, b) => a.sg - b.sg)[0]?.name || "-";
-        const positiveCats = contributions.filter(c => c.sg > 0).sort((a, b) => b.percent - a.percent);
+        const positiveCats = contributions.filter(c => c.maxSg > 0).sort((a, b) => b.sg - a.sg);
         const challengePoint1 = positiveCats[0]?.name || "-";
         const challengePoint2 = positiveCats[1]?.name || "-";
 
@@ -408,12 +452,14 @@ export default function ScoreStatsPage() {
             scoreVsContent: formatScore(scoreVsContent),
             longVsShort: formatScore(longVsShort),
             avgMetrics: [
-                { label: "페어웨이 안착률", value: roundToOne(fairwayHitRate), unit: "%" },
-                { label: "그린 적중률", value: roundToOne(girRate), unit: "%" },
-                { label: "평균 퍼트수", value: roundToOne(totalPutts), unit: "개" },
-                { label: "평균 남은 거리", value: roundToOne(avgFirstPuttDist), unit: "m" },
-                { label: "평균 3퍼트 이상", value: roundToOne(threePuttCount), unit: "회" },
-                { label: "평균 패널티/OB", value: roundToOne(totalPA + totalOB), unit: "개" }
+                { label: "페어웨이 안착률", value: (fairwayHitRate || 0).toFixed(1), unit: "%" },
+                { label: "그린 적중률", value: (girRate || 0).toFixed(1), unit: "%" },
+                { label: "파세이브률", value: (parSaveRate || 0).toFixed(1), unit: "%" },
+                { label: "퍼트수", value: roundToOne(totalPutts), unit: "개" },
+                { label: "3퍼트 이상", value: roundToOne(threePuttCount), unit: "회" },
+                { label: "패널티/OB", value: roundToOne(totalPA + totalOB), unit: "개" },
+                { label: "Bounce Back", value: bounceBackRate.toFixed(1), unit: "%" },
+                { label: "버디 이상수", value: roundToOne(avgBirdieOrBetter), unit: "개" }
             ],
             sectorChanges: [
                 { 
@@ -521,11 +567,40 @@ export default function ScoreStatsPage() {
                                     <DatePickerInput value={endDate} onClick={(e:any)=>e.target.showPicker?.()} onChange={(e)=>setEndDate(e.target.value)} className="no-year-date flex-1 min-w-0 px-2 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-[13px] text-center" />
                                 </div>
                             </div>
-                            <div className="mt-3 flex items-end gap-2">
-                                <button onClick={handleFetchAll} className="px-4 py-2.5 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 text-sm font-bold shrink-0">전체</button>
-                                <AthleteSearch multi={true} selectedNames={Array.from(selectedPlayers)} onSelect={togglePlayer} onRemove={handlePlayerRemove} placeholder="선수 검색..." />
-                                <button onClick={() => handleFetch()} className="px-5 py-2.5 rounded-xl bg-brand-navy text-white text-sm font-bold flex items-center gap-2 shrink-0"><Search size={16} /> 조회</button>
-                            </div>
+                            {userRole !== 'athlete' && userRole !== 'parent' ? (
+                                <div className="mt-3">
+                                    <div className="flex items-center gap-2">
+                                        <label className="w-24 shrink-0 text-center text-sm font-semibold text-zinc-700 dark:text-zinc-300">선수명</label>
+                                        <div className="flex-1 min-w-0">
+                                            <AthleteSearch multi={true} showChips={false} selectedNames={Array.from(selectedPlayers)} onSelect={togglePlayer} onRemove={handlePlayerRemove} placeholder="선수 검색..." />
+                                        </div>
+                                        <button onClick={() => handleFetch()} className="px-4 py-2 sm:px-5 rounded-xl bg-brand-navy text-white text-sm font-bold flex items-center justify-center gap-2 shrink-0"><Search size={16} /> 조회</button>
+                                    </div>
+                                    {selectedPlayers.size > 0 && (
+                                        <div className="flex flex-wrap gap-1.5 mt-2" style={{ paddingLeft: '104px' }}>
+                                            {Array.from(selectedPlayers).map((name) => (
+                                                <span key={name} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 text-xs font-medium border border-blue-200 dark:border-blue-800">
+                                                    {name}
+                                                    <button type="button" onClick={() => handlePlayerRemove(name)}
+                                                        className="hover:text-blue-600 dark:hover:text-blue-100 transition-colors">
+                                                        <X size={12} />
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="mt-3">
+                                    <div className="flex items-center gap-2">
+                                        <label className="w-24 shrink-0 text-center text-sm font-semibold text-zinc-700 dark:text-zinc-300">선수명</label>
+                                        <div className="flex-1 min-w-0 flex items-center justify-center py-2 px-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-[13px] font-bold text-zinc-600 dark:text-zinc-400">
+                                            {userName}
+                                        </div>
+                                        <button onClick={() => handleFetch(new Set([userName]))} className="px-4 py-2 sm:px-5 rounded-xl bg-brand-navy text-white text-sm font-bold flex items-center justify-center gap-2 shrink-0"><Search size={16} /> 조회</button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         <section>
@@ -596,7 +671,7 @@ export default function ScoreStatsPage() {
                                     <button onClick={() => setIsTagsExpanded(!isTagsExpanded)} className="w-full px-6 py-4 flex items-center justify-between text-sm font-bold text-zinc-700 hover:bg-zinc-50 transition-colors">
                                         <div className="flex items-center gap-2">
                                             <Activity size={16} className="text-brand-navy" /> 
-                                            조회된 리스트 ({allScorecards.filter(sc => (sc.athlete?.name || "미지정") === selectedDetailAthlete).length}건 {excludedIds.size > 0 && `/ 제외 ${excludedIds.size}건`})
+                                            스코어카드 적용 ({allScorecards.filter(sc => (sc.athlete?.name || "미지정") === selectedDetailAthlete).length - excludedIds.size}건)
                                         </div>
                                         <ChevronRight size={18} className={cn("transition-transform", isTagsExpanded ? "rotate-90" : "")} />
                                     </button>
@@ -697,7 +772,7 @@ export default function ScoreStatsPage() {
                                             "p-6 rounded-[2.5rem] shadow-sm border flex items-center justify-center h-32 relative overflow-hidden transition-all",
                                             isUnder ? "bg-red-50/30 border-red-100 dark:bg-red-900/10 dark:border-red-800/30" :
                                             isOver ? "bg-blue-50/30 border-blue-100 dark:bg-blue-900/10 dark:border-blue-800/30" :
-                                            "bg-zinc-50/50 border-zinc-200 dark:bg-zinc-800/20 dark:border-zinc-800"
+                                            "bg-white border-zinc-200 dark:bg-zinc-800/20 dark:border-zinc-800"
                                         )}>
                                             <div className="absolute left-6 text-[11px] font-black uppercase tracking-widest opacity-60 text-zinc-400">Average Score</div>
                                             <div className="flex items-baseline gap-2">
@@ -713,7 +788,7 @@ export default function ScoreStatsPage() {
                                 <div className="grid grid-cols-3 gap-4">
                                     <SummaryBox label={<>플레이<br/>내용</>} value={summary.playContent} icon={Flag} />
                                     <SummaryBox label={<>내용 대비<br/>스코어</>} value={summary.scoreVsContent} icon={Target} />
-                                    <SummaryBox label={<>롱/숏게임<br/>대비</>} value={summary.longVsShort} icon={Zap} />
+                                    <SummaryBox label={<>롱게임<br/>대비<br/>숏게임</>} value={summary.longVsShort} icon={Zap} />
                                 </div>
                                 
                                 <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 shadow-sm border border-zinc-200">
@@ -750,14 +825,13 @@ export default function ScoreStatsPage() {
                                                         "p-3 sm:p-5 rounded-[1.5rem] sm:rounded-[2rem] border flex flex-col gap-2 sm:gap-3 transition-all",
                                                         isPositive ? "bg-blue-50/30 border-blue-100 dark:bg-blue-900/10 dark:border-blue-800/30" : "bg-red-50/30 border-red-100 dark:bg-red-900/10 dark:border-red-800/30"
                                                     )}>
-                                                        <div className="flex justify-between items-start">
-                                                            <p className="text-[13px] font-black text-zinc-400 uppercase tracking-tight mb-1">{sc.type}</p>
-                                                            <p className={cn("text-2xl font-black tracking-tighter", isPositive ? "text-blue-500" : "text-red-500")}>
+                                                        <div className="flex flex-col">
+                                                            <p className="text-[13px] font-black text-zinc-400 uppercase tracking-tight">{sc.type}</p>
+                                                            <p className={cn("text-2xl font-black tracking-tighter text-right mt-1", isPositive ? "text-blue-500" : "text-red-500")}>
                                                                 {sc.value}
                                                             </p>
                                                         </div>
-                                                        
-                                                        <div className="space-y-1.5 pt-2 border-t border-zinc-100/50 dark:border-zinc-800/50">
+                                                        <div className="space-y-1.5 pt-3 mt-1 border-t border-zinc-100/50 dark:border-zinc-800/50">
                                                             {sc.items.map((item: any, iIdx: number) => (
                                                                 <div key={iIdx} className="flex justify-between items-center text-[13px] font-bold">
                                                                     <span className="text-zinc-500 dark:text-zinc-400">{item.name}</span>
@@ -897,19 +971,23 @@ export default function ScoreStatsPage() {
                                 </section>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-7 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col items-start justify-center gap-1">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <TrophyIcon size={18} className="text-red-500" />
-                                            <span className="text-[12px] font-black uppercase tracking-tight text-zinc-500 dark:text-zinc-400">Strong Point</span>
-                                        </div>
-                                        <h3 className="w-full text-left text-2xl font-black text-zinc-900 dark:text-zinc-50 tracking-tighter leading-tight mt-2">{summary.strongPoint}</h3>
-                                    </div>
-                                    <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-7 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col items-start justify-center gap-1">
+                                    <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-7 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col items-start justify-start gap-1">
                                         <div className="flex items-center gap-2 mb-4">
-                                            <TrendingDown size={18} className="text-brand-navy dark:text-brand-navy-light" />
-                                            <span className="text-[12px] font-black uppercase tracking-tight text-zinc-500 dark:text-zinc-400">Challenge Point</span>
+                                            <div className="w-8 h-8 rounded-lg bg-red-50 dark:bg-red-900/10 flex items-center justify-center text-red-500">
+                                                <TrophyIcon size={18} />
+                                            </div>
+                                            <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-50 uppercase tracking-wide">Strong Point</h2>
                                         </div>
-                                        <div className="space-y-4 flex flex-col items-start w-full">
+                                        <h3 className="w-full text-center text-2xl font-black text-zinc-900 dark:text-zinc-50 tracking-tighter leading-tight mt-2 flex-1 flex items-center justify-center">{summary.strongPoint}</h3>
+                                    </div>
+                                    <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-7 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col items-start justify-start gap-1">
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-brand-navy dark:text-brand-navy-light">
+                                                <TrendingDown size={18} />
+                                            </div>
+                                            <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-50 uppercase tracking-wide">Challenge Point</h2>
+                                        </div>
+                                        <div className="space-y-4 flex flex-col items-start w-full mt-2 flex-1 justify-center">
                                             <div className="flex items-center gap-4">
                                                 <span className="w-7 h-7 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[12px] font-black text-zinc-500 shrink-0">1</span>
                                                 <span className="text-[20px] font-black text-zinc-800 dark:text-zinc-200 tracking-tight">{summary.challengePoint1}</span>

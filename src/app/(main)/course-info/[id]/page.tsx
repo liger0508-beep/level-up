@@ -275,9 +275,41 @@ export default function CourseInfoDetailPage() {
 
                 {/* ── Content (Text) ── */}
                 <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-3xl shadow-sm min-h-[150px]">
-                    <div className="whitespace-pre-wrap text-sm sm:text-base text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                    <div className="whitespace-pre-wrap text-sm sm:text-base text-zinc-700 dark:text-zinc-300 leading-relaxed mb-6">
                         {courseDescription || "작성된 상세 내용이 없습니다."}
                     </div>
+
+                    {parsedContent.attachments && parsedContent.attachments.length > 0 && (
+                        <div className="pt-6 border-t border-zinc-100 dark:border-zinc-800">
+                            <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2 mb-4">
+                                <Paperclip size={16} className="text-zinc-400" />
+                                첨부파일
+                            </h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {parsedContent.attachments.map((url: string, idx: number) => {
+                                    const fileName = url.split('/').pop() || `첨부파일 ${idx + 1}`;
+                                    const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(fileName);
+                                    
+                                    if (isImage) {
+                                        return (
+                                            <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="block rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50 transition-colors">
+                                                <img src={url} alt={fileName} className="w-full h-32 object-cover" />
+                                            </a>
+                                        );
+                                    }
+                                    
+                                    return (
+                                        <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors">
+                                            <div className="w-10 h-10 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shrink-0">
+                                                <Paperclip size={16} className="text-zinc-500" />
+                                            </div>
+                                            <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">{fileName}</span>
+                                        </a>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
                 </section>
                 
                 {/* ── Hole Information Accordion ── */}

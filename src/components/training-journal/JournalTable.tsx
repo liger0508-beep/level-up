@@ -1,19 +1,21 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Journal, JournalType, JOURNAL_TYPE_LABELS } from "@/lib/journal-sync";
+import { Journal, JournalType, JOURNAL_TYPE_LABELS, getPlainText } from "@/lib/journal-sync";
 import { cn } from "@/lib/utils";
-import { Paperclip } from "lucide-react";
+import { Paperclip, BookOpen } from "lucide-react";
 
 const typeConfig: Record<JournalType, {
     accentBorder: string;
     dotColor: string;
     labelColor: string;
+    iconBg: string;
+    iconColor: string;
 }> = {
-    all: { accentBorder: "border-l-indigo-400", dotColor: "bg-indigo-400", labelColor: "text-indigo-600 dark:text-indigo-400" },
-    good: { accentBorder: "border-l-emerald-500", dotColor: "bg-emerald-500", labelColor: "text-emerald-700 dark:text-emerald-400" },
-    miss: { accentBorder: "border-l-rose-500", dotColor: "bg-rose-500", labelColor: "text-rose-700 dark:text-rose-400" },
-    field: { accentBorder: "border-l-indigo-500", dotColor: "bg-indigo-500", labelColor: "text-indigo-700 dark:text-indigo-400" },
+    all: { accentBorder: "border-l-indigo-400", dotColor: "bg-indigo-400", labelColor: "text-indigo-600 dark:text-indigo-400", iconBg: "bg-indigo-50 dark:bg-indigo-500/10", iconColor: "text-indigo-500" },
+    good: { accentBorder: "border-l-emerald-500", dotColor: "bg-emerald-500", labelColor: "text-emerald-700 dark:text-emerald-400", iconBg: "bg-emerald-50 dark:bg-emerald-500/10", iconColor: "text-emerald-500" },
+    miss: { accentBorder: "border-l-rose-500", dotColor: "bg-rose-500", labelColor: "text-rose-700 dark:text-rose-400", iconBg: "bg-rose-50 dark:bg-rose-500/10", iconColor: "text-rose-500" },
+    field: { accentBorder: "border-l-indigo-500", dotColor: "bg-indigo-500", labelColor: "text-indigo-700 dark:text-indigo-400", iconBg: "bg-indigo-50 dark:bg-indigo-500/10", iconColor: "text-indigo-500" },
 };
 
 function getConfig(type: JournalType) {
@@ -22,9 +24,10 @@ function getConfig(type: JournalType) {
 
 interface JournalTableProps {
     journals: Journal[];
+    viewMode?: "list" | "content";
 }
 
-export function JournalTable({ journals }: JournalTableProps) {
+export function JournalTable({ journals, viewMode = "list" }: JournalTableProps) {
     const router = useRouter();
 
     return (
@@ -37,49 +40,56 @@ export function JournalTable({ journals }: JournalTableProps) {
                     return (
                         <button
                             key={journal.id}
-                            onClick={() => router.push(`/admin/training-journal/${journal.id}`)}
-                            className={cn(
-                                "w-full text-left bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 border-l-4 rounded-xl px-4 py-5 transition-all active:scale-[0.98] hover:shadow-md hover:-translate-y-px",
-                                cfg.accentBorder
-                            )}
+                            onClick={() => {
+                                sessionStorage.setItem("gla_journal_keep_alive", "true");
+                                router.push(journal.type === 'field' ? `/scores/field-notes/${journal.id}` : `/admin/training-journal/${journal.id}`);
+                            }}
+                            className="w-full text-left bg-white dark:bg-zinc-900 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-800 py-4 px-6 shadow-sm hover:border-brand-navy/30 hover:shadow-md transition-all group"
                         >
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                    <span className={cn("w-2 h-2 rounded-full shrink-0", cfg.dotColor)} />
-                                    <span className={cn("w-[3.8rem] text-[11px] font-bold uppercase tracking-widest shrink-0", cfg.labelColor)}>
-                                        {label}
-                                    </span>
-                                    <span className="mr-1.5 w-[1px] h-3 bg-zinc-200 dark:bg-zinc-700 shrink-0" />
-                                    <span className="text-[14px] font-bold text-zinc-900 dark:text-zinc-100 truncate">
-                                        {journal.athleteName}
-                                        {journal.type === 'field' && journal.fieldScore !== undefined && (
-                                            <span className="ml-1.5 text-[11px] font-medium font-normal">
-                                                (
-                                                <span className={cn(
-                                                    journal.fieldScore - (journal.fieldHoleCount === 9 ? 36 : 72) < 0 ? "text-red-500 font-bold" :
-                                                    journal.fieldScore - (journal.fieldHoleCount === 9 ? 36 : 72) > 0 ? "text-blue-500 font-bold" : "text-zinc-900 dark:text-zinc-100 font-bold"
-                                                )}>
-                                                    {journal.fieldScore}타
-                                                </span>
-                                                <span className="text-zinc-400"> • </span>
-                                                <span className="text-zinc-900 dark:text-zinc-100">{journal.fieldCourse}</span>
-                                                )
-                                            </span>
-                                        )}
-                                    </span>
-                                    {journal.isImportant && (
-                                        <span className="ml-1.5 shrink-0 text-[10px] font-bold text-red-500 border border-red-200 px-1 py-0.5 rounded bg-red-50">중요</span>
-                                    )}
-                                </div>
-                                <div className="flex items-center gap-0.5 shrink-0 pl-3">
-                                    {journal.media_urls && journal.media_urls.length > 0 && (
-                                        <Paperclip size={12} className="text-brand-navy mr-0.5" />
-                                    )}
-                                    <span className="text-[11px] text-zinc-400 font-medium">
-                                        {journal.date.slice(5).replace("-", ".")}
-                                    </span>
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                    <div className={cn("w-8 h-8 rounded-full flex items-center justify-center shrink-0", cfg.iconBg, cfg.iconColor)}>
+                                        <BookOpen size={16} />
+                                    </div>
+                                    <div className="flex flex-col items-start min-w-0">
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 truncate">{label}</span>
+                                            {journal.isImportant && (
+                                                <span className="shrink-0 text-[10px] font-bold text-red-500 border border-red-200 px-1.5 py-0.5 rounded-md bg-red-50 ml-1">중요</span>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
+
+                            {viewMode === "content" ? (
+                                <div className="flex gap-2 mt-3 items-start relative">
+                                    <div className="w-8 shrink-0 flex justify-center mt-0.5"></div>
+                                    <span className="flex-1 text-[12px] font-medium text-zinc-600 dark:text-zinc-300 line-clamp-2 leading-snug pr-8 text-left">
+                                        {journal.content ? getPlainText(journal.content) : "내용 없음"}
+                                    </span>
+                                    <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 shrink-0 mr-2 mt-auto">
+                                        {journal.athleteName}
+                                    </span>
+                                </div>
+                            ) : (
+                                <div className="flex items-end justify-between mt-3 relative">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-8 shrink-0 flex justify-center"></div>
+                                        <div className="flex items-center gap-1">
+                                            {journal.media_urls && journal.media_urls.length > 0 && (
+                                                <Paperclip size={12} className="text-brand-navy shrink-0" />
+                                            )}
+                                            <span className="text-[11px] font-bold text-zinc-400 shrink-0 mb-0.5">
+                                                {journal.date.slice(5).replace("-", ".")} <span className="opacity-40 font-normal mx-0.5">|</span> {journal.author}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 truncate mr-2">
+                                        {journal.athleteName}
+                                    </span>
+                                </div>
+                            )}
                         </button>
                     );
                 })}
@@ -103,7 +113,10 @@ export function JournalTable({ journals }: JournalTableProps) {
                             return (
                                 <tr
                                     key={journal.id}
-                                    onClick={() => router.push(`/admin/training-journal/${journal.id}`)}
+                                    onClick={() => {
+                                        sessionStorage.setItem("gla_journal_keep_alive", "true");
+                                        router.push(journal.type === 'field' ? `/scores/field-notes/${journal.id}` : `/admin/training-journal/${journal.id}`);
+                                    }}
                                     className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer"
                                 >
                                     <td className="py-3.5 px-4 text-center text-zinc-500 dark:text-zinc-500">
@@ -122,7 +135,7 @@ export function JournalTable({ journals }: JournalTableProps) {
                                                     (
                                                     <span className={cn(
                                                         journal.fieldScore - (journal.fieldHoleCount === 9 ? 36 : 72) < 0 ? "text-red-500 font-bold" :
-                                                        journal.fieldScore - (journal.fieldHoleCount === 9 ? 36 : 72) > 0 ? "text-blue-500 font-bold" : "text-zinc-900 dark:text-zinc-100 font-bold"
+                                                            journal.fieldScore - (journal.fieldHoleCount === 9 ? 36 : 72) > 0 ? "text-blue-500 font-bold" : "text-zinc-900 dark:text-zinc-100 font-bold"
                                                     )}>
                                                         {journal.fieldScore}타
                                                     </span>

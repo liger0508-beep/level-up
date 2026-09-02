@@ -67,6 +67,24 @@ export default function CoachesListPage() {
                         }));
                     setCoaches(loadedCoaches);
                 }
+
+                const isFromDetail = sessionStorage.getItem("gla_coaches_keep_alive") === "true";
+                if (isFromDetail) {
+                    const stored = sessionStorage.getItem("gla_coaches_filter");
+                    if (stored) {
+                        try {
+                            const parsed = JSON.parse(stored);
+                            if (parsed.searchQuery !== undefined) setSearchQuery(parsed.searchQuery);
+                            if (parsed.branchFilter !== undefined) setBranchFilter(parsed.branchFilter);
+                        } catch (e) {}
+                    }
+                    setTimeout(() => {
+                        sessionStorage.removeItem("gla_coaches_keep_alive");
+                    }, 100);
+                } else {
+                    sessionStorage.removeItem("gla_coaches_filter");
+                    sessionStorage.removeItem("gla_coaches_scroll");
+                }
             } catch (err) {
                 console.error("Failed to load coaches", err);
             } finally {
@@ -76,6 +94,31 @@ export default function CoachesListPage() {
 
         fetchCoaches();
     }, []);
+
+    // Save filter state to sessionStorage
+    useEffect(() => {
+        sessionStorage.setItem("gla_coaches_filter", JSON.stringify({
+            searchQuery,
+            branchFilter
+        }));
+    }, [searchQuery, branchFilter]);
+
+    // Scroll state management
+    useEffect(() => {
+        if (typeof window !== "undefined" && !isLoading) {
+            const savedScroll = sessionStorage.getItem("gla_coaches_scroll");
+            if (savedScroll) {
+                window.scrollTo(0, parseInt(savedScroll, 10));
+                sessionStorage.removeItem("gla_coaches_scroll");
+            }
+            
+            const handleScroll = () => {
+                sessionStorage.setItem("gla_coaches_scroll", window.scrollY.toString());
+            };
+            window.addEventListener("scroll", handleScroll);
+            return () => window.removeEventListener("scroll", handleScroll);
+        }
+    }, [isLoading]);
 
     const filteredCoaches = useMemo(() => {
         return coaches.filter((c) => {
@@ -119,7 +162,7 @@ export default function CoachesListPage() {
                         className={`whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200
                             ${branchFilter === "all"
                                 ? "bg-brand-navy text-white shadow-md border-brand-navy"
-                                : "bg-transparent text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 hover:bg-brand-navy-light dark:hover:bg-brand-navy-dark hover:text-brand-navy dark:hover:text-white"
+                                : "bg-white text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 hover:bg-brand-navy-light dark:hover:bg-brand-navy-dark hover:text-brand-navy dark:hover:text-white"
                             }`}
                     >
                         전체
@@ -131,7 +174,7 @@ export default function CoachesListPage() {
                             className={`whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200
                                 ${branchFilter === branch
                                     ? "bg-brand-navy text-white shadow-md border-brand-navy"
-                                    : "bg-transparent text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 hover:bg-brand-navy-light dark:hover:bg-brand-navy-dark hover:text-brand-navy dark:hover:text-white"
+                                    : "bg-white text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 hover:bg-brand-navy-light dark:hover:bg-brand-navy-dark hover:text-brand-navy dark:hover:text-white"
                                 }`}
                         >
                             {branch}
@@ -180,6 +223,7 @@ export default function CoachesListPage() {
                             <Link
                                 key={coach.id}
                                 href={`/system/coaches/${coach.id}`}
+                                onClick={() => sessionStorage.setItem("gla_coaches_keep_alive", "true")}
                                 className="block bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 hover:shadow-md hover:border-zinc-300 dark:hover:border-zinc-700 transition-all group"
                             >
                                 <div className="flex items-center gap-4">

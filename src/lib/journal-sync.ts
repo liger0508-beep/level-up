@@ -60,10 +60,10 @@ export function calculateShotRatio(journals: Journal[]) {
 
 // ── Database Operations ──────────────────────────────────────────
 
-export async function fetchJournalsByAthlete(athleteName: string): Promise<Journal[]> {
+export async function fetchJournalsByAthlete(athleteName: string, limit?: number): Promise<Journal[]> {
     try {
         const supabase = createClient();
-        const { data, error } = await supabase
+        let query = supabase
             .from("records")
             .select(`
                 id,
@@ -74,13 +74,16 @@ export async function fetchJournalsByAthlete(athleteName: string): Promise<Journ
                 training_start,
                 is_important,
                 keywords,
-                user:users!records_user_id_fkey(name),
+                user:users!records_user_id_fkey!inner(name),
                 coach:users!records_coach_id_fkey(name)
             `)
             .eq("type", "journal")
-            .eq("users.name", athleteName)
+            .eq("user.name", athleteName)
             .order("training_start", { ascending: false });
 
+        if (limit) query = query.limit(limit);
+
+        const { data, error } = await query;
         if (error) throw error;
 
         const parsedJournals = (data || []).map((item: any) => ({

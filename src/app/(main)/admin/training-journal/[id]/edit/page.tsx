@@ -1,4 +1,5 @@
 "use client";
+import { FileUploadButton } from "@/components/ui/FileUploadButton";
 
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
@@ -17,6 +18,8 @@ import { cn } from "@/lib/utils";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { Journal, JournalType, calculateShotRatio, getPlainText, fetchJournalById, updateJournal } from "@/lib/journal-sync";
 import { uploadFile } from "@/lib/storage-sync";
+
+import { PageTitle, SectionTitle, LabelText } from "@/components/ui/Typography";
 
 type ShotType = "good" | "miss" | "field";
 
@@ -72,7 +75,7 @@ export default function EditJournalPage() {
 
         try {
             setIsSubmitting(true);
-            
+
             // 1. Upload new files
             const newMediaUrls: string[] = [];
             for (const file of attachedFiles) {
@@ -126,9 +129,9 @@ export default function EditJournalPage() {
                     </button>
                     <div className="flex items-center gap-2">
                         <BookOpen size={22} className="text-brand-navy dark:text-brand-navy-light" />
-                        <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+                        <PageTitle>
                             훈련일지 수정
-                        </h1>
+                        </PageTitle>
                     </div>
                 </div>
 
@@ -136,9 +139,9 @@ export default function EditJournalPage() {
 
                     {/* ── 1. 훈련 일자 ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-3">
-                        <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                        <LabelText>
                             훈련 일자 <span className="text-brand-red">*</span>
-                        </label>
+                        </LabelText>
                         <div className="relative">
                             <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
                             <DatePickerInput
@@ -190,10 +193,10 @@ export default function EditJournalPage() {
 
                     {/* ── 3. 구분 선택 ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-3">
-                        <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                        <LabelText>
                             구분 선택 <span className="text-brand-red">*</span>
-                        </label>
-                        <div className="grid grid-cols-3 gap-3">
+                        </LabelText>
+                        <div className="grid grid-cols-2 gap-3">
                             <button
                                 type="button"
                                 onClick={() => setShotType("good")}
@@ -226,30 +229,17 @@ export default function EditJournalPage() {
                                 <span className="text-2xl">⚠️</span>
                                 <span>미스샷</span>
                             </button>
-                            <button
-                                type="button"
-                                onClick={() => setShotType("field")}
-                                className={cn(
-                                    "relative flex flex-col items-center justify-center gap-2 py-5 rounded-2xl border-2 font-bold text-sm transition-all duration-200 active:scale-95",
-                                    shotType === "field"
-                                        ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-md shadow-indigo-500/10"
-                                        : "border-zinc-200 dark:border-zinc-700 bg-transparent text-zinc-500 dark:text-zinc-400 hover:border-indigo-300"
-                                )}
-                            >
-                                {shotType === "field" && (
-                                    <CheckCircle2 size={16} className="absolute top-3 right-3 text-indigo-500" />
-                                )}
-                                <span className="text-2xl">📝</span>
-                                <span>필드노트</span>
-                            </button>
+                        </div>
+                        <div className="text-[12px] text-zinc-500 mt-2">
+                            * 실수보다 굿샷 내용을 70% 이상 기록하는 것이 효과적입니다.
                         </div>
                     </section>
 
                     {/* ── 4. 내용 ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-3">
-                        <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                        <LabelText>
                             내용 <span className="text-brand-red">*</span>
-                        </label>
+                        </LabelText>
                         <textarea
                             rows={6}
                             value={content}
@@ -261,9 +251,9 @@ export default function EditJournalPage() {
 
                     {/* ── 5. 첨부파일 ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-3">
-                        <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                        <LabelText>
                             첨부파일
-                        </label>
+                        </LabelText>
                         <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
@@ -288,8 +278,8 @@ export default function EditJournalPage() {
                                                     ) : (
                                                         <img src={url} alt="기존 파일" className="w-full h-full object-cover" />
                                                     )}
-                                                    <button 
-                                                        type="button" 
+                                                    <button
+                                                        type="button"
                                                         onClick={() => setExistingMedia(prev => prev.filter((_, i) => i !== idx))}
                                                         className="absolute top-1.5 right-1.5 p-1 bg-black/50 hover:bg-black/70 text-white rounded-full transition-colors opacity-0 group-hover:opacity-100"
                                                     >

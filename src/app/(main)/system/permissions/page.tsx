@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Shield, ChevronLeft, Save, RotateCcw, Eye, Pencil, Check, Info } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 // ── Types ──
 type Role = "admin" | "coach" | "athlete" | "parent";
@@ -17,21 +18,16 @@ interface MenuPermission {
 
 // ── Role metadata ──
 const roles: { key: Role; label: string; color: string; bgColor: string }[] = [
-    { key: "admin", label: "관리자", color: "text-purple-600 dark:text-purple-400", bgColor: "bg-purple-500/10" },
     { key: "coach", label: "코치", color: "text-blue-600 dark:text-blue-400", bgColor: "bg-blue-500/10" },
     { key: "athlete", label: "선수", color: "text-emerald-600 dark:text-emerald-400", bgColor: "bg-emerald-500/10" },
     { key: "parent", label: "학부모", color: "text-amber-600 dark:text-amber-400", bgColor: "bg-amber-500/10" },
 ];
 
-// ── Default permission data ──
+// ── Default permission data (Synced with latest SideNav) ──
 const defaultPermissions: MenuPermission[] = [
     // 메인 메뉴
     {
         menuKey: "home", label: "Home", section: "메인",
-        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
-    },
-    {
-        menuKey: "analysis", label: "분석", section: "메인",
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     {
@@ -42,18 +38,25 @@ const defaultPermissions: MenuPermission[] = [
         menuKey: "training", label: "훈련", section: "메인",
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
+
     {
-        menuKey: "tests", label: "테스트", section: "메인",
+        menuKey: "challenges", label: "챌린지", section: "메인",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+    },
+
+    // 참가 대회
+    {
+        menuKey: "tournament-schedule", label: "대회 스케쥴", section: "참가 대회",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+    },
+    {
+        menuKey: "tournament-results-view", label: "대회 결과", section: "참가 대회",
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
 
     // 스케쥴
     {
         menuKey: "schedule", label: "스케쥴", section: "스케쥴",
-        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
-    },
-    {
-        menuKey: "tournament-schedule", label: "대회 스케쥴", section: "스케쥴",
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     {
@@ -65,6 +68,10 @@ const defaultPermissions: MenuPermission[] = [
     {
         menuKey: "scores", label: "스코어", section: "스코어",
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
+    },
+    {
+        menuKey: "scores-stats", label: "스코어 통계", section: "스코어",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     
     // 라운지
@@ -104,14 +111,22 @@ const defaultPermissions: MenuPermission[] = [
         menuKey: "reports", label: "선수 레포트", section: "라운지",
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
+    {
+        menuKey: "coach-selection", label: "담임 코치 선택", section: "라운지",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
+    },
 
     // 운영/관리
     {
-        menuKey: "assigned-athletes", label: "담임 선수 배정", section: "운영/관리",
+        menuKey: "statistics", label: "운영 통계", section: "운영/관리",
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
-        menuKey: "statistics", label: "운영 통계", section: "운영/관리",
+        menuKey: "player-reports", label: "선수 레포트 작성", section: "운영/관리",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+    },
+    {
+        menuKey: "assigned-athletes", label: "담임 선수 배정", section: "운영/관리",
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
@@ -126,8 +141,16 @@ const defaultPermissions: MenuPermission[] = [
         menuKey: "training-list", label: "훈련 리스트 관리", section: "운영/관리",
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
+    {
+        menuKey: "challenge-list", label: "챌린지 컨텐츠 관리", section: "운영/관리",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+    },
 
     // 시스템 관리
+    {
+        menuKey: "attendance-kiosk", label: "출석체크 번호 입력", section: "시스템 관리",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
+    },
     {
         menuKey: "branches", label: "지점 관리", section: "시스템 관리",
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: false }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
@@ -141,37 +164,28 @@ const defaultPermissions: MenuPermission[] = [
         permissions: { admin: { read: true, write: true }, coach: { read: false, write: false }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
+        menuKey: "parents", label: "학부모 관리", section: "시스템 관리",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: false }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+    },
+    {
         menuKey: "permissions", label: "권한 관리", section: "시스템 관리",
         permissions: { admin: { read: true, write: true }, coach: { read: false, write: false }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
-        menuKey: "sys-tournament", label: "대회 스케쥴 등록", section: "시스템 관리",
-        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+        menuKey: "menu-management", label: "메뉴 관리", section: "시스템 관리",
+        permissions: { admin: { read: true, write: true }, coach: { read: false, write: false }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+    },
+    
+    // 테스트
+    {
+        menuKey: "temp-swing-skeleton", label: "스윙 테스트 (임시)", section: "테스트",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     {
-        menuKey: "sys-coach-trip", label: "출장 스케쥴 등록", section: "시스템 관리",
-        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
-    },
+        menuKey: "temp-swing-test", label: "복습 카메라 (임시)", section: "테스트",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+    }
 ];
-
-// ── Section colors ──
-const sectionColors: Record<string, string> = {
-    "메인": "border-l-blue-500",
-    "스케쥴": "border-l-cyan-500",
-    "스코어": "border-l-emerald-500",
-    "라운지": "border-l-indigo-500",
-    "운영/관리": "border-l-amber-500",
-    "시스템 관리": "border-l-purple-500",
-};
-
-const sectionBadgeColors: Record<string, string> = {
-    "메인": "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-    "스케쥴": "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",
-    "스코어": "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-    "라운지": "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
-    "운영/관리": "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-    "시스템 관리": "bg-purple-500/10 text-purple-600 dark:text-purple-400",
-};
 
 // ── Permission Toggle Component ──
 function PermToggle({
@@ -223,22 +237,45 @@ function PermToggle({
 // ── Main Page ──
 export default function PermissionsPage() {
     const router = useRouter();
-    const [permissions, setPermissions] = useState<MenuPermission[]>(
-        () => {
-            // Load from localStorage if available
-            if (typeof window !== "undefined") {
-                const saved = localStorage.getItem("gla_permissions");
-                if (saved) {
-                    try {
-                        return JSON.parse(saved);
-                    } catch { /* fallback */ }
-                }
-            }
-            return defaultPermissions;
-        }
-    );
+    const supabase = createClient();
+    const [permissions, setPermissions] = useState<MenuPermission[]>(defaultPermissions);
     const [hasChanges, setHasChanges] = useState(false);
     const [saveMessage, setSaveMessage] = useState("");
+    const [isLoading, setIsLoading] = useState(true);
+    const [isSaving, setIsSaving] = useState(false);
+
+    // Group by section for tabs
+    const sectionNames = Array.from(new Set(defaultPermissions.map(p => p.section)));
+    const [activeTab, setActiveTab] = useState<string>(sectionNames[0]);
+
+    useEffect(() => {
+        fetchPermissions();
+    }, []);
+
+    const fetchPermissions = async () => {
+        setIsLoading(true);
+        const { data, error } = await supabase.from('role_permissions').select('*');
+        if (data && !error && data.length > 0) {
+            // Map DB data to our state structure
+            const newPermissions = JSON.parse(JSON.stringify(defaultPermissions)); // deep clone
+            
+            data.forEach((row: any) => {
+                const menuItem = newPermissions.find((p: MenuPermission) => p.menuKey === row.menu_key);
+                if (menuItem && menuItem.permissions[row.role as Role]) {
+                    menuItem.permissions[row.role as Role] = {
+                        read: row.can_read,
+                        write: row.can_write
+                    };
+                }
+            });
+            setPermissions(newPermissions);
+        } else {
+            // DB is empty, use defaults
+            setPermissions(defaultPermissions);
+        }
+        setIsLoading(false);
+        setHasChanges(false);
+    };
 
     const togglePermission = useCallback((menuKey: string, role: Role, type: PermissionType) => {
         setPermissions(prev => prev.map(p => {
@@ -262,30 +299,46 @@ export default function PermissionsPage() {
         setSaveMessage("");
     }, []);
 
-    const handleSave = () => {
-        if (typeof window !== "undefined") {
-            localStorage.setItem("gla_permissions", JSON.stringify(permissions));
-        }
-        setHasChanges(false);
-        setSaveMessage("권한 설정이 저장되었습니다.");
-        setTimeout(() => setSaveMessage(""), 3000);
-    };
+    const handleSave = async () => {
+        setIsSaving(true);
+        
+        // Prepare data for upsert
+        const rowsToUpsert: any[] = [];
+        permissions.forEach(menu => {
+            roles.forEach(role => {
+                rowsToUpsert.push({
+                    menu_key: menu.menuKey,
+                    role: role.key,
+                    can_read: menu.permissions[role.key].read,
+                    can_write: menu.permissions[role.key].write
+                });
+            });
+        });
 
-    const handleReset = () => {
-        if (window.confirm("기본 권한 설정으로 되돌리시겠습니까?")) {
-            setPermissions(defaultPermissions);
-            localStorage.removeItem("gla_permissions");
+        const { error } = await supabase
+            .from('role_permissions')
+            .upsert(rowsToUpsert, { onConflict: 'menu_key, role' });
+
+        setIsSaving(false);
+
+        if (error) {
+            alert("저장 중 오류가 발생했습니다: " + error.message);
+        } else {
             setHasChanges(false);
-            setSaveMessage("기본 설정으로 초기화되었습니다.");
+            setSaveMessage("권한 설정이 DB에 저장되었습니다.");
             setTimeout(() => setSaveMessage(""), 3000);
         }
     };
 
-    // Group by section
-    const sections = permissions.reduce<Record<string, MenuPermission[]>>((acc, perm) => {
-        (acc[perm.section] = acc[perm.section] || []).push(perm);
-        return acc;
-    }, {});
+    const handleReset = () => {
+        if (window.confirm("변경사항을 취소하고 원래 상태로 되돌리시겠습니까?")) {
+            fetchPermissions();
+            setSaveMessage("설정을 다시 불러왔습니다.");
+            setTimeout(() => setSaveMessage(""), 3000);
+        }
+    };
+
+    const activeMenus = permissions.filter(p => p.section === activeTab);
 
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 pb-24">
@@ -316,20 +369,20 @@ export default function PermissionsPage() {
                         </button>
                         <button
                             onClick={handleSave}
-                            disabled={!hasChanges}
+                            disabled={!hasChanges || isSaving}
                             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm ${hasChanges
                                     ? "bg-brand-navy hover:bg-brand-navy/90 text-white"
                                     : "bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed"
                                 }`}
                         >
                             <Save size={14} />
-                            저장
+                            {isSaving ? "저장 중..." : "DB 저장"}
                         </button>
                     </div>
                 </div>
             </header>
 
-            <main className="max-w-6xl mx-auto px-4 sm:px-8 py-6 space-y-6">
+            <main className="max-w-5xl mx-auto px-4 sm:px-8 py-6 space-y-6">
 
                 {/* Save Message Toast */}
                 {saveMessage && (
@@ -348,133 +401,134 @@ export default function PermissionsPage() {
                         <p className="font-semibold">권한 설정 안내</p>
                         <p className="text-blue-600/80 dark:text-blue-400/80">
                             각 메뉴별로 역할(관리자/코치/선수/학부모)에 대한 <span className="font-semibold text-blue-500">읽기(보기)</span> 및 <span className="font-semibold text-emerald-500">쓰기(작성)</span> 권한을 설정할 수 있습니다.
-                            쓰기 권한을 부여하면 읽기 권한이 자동으로 활성화됩니다.
+                            이 설정은 사이드바 메뉴 노출 여부를 제어합니다. (DB에 즉시 반영)
                         </p>
                     </div>
                 </div>
 
-                {/* Legend */}
-                <div className="flex flex-wrap items-center gap-4 px-1">
-                    <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                        <div className="flex items-center gap-1.5">
-                            <Eye size={13} className="text-blue-500" />
-                            <span>읽기(보기)</span>
-                        </div>
-                        <span className="text-zinc-300 dark:text-zinc-700">|</span>
-                        <div className="flex items-center gap-1.5">
-                            <Pencil size={13} className="text-emerald-500" />
-                            <span>쓰기(작성)</span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Permissions Matrix by Section */}
-                {Object.entries(sections).map(([sectionName, menus]) => (
-                    <section
-                        key={sectionName}
-                        className={`bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden border-l-4 ${sectionColors[sectionName] || "border-l-zinc-400"}`}
-                    >
-                        {/* Section Header */}
-                        <div className="px-5 py-4 border-b border-zinc-100 dark:border-zinc-800/50 flex items-center gap-3">
-                            <span className={`text-[11px] font-bold px-2.5 py-1 rounded-lg uppercase tracking-wider ${sectionBadgeColors[sectionName] || "bg-zinc-100 text-zinc-600"}`}>
-                                {sectionName}
-                            </span>
-                            <span className="text-xs text-zinc-400">{menus.length}개 메뉴</span>
+                {isLoading ? (
+                    <div className="text-center py-20 text-zinc-500">권한 정보를 불러오는 중입니다...</div>
+                ) : (
+                    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden">
+                        {/* Tabs */}
+                        <div className="flex overflow-x-auto no-scrollbar border-b border-zinc-100 dark:border-zinc-800">
+                            {sectionNames.map(section => (
+                                <button
+                                    key={section}
+                                    onClick={() => setActiveTab(section)}
+                                    className={`
+                                        whitespace-nowrap px-6 py-4 text-sm font-semibold transition-colors
+                                        ${activeTab === section 
+                                            ? "text-brand-navy dark:text-brand-navy-light border-b-2 border-brand-navy dark:border-brand-navy-light" 
+                                            : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                                        }
+                                    `}
+                                >
+                                    {section}
+                                </button>
+                            ))}
                         </div>
 
-                        {/* Table Header (Desktop) */}
-                        <div className="hidden lg:grid lg:grid-cols-[1fr_repeat(4,minmax(140px,1fr))] items-center px-5 py-3 bg-zinc-50/50 dark:bg-zinc-800/30 border-b border-zinc-100 dark:border-zinc-800/30">
-                            <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">메뉴</div>
+                        {/* Legend */}
+                        <div className="flex items-center justify-end gap-4 px-6 py-3 bg-zinc-50/50 dark:bg-zinc-800/30 border-b border-zinc-100 dark:border-zinc-800/30">
+                            <div className="flex items-center gap-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                                <div className="flex items-center gap-1.5">
+                                    <Eye size={13} className="text-blue-500" />
+                                    <span>읽기(보기)</span>
+                                </div>
+                                <span className="text-zinc-300 dark:text-zinc-700">|</span>
+                                <div className="flex items-center gap-1.5">
+                                    <Pencil size={13} className="text-emerald-500" />
+                                    <span>쓰기(작성)</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="hidden lg:grid items-center px-6 py-3 bg-zinc-50/50 dark:bg-zinc-800/30 border-b border-zinc-100 dark:border-zinc-800/30" style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr' }}>
+                            <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">메뉴 ({activeMenus.length})</div>
                             {roles.map(role => (
                                 <div key={role.key} className="text-center">
                                     <span className={`text-xs font-bold ${role.color}`}>{role.label}</span>
-                                    <div className="flex items-center justify-center gap-3 mt-1.5">
-                                        <span className="text-[10px] text-zinc-400 flex items-center gap-0.5">
-                                            <Eye size={10} /> 읽기
-                                        </span>
-                                        <span className="text-[10px] text-zinc-400 flex items-center gap-0.5">
-                                            <Pencil size={10} /> 쓰기
-                                        </span>
-                                    </div>
                                 </div>
                             ))}
                         </div>
 
                         {/* Menu Rows */}
-                        {menus.map((menu, idx) => (
-                            <div
-                                key={menu.menuKey}
-                                className={`
-                                    px-5 py-4
-                                    ${idx < menus.length - 1 ? "border-b border-zinc-100 dark:border-zinc-800/30" : ""}
-                                    hover:bg-zinc-50/50 dark:hover:bg-zinc-800/20 transition-colors
-                                `}
-                            >
-                                {/* Desktop View */}
-                                <div className="hidden lg:grid lg:grid-cols-[1fr_repeat(4,minmax(140px,1fr))] items-center">
-                                    <div className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                                        {menu.label}
-                                    </div>
-                                    {roles.map(role => (
-                                        <div key={role.key} className="flex items-center justify-center gap-3">
-                                            <PermToggle
-                                                checked={menu.permissions[role.key].read}
-                                                onChange={() => togglePermission(menu.menuKey, role.key, "read")}
-                                                type="read"
-                                                disabled={menu.menuKey === "permissions" && role.key === "admin"}
-                                            />
-                                            <PermToggle
-                                                checked={menu.permissions[role.key].write}
-                                                onChange={() => togglePermission(menu.menuKey, role.key, "write")}
-                                                type="write"
-                                                disabled={menu.menuKey === "permissions" && role.key === "admin"}
-                                            />
+                        <div className="divide-y divide-zinc-100 dark:divide-zinc-800/30">
+                            {activeMenus.map((menu) => (
+                                <div
+                                    key={menu.menuKey}
+                                    className="px-6 py-5 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/20 transition-colors"
+                                >
+                                    <div className="hidden lg:grid items-center" style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr' }}>
+                                        <div className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 pr-4">
+                                            {menu.label}
+                                            <div className="text-[10px] text-zinc-400 font-normal mt-0.5 font-mono">{menu.menuKey}</div>
                                         </div>
-                                    ))}
-                                </div>
-
-                                {/* Mobile View */}
-                                <div className="lg:hidden space-y-3">
-                                    <div className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
-                                        {menu.label}
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-3">
                                         {roles.map(role => (
-                                            <div
-                                                key={role.key}
-                                                className={`${role.bgColor} rounded-xl p-3 space-y-2`}
-                                            >
-                                                <span className={`text-xs font-bold ${role.color}`}>
-                                                    {role.label}
-                                                </span>
-                                                <div className="flex items-center gap-2">
-                                                    <div className="flex items-center gap-1">
-                                                        <Eye size={11} className="text-zinc-400" />
-                                                        <PermToggle
-                                                            checked={menu.permissions[role.key].read}
-                                                            onChange={() => togglePermission(menu.menuKey, role.key, "read")}
-                                                            type="read"
-                                                            disabled={menu.menuKey === "permissions" && role.key === "admin"}
-                                                        />
-                                                    </div>
-                                                    <div className="flex items-center gap-1">
-                                                        <Pencil size={11} className="text-zinc-400" />
-                                                        <PermToggle
-                                                            checked={menu.permissions[role.key].write}
-                                                            onChange={() => togglePermission(menu.menuKey, role.key, "write")}
-                                                            type="write"
-                                                            disabled={menu.menuKey === "permissions" && role.key === "admin"}
-                                                        />
-                                                    </div>
-                                                </div>
+                                            <div key={role.key} className="flex items-center justify-center gap-3">
+                                                <PermToggle
+                                                    checked={menu.permissions[role.key].read}
+                                                    onChange={() => togglePermission(menu.menuKey, role.key, "read")}
+                                                    type="read"
+                                                    disabled={menu.menuKey === "permissions" && role.key === "admin"}
+                                                />
+                                                <PermToggle
+                                                    checked={menu.permissions[role.key].write}
+                                                    onChange={() => togglePermission(menu.menuKey, role.key, "write")}
+                                                    type="write"
+                                                    disabled={menu.menuKey === "permissions" && role.key === "admin"}
+                                                />
                                             </div>
                                         ))}
                                     </div>
+
+                                    {/* Mobile View */}
+                                    <div className="lg:hidden space-y-4">
+                                        <div className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
+                                            {menu.label}
+                                            <div className="text-[10px] text-zinc-400 font-normal mt-0.5 font-mono">{menu.menuKey}</div>
+                                        </div>
+                                        <div className="flex flex-col gap-3">
+                                            {roles.map(role => (
+                                                <div
+                                                    key={role.key}
+                                                    className={`${role.bgColor} rounded-xl px-4 py-3 flex items-center justify-between`}
+                                                >
+                                                    <span className={`text-sm font-bold ${role.color}`}>
+                                                        {role.label}
+                                                    </span>
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <Eye size={14} className="text-zinc-400" />
+                                                            <span className="text-xs text-zinc-500 font-medium dark:text-zinc-400">읽기</span>
+                                                            <PermToggle
+                                                                checked={menu.permissions[role.key].read}
+                                                                onChange={() => togglePermission(menu.menuKey, role.key, "read")}
+                                                                type="read"
+                                                                disabled={menu.menuKey === "permissions" && role.key === "admin"}
+                                                            />
+                                                        </div>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <Pencil size={14} className="text-zinc-400" />
+                                                            <span className="text-xs text-zinc-500 font-medium dark:text-zinc-400">쓰기</span>
+                                                            <PermToggle
+                                                                checked={menu.permissions[role.key].write}
+                                                                onChange={() => togglePermission(menu.menuKey, role.key, "write")}
+                                                                type="write"
+                                                                disabled={menu.menuKey === "permissions" && role.key === "admin"}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
-                    </section>
-                ))}
+                            ))}
+                        </div>
+                    </div>
+                )}
             </main>
         </div>
     );

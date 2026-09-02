@@ -5,6 +5,7 @@ import { calculateScorecardAnalysis } from "./score-calculations";
 export interface ScoreData {
     id: string;
     score: number;
+    totalPar?: number;
     title: string;
     playerName: string;
     coachName: string;
@@ -17,7 +18,21 @@ export interface ScoreData {
     puttingSG: number;
     strongPoint: string;
     weakPoints: string[];
+    notes?: any[];
+    sectorChanges?: any[];
 }
+
+const CODE_TO_LOCATION: Record<string, string> = {
+    "T": "티박스",
+    "F": "페어웨이",
+    "R": "러프",
+    "B": "그린 주변 벙커",
+    "FB": "페어웨이 벙커",
+    "P": "패널티구역",
+    "G": "그린",
+    "O": "오비",
+    "E": "기타"
+};
 
 export async function fetchScoreById(scorecardId: string): Promise<ScoreData | null> {
     try {
@@ -33,7 +48,10 @@ export async function fetchScoreById(scorecardId: string): Promise<ScoreData | n
                 memo,
                 athlete:users!scorecards_athlete_id_fkey(name),
                 coach:users!scorecards_coach_id_fkey(name),
-                holes:scorecard_holes(score)
+                holes:scorecard_holes(
+                    score, par, hole_number,
+                    shots:scorecard_shots(*)
+                )
             `)
             .eq("id", scorecardId)
             .maybeSingle();
@@ -70,10 +88,21 @@ export async function fetchScoreById(scorecardId: string): Promise<ScoreData | n
         const sortedCats = [...cats].sort((a, b) => a.sg - b.sg);
         const strongPoint = sortedCats[0]?.name || "-";
         const weakPoints = sortedCats.slice(-2).reverse().map(c => c.name);
+        const totalPar = (scorecard.holes as any[])?.reduce((sum, h) => sum + (h.par || 0), 0) || 72;
+
+        const formatScore = (val: number) => (val === 0 ? "0" : (val > 0 ? "+" : "") + val.toFixed(2));
+
+        const sectorChanges = [
+            { type: "티샷", value: formatScore(teeSG), items: cats.slice(0, 2) },
+            { type: "세컨샷", value: formatScore(secondSG), items: cats.slice(2, 6) },
+            { type: "그린주변샷", value: formatScore(greenSG), items: cats.slice(6, 9) },
+            { type: "퍼팅", value: formatScore(puttingSG), items: cats.slice(9, 13) }
+        ];
 
         return {
             id: scorecard.id,
             score: scorecard.total_score || 0,
+            totalPar,
             title: `${scorecard.course_name} 라운드`,
             playerName: (scorecard.athlete as any)?.name || "",
             coachName: (scorecard.coach as any)?.name || "",
@@ -85,7 +114,28 @@ export async function fetchScoreById(scorecardId: string): Promise<ScoreData | n
             aroundGreenSG: greenSG,
             puttingSG: puttingSG,
             strongPoint,
-            weakPoints
+            weakPoints,
+            sectorChanges,
+            notes: (scorecard.holes || [])
+                .sort((a: any, b: any) => a.hole_number - b.hole_number)
+                .flatMap((h: any) => {
+                    const sortedShots = (h.shots || []).sort((a: any, b: any) => a.shot_number - b.shot_number);
+                    return sortedShots
+                        .filter((s: any) => s.memo && s.memo.trim() !== "")
+                        .map((s: any) => {
+                            const sIdx = sortedShots.findIndex((x: any) => x.shot_number === s.shot_number);
+                            const nextShot = sortedShots[sIdx + 1];
+                            return {
+                                hole: h.hole_number,
+                                shotNumber: s.shot_number,
+                                attemptPos: CODE_TO_LOCATION[s.location_code] || s.location_code || "-",
+                                attemptDist: s.distance || "",
+                                resultPos: nextShot ? (CODE_TO_LOCATION[nextShot.location_code] || nextShot.location_code || "-") : "홀인",
+                                resultDist: nextShot ? (nextShot.distance || "") : "",
+                                memo: s.memo
+                            };
+                        });
+                })
         };
     } catch (err) {
         console.error("Error in fetchScoreById:", err);
@@ -118,7 +168,8 @@ export async function fetchLatestScoreByPlayer(playerName: string, targetDate?: 
                 memo,
                 athlete:users!scorecards_athlete_id_fkey(name),
                 coach:users!scorecards_coach_id_fkey(name),
-                holes:scorecard_holes(score)
+                holes:scorecard_holes(score, par),
+                is_final
             `)
             .eq("athlete_id", userData.id)
             .order("round_date", { ascending: false })
@@ -132,12 +183,8 @@ export async function fetchLatestScoreByPlayer(playerName: string, targetDate?: 
 
         if (!scorecards || scorecards.length === 0) return null;
 
-        // Find the most recent scorecard with 18 completed holes (score !== -1)
-        const scorecard = scorecards.find(s => {
-            const holes = (s.holes as any[]) || [];
-            const completedCount = holes.filter(h => h.score !== -1 && h.score !== null).length;
-            return completedCount === 18;
-        });
+        // Find the most recent scorecard that is not a draft (is_final !== false)
+        const scorecard = scorecards.find(s => s.is_final !== false);
 
         if (!scorecard) return null;
 
@@ -192,10 +239,21 @@ export async function fetchLatestScoreByPlayer(playerName: string, targetDate?: 
         const sortedCats = [...cats].sort((a, b) => a.sg - b.sg);
         const strongPoint = sortedCats[0]?.name || "-";
         const weakPoints = sortedCats.slice(-2).reverse().map(c => c.name);
+        const totalPar = (scorecard.holes as any[])?.reduce((sum, h) => sum + (h.par || 0), 0) || 72;
+
+        const formatScore = (val: number) => (val === 0 ? "0" : (val > 0 ? "+" : "") + val.toFixed(2));
+
+        const sectorChanges = [
+            { type: "티샷", value: formatScore(teeSG), items: cats.slice(0, 2) },
+            { type: "세컨샷", value: formatScore(secondSG), items: cats.slice(2, 6) },
+            { type: "그린주변샷", value: formatScore(greenSG), items: cats.slice(6, 9) },
+            { type: "퍼팅", value: formatScore(puttingSG), items: cats.slice(9, 13) }
+        ];
 
         return {
             id: scorecard.id,
             score: scorecard.total_score || 0,
+            totalPar,
             title: `${scorecard.course_name} 라운드`,
             playerName: (scorecard.athlete as any)?.name || "",
             coachName: (scorecard.coach as any)?.name || "",
@@ -207,7 +265,8 @@ export async function fetchLatestScoreByPlayer(playerName: string, targetDate?: 
             aroundGreenSG: greenSG,
             puttingSG: puttingSG,
             strongPoint,
-            weakPoints
+            weakPoints,
+            sectorChanges
         };
     } catch (err) {
         console.error("Error in fetchLatestScoreByPlayer:", err);

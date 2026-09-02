@@ -178,7 +178,7 @@ export async function fetchRecentActivityByPlayer(playerName: string, type: 'les
             .select("id, title, created_at, category")
             .eq("user_id", userRes.id)
             .eq("type", type)
-            .order("created_at", { ascending: false })
+            .order("inserted_at", { ascending: false })
             .limit(3);
 
         if (error) throw error;
@@ -196,41 +196,24 @@ export async function fetchRecentActivityByPlayer(playerName: string, type: 'les
 
 export async function fetchRecentScorecardByPlayer(playerName: string): Promise<any | null> {
     try {
-        const supabase = createClient();
+        // dynamic import to avoid circular dependency issues if any
+        const { fetchLatestScoreByPlayer } = await import('./score-sync');
+        const scoreData = await fetchLatestScoreByPlayer(playerName);
         
-        const { data: userRes } = await supabase
-            .from("users")
-            .select("id")
-            .eq("name", playerName)
-            .maybeSingle();
-            
-        if (!userRes) return null;
+        if (!scoreData) return null;
 
-        const { data, error } = await supabase
-            .from("records")
-            .select("*")
-            .eq("user_id", userRes.id)
-            .eq("type", "scorecard")
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-        if (error) throw error;
-        if (!data) return null;
-
-        // Map from DB structure to UI structure
         return {
-            id: data.id,
-            date: formatLocalDate(new Date(data.created_at)),
-            course: data.title || "코스 정보 없음",
-            score: data.total_count || 0,
-            teeShot: data.template_settings?.find((s: any) => s.label === "티샷")?.value || "-",
-            iron: data.template_settings?.find((s: any) => s.label === "아이언")?.value || "-",
-            pitch: data.template_settings?.find((s: any) => s.label === "피치")?.value || "-",
-            aroundGreen: data.template_settings?.find((s: any) => s.label === "그린주변")?.value || "-",
-            putting: data.template_settings?.find((s: any) => s.label === "퍼팅")?.value || "-",
-            challengeFocus: data.content?.slice(0, 50) || "-",
-            strongPoint: data.template_settings?.find((s: any) => s.label === "강점")?.value || "-",
+            id: scoreData.id,
+            date: scoreData.date,
+            course: scoreData.courseName,
+            score: scoreData.score,
+            teeShot: scoreData.teeShotSG > 0 ? `+${scoreData.teeShotSG.toFixed(1)}` : scoreData.teeShotSG.toFixed(1),
+            iron: scoreData.secondShotSG > 0 ? `+${scoreData.secondShotSG.toFixed(1)}` : scoreData.secondShotSG.toFixed(1),
+            pitch: "-", 
+            aroundGreen: scoreData.aroundGreenSG > 0 ? `+${scoreData.aroundGreenSG.toFixed(1)}` : scoreData.aroundGreenSG.toFixed(1),
+            putting: scoreData.puttingSG > 0 ? `+${scoreData.puttingSG.toFixed(1)}` : scoreData.puttingSG.toFixed(1),
+            challengeFocus: scoreData.weakPoints?.join(", ") || "-",
+            strongPoint: scoreData.strongPoint || "-",
         };
     } catch (err) {
         console.error("Error fetching recent scorecard:", err);

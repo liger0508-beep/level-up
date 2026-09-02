@@ -20,7 +20,9 @@ import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { DatePresets, DatePresetType } from "@/components/ui/DatePresets";
 
 export default function ConsultationsPage() {
-    const [consultations, setConsultations] = useState<Consultation[]>([]);
+    const [allConsultations, setAllConsultations] = useState<Consultation[]>([]);
+    const [recentConsultations, setRecentConsultations] = useState<Consultation[]>([]);
+    const [totalConsultationCount, setTotalConsultationCount] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     const [activeType, setActiveType] = useState<ConsultationType>("all");
     const [searchQuery, setSearchQuery] = useState("");
@@ -30,8 +32,23 @@ export default function ConsultationsPage() {
     const [activePreset, setActivePreset] = useState<DatePresetType>("custom");
     const [assignedAthleteIds, setAssignedAthleteIds] = useState<string[]>([]);
     const [currentUser, setCurrentUser] = useState<any>(null);
+    const [userRole, setUserRole] = useState<string | null>(null);
 
     const scrollRef = useRef<HTMLDivElement>(null);
+
+    const mapConsultationRow = (data: any): Consultation => ({
+        id: data.id,
+        date: data.date,
+        coachName: data.coach_name || "",
+        title: data.title || "",
+        content: data.content || "",
+        author: data.author || "",
+        type: data.type as ConsultationType,
+        athleteName: data.athlete_name || "",
+        userId: data.user_id || null,
+        isImportant: data.is_important || false,
+        createdAt: data.created_at
+    });
 
     useEffect(() => {
         const load = async () => {
@@ -42,7 +59,16 @@ export default function ConsultationsPage() {
             const { data: { user } } = await supabase.auth.getUser();
             setCurrentUser(user);
 
+            let currentRole = null;
+            let coachAssignedIds: string[] = [];
+
             if (user) {
+                const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single();
+                if (profile) {
+                    setUserRole(profile.role);
+                    currentRole = profile.role;
+                }
+
                 const currentMonth = format(new Date(), "yyyy-MM");
                 const { data: assignments } = await supabase
                     .from('monthly_assignments')
@@ -50,16 +76,83 @@ export default function ConsultationsPage() {
                     .eq('coach_id', user.id)
                     .eq('month', currentMonth);
                 
-                setAssignedAthleteIds(assignments?.map(a => a.athlete_id) || []);
+                coachAssignedIds = assignments?.map(a => a.athlete_id) || [];
+                setAssignedAthleteIds(coachAssignedIds);
             }
 
-            // 2. Fetch consultations
-            const data = await fetchConsultations();
-            setConsultations(data);
+            // 2. Fetch Recent Consultations (Top 3)
+            let recentQuery = supabase
+                .from("consultations")
+                .select("*")
+                .order("date", { ascending: false })
+                .order("created_at", { ascending: false })
+                .limit(3);
+
+            if (user && currentRole === 'athlete') {
+                recentQuery = recentQuery.eq("user_id", user.id);
+            }
+            const { data: recentData } = await recentQuery;
+            if (recentData) {
+                setRecentConsultations(recentData.map(mapConsultationRow));
+            }
+
             setIsLoading(false);
         };
         load();
     }, []);
+
+    // Server-side Pagination & Filtering
+    useEffect(() => {
+        if (!currentUser) return; // Wait until initial auth load
+
+        const fetchFiltered = async () => {
+            const supabase = createClient();
+            let query = supabase
+                .from("consultations")
+                .select("*", { count: 'exact' });
+
+            // Base role filter
+            if (userRole === 'athlete') {
+                query = query.eq("user_id", currentUser.id);
+            }
+
+            // Type filter
+            if (activeType === "assigned") {
+                if (assignedAthleteIds.length > 0) {
+                    query = query.in("user_id", assignedAthleteIds);
+                } else {
+                    // No assigned athletes -> return empty
+                    query = query.eq("user_id", "00000000-0000-0000-0000-000000000000"); 
+                }
+            }
+
+            // Search filter
+            if (searchQuery) {
+                query = query.or(`title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%,athlete_name.ilike.%${searchQuery}%`);
+            }
+
+            // Date filter
+            if (startDate) query = query.gte("date", startDate);
+            if (endDate) query = query.lte("date", endDate);
+
+            query = query
+                .order("date", { ascending: false })
+                .order("created_at", { ascending: false })
+                .limit(displayLimit);
+
+            const { data, count, error } = await query;
+            if (error || !data) return;
+
+            setTotalConsultationCount(count || 0);
+            setAllConsultations(data.map(mapConsultationRow));
+        };
+
+        const debounceTimer = setTimeout(() => {
+            fetchFiltered();
+        }, 300);
+
+        return () => clearTimeout(debounceTimer);
+    }, [currentUser, userRole, assignedAthleteIds, activeType, searchQuery, startDate, endDate, displayLimit]);
 
     const scroll = (direction: "left" | "right") => {
         if (scrollRef.current) {
@@ -72,35 +165,7 @@ export default function ConsultationsPage() {
         }
     };
 
-    // Filtered consultations for the main list
-    const filteredConsultations = useMemo(() => {
-        return consultations.filter((n) => {
-            // Updated filtering logic for 'assigned' (담임 선수)
-            const typeMatch = activeType === "all" || (
-                activeType === "assigned" 
-                ? (n.userId && assignedAthleteIds.includes(n.userId))
-                : n.type === activeType
-            );
-            const titleMatch = !searchQuery ||
-                n.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                n.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                n.athleteName.toLowerCase().includes(searchQuery.toLowerCase());
-            const afterStart = !startDate || n.date >= startDate;
-            const beforeEnd = !endDate || n.date <= endDate;
-            return typeMatch && titleMatch && afterStart && beforeEnd;
-        });
-    }, [consultations, activeType, searchQuery, startDate, endDate]);
-
-    // Recent 3 consultations for the top carousel
-    const recentConsultations = useMemo(() => {
-        return [...consultations]
-            .sort((a, b) => b.date.localeCompare(a.date))
-            .slice(0, 3);
-    }, [consultations]);
-
-    const displayedConsultations = useMemo(() => {
-        return filteredConsultations.slice(0, displayLimit);
-    }, [filteredConsultations, displayLimit]);
+    // Client side filtering is now replaced by server-side filtering
 
     return (
         <div className="p-4 sm:p-8 max-w-4xl mx-auto">
@@ -111,13 +176,15 @@ export default function ConsultationsPage() {
                         상담 관리
                     </h1>
                 </div>
-                <Link
-                    href="/consultations/create"
-                    className="bg-brand-red hover:bg-brand-red-dark text-white px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
-                >
-                    <Plus size={18} />
-                    작성
-                </Link>
+                {userRole !== 'athlete' && (
+                    <Link
+                        href="/consultations/create"
+                        className="bg-brand-red hover:bg-brand-red-dark text-white px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
+                    >
+                        <Plus size={18} />
+                        작성
+                    </Link>
+                )}
             </div>
 
             {/* ── Consultation Type Filters ── */}
@@ -242,7 +309,7 @@ export default function ConsultationsPage() {
                         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
                         <input
                             type="text"
-                            placeholder="제목, 내용, 선수명 검색..."
+                            placeholder={userRole === 'athlete' ? "제목, 내용 검색..." : "제목, 내용, 선수명 검색..."}
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all"
@@ -260,7 +327,7 @@ export default function ConsultationsPage() {
                             조회 결과
                         </h2>
                         <span className="text-xs text-zinc-400 font-medium">
-                            ({filteredConsultations.length}건)
+                            ({totalConsultationCount}건)
                         </span>
                     </div>
 
@@ -275,16 +342,16 @@ export default function ConsultationsPage() {
                 </div>
 
                 <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
-                    {displayedConsultations.length > 0 ? (
+                    {allConsultations.length > 0 ? (
                         <>
-                            <ConsultationTable consultations={displayedConsultations} />
-                            {filteredConsultations.length > displayLimit && (
+                            <ConsultationTable consultations={allConsultations} />
+                            {totalConsultationCount > allConsultations.length && (
                                 <div className="mt-8 flex justify-center">
                                     <button
                                         onClick={() => setDisplayLimit(prev => prev + 20)}
                                         className="px-8 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all active:scale-95 shadow-sm"
                                     >
-                                        더 보기 ({filteredConsultations.length - displayLimit}건 남음)
+                                        더 보기 ({totalConsultationCount - allConsultations.length}건 남음)
                                     </button>
                                 </div>
                             )}

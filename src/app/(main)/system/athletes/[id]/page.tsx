@@ -120,6 +120,8 @@ export default function AthleteDetailPage() {
     const [editData, setEditData] = useState<AthleteDetail | null>(null);
     const [saveMessage, setSaveMessage] = useState("");
     const [availableBranches, setAvailableBranches] = useState<string[]>(["총괄", "오피스", "조이마루점", "구미점"]);
+    const [currentUser, setCurrentUser] = useState<any>(null);
+    const [isResettingPw, setIsResettingPw] = useState(false);
 
     useEffect(() => {
         if (!athleteId) return;
@@ -145,6 +147,13 @@ export default function AthleteDetailPage() {
                 
                 setAvailableBranches(allBranches as string[]);
 
+                // Fetch current user
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    const { data: profile } = await supabase.from('users').select('*').eq('id', user.id).single();
+                    if (profile) setCurrentUser(profile);
+                }
+
                 const { data: u, error } = await supabase
                     .from('users')
                     .select('*')
@@ -161,7 +170,7 @@ export default function AthleteDetailPage() {
                         email: "", // User requested blank
                         loginId: "", // User requested blank
                         branch: u.branch || "미지정",
-                        registeredAt: u.created_at?.split('T')[0] || "",
+                        registeredAt: ((u.created_at) ? new Date(u.created_at).toLocaleDateString('en-CA', {timeZone: 'Asia/Seoul'}) : "") || "",
                         status: u.status === "휴회" ? "paused" : (u.status === "비활성화" ? "inactive" : "active"),
                         gender: u.gender === 'male' ? '남' : u.gender === 'female' ? '여' : (u.gender === 'other' ? '기타' : '미지정'),
                         parentName: u.parent_name || "",
@@ -261,7 +270,7 @@ export default function AthleteDetailPage() {
                     email: "",
                     loginId: "",
                     branch: updatedData.branch || "미지정",
-                    registeredAt: updatedData.created_at?.split('T')[0] || "",
+                    registeredAt: ((updatedData.created_at) ? new Date(updatedData.created_at).toLocaleDateString('en-CA', {timeZone: 'Asia/Seoul'}) : "") || "",
                     status: updatedData.status === "휴회" ? "paused" : (updatedData.status === "비활성화" ? "inactive" : "active"),
                     gender: updatedData.gender === 'male' ? '남' : updatedData.gender === 'female' ? '여' : (updatedData.gender === 'other' ? '기타' : '미지정'),
                     parentName: updatedData.parent_name || "",
@@ -291,20 +300,28 @@ export default function AthleteDetailPage() {
     const handleDelete = async () => {
         if (!athlete || !athleteId) return;
         if (!confirm(`\n선수명: ${athlete.name}\n\n정말로 이 선수를 삭제하시겠습니까?\n모든 기록이 삭제됩니다.`)) return;
+        if (currentUser?.name !== '슈퍼관리자') {
+            alert('슈퍼관리자만 사용할 수 있는 기능입니다.');
+            return;
+        }
 
         try {
-            const { error } = await supabase
-                .from('users')
-                .delete()
-                .eq('id', athleteId);
-
-            if (error) throw error;
+            const res = await fetch('/api/admin/delete-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    targetUserId: athleteId,
+                    callerName: currentUser.name
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '삭제 실패');
 
             alert("삭제되었습니다.");
             router.push("/system/athletes");
-        } catch (err) {
+        } catch (err: any) {
             console.error("Error deleting athlete:", err);
-            alert("삭제에 실패했습니다.");
+            alert(`삭제에 실패했습니다: ${err.message}`);
         }
     };
 
@@ -324,6 +341,45 @@ export default function AthleteDetailPage() {
             
             return updated;
         });
+    };
+
+    const handleResetPassword = async () => {
+        if (!athlete || !athleteId) return;
+        if (currentUser?.name !== '슈퍼관리자') {
+            alert('슈퍼관리자만 사용할 수 있는 기능입니다.');
+            return;
+        }
+
+        const phone = athlete.phone || "";
+        const numericPhone = phone.replace(/[^0-9]/g, '');
+        if (numericPhone.length < 4) {
+            alert('연락처 정보가 올바르지 않습니다.');
+            return;
+        }
+        
+        const last4 = numericPhone.slice(-4);
+        if (!confirm(`\n대상: ${athlete.name}\n\n정말로 비밀번호를 초기화하시겠습니까?\n비밀번호는 연락처 뒷자리 '${last4}'(으)로 변경됩니다.`)) return;
+
+        try {
+            setIsResettingPw(true);
+            const res = await fetch('/api/admin/reset-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    targetUserId: athleteId,
+                    targetPhone: phone,
+                    callerName: currentUser.name
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || '비밀번호 초기화 실패');
+            
+            alert(`비밀번호가 '${data.newPassword}'(으)로 초기화되었습니다.`);
+        } catch (err: any) {
+            alert(err.message);
+        } finally {
+            setIsResettingPw(false);
+        }
     };
 
     if (loading) {
@@ -501,7 +557,19 @@ export default function AthleteDetailPage() {
 
                 {/* ── Account Information ── */}
                 <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm p-6">
-                    <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 mb-1">계정 정보</h3>
+                    <div className="flex items-center justify-between mb-1">
+                        <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">계정 정보</h3>
+                        {currentUser?.name === '슈퍼관리자' && (
+                            <button 
+                                onClick={handleResetPassword}
+                                disabled={isResettingPw}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 dark:text-red-400 dark:bg-red-500/10 dark:hover:bg-red-500/20 rounded-lg transition-colors border border-red-200 dark:border-red-500/20 disabled:opacity-50"
+                            >
+                                <Key size={12} />
+                                {isResettingPw ? "초기화 중..." : "비밀번호 초기화"}
+                            </button>
+                        )}
+                    </div>
                     <div className="divide-y divide-zinc-100 dark:divide-zinc-800/50">
                         <InfoRow icon={Hash} label="ID" value={athlete.loginId} />
                         <InfoRow icon={Key} label="PW" value="••••••••" />

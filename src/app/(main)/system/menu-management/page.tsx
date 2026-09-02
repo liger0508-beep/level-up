@@ -47,21 +47,7 @@ const initialMenus: MenuItem[] = [
         enabled: true,
         categories: [],
     },
-    {
-        id: "m3",
-        title: "분석",
-        href: "/analysis",
-        enabled: true,
-        categories: [
-            { id: "c1", key: "shot", label: "Shot" },
-            { id: "c11", key: "pitch", label: "Pitch" },
-            { id: "c12", key: "bunker", label: "Bunker" },
-            { id: "c13", key: "approach", label: "Approach" },
-            { id: "c2", key: "putt", label: "Putt" },
-            { id: "c3", key: "physical", label: "Physical" },
-            { id: "c14", key: "etc", label: "Etc" },
-        ],
-    },
+
     {
         id: "m4",
         title: "레슨",

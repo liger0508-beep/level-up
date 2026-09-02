@@ -3,35 +3,73 @@
 import { useRouter } from "next/navigation";
 import { TrainingData, TrainingType } from "./TrainingCard";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, X, Paperclip, AlertCircle } from "lucide-react";
+import { CheckCircle2, X, Paperclip, AlertCircle, Dumbbell } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { TrainingRecord } from "@/lib/training-sync";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { uploadFile } from "@/lib/storage-sync";
+
+// ── Scorecard Meta Display Component ───────────────────────────
+function ScorecardMetaDisplay({ scorecardId, dateStr, courseStr }: { scorecardId: string, dateStr: string, courseStr: string }) {
+    const [scoreData, setScoreData] = useState<{ score: number, par: number } | null>(null);
+
+    useEffect(() => {
+        if (!scorecardId) return;
+        const fetchScore = async () => {
+            const supabase = createClient();
+            const { data } = await supabase.from('scorecards').select('total_score, scorecard_holes(par)').eq('id', scorecardId).single();
+            if (data) {
+                const totalPar = (data.scorecard_holes as any[])?.reduce((sum: number, h: any) => sum + (h.par || 0), 0) || 72;
+                setScoreData({ score: data.total_score || 0, par: totalPar });
+            }
+        };
+        fetchScore();
+    }, [scorecardId]);
+
+    if (!scoreData) {
+        return (
+            <span className="text-[11px] font-bold text-zinc-400 shrink-0 mb-0.5 pl-[40px]">
+                {dateStr} <span className="opacity-40 font-normal mx-0.5">|</span> {courseStr}
+            </span>
+        );
+    }
+
+    const diff = scoreData.score - scoreData.par;
+    let colorClass = "text-zinc-900 dark:text-zinc-100";
+    if (diff < 0) colorClass = "text-red-500";
+    else if (diff > 0) colorClass = "text-blue-500";
+
+    return (
+        <span className="text-[11px] font-bold text-zinc-400 shrink-0 mb-0.5 pl-[40px]">
+            {dateStr} <span className="opacity-40 font-normal mx-0.5">|</span> {courseStr} <span className="opacity-40 font-normal mx-0.5">|</span> <span className={colorClass}>{scoreData.score}타</span>
+        </span>
+    );
+}
+
 
 const typeConfig: Record<string, {
     label: string;
     accentBorder: string;
     dotColor: string;
     labelColor: string;
+    iconColor: string;
+    iconBg: string;
 }> = {
-    shot: { label: "Shot", accentBorder: "border-l-emerald-500", dotColor: "bg-emerald-500", labelColor: "text-emerald-700 dark:text-emerald-400" },
-    pitch: { label: "Pitch", accentBorder: "border-l-teal-500", dotColor: "bg-teal-500", labelColor: "text-teal-700 dark:text-teal-400" },
-    bunker: { label: "Bunker", accentBorder: "border-l-orange-500", dotColor: "bg-orange-500", labelColor: "text-orange-700 dark:text-orange-400" },
-    approach: { label: "Approach", accentBorder: "border-l-sky-500", dotColor: "bg-sky-500", labelColor: "text-sky-700 dark:text-sky-400" },
-    putt: { label: "Putt", accentBorder: "border-l-blue-500", dotColor: "bg-blue-500", labelColor: "text-blue-700 dark:text-blue-400" },
-    physical: { label: "Physical", accentBorder: "border-l-rose-500", dotColor: "bg-rose-500", labelColor: "text-rose-700 dark:text-rose-400" },
-    field: { label: "Field", accentBorder: "border-l-indigo-500", dotColor: "bg-indigo-500", labelColor: "text-indigo-700 dark:text-indigo-400" },
-    etc: { label: "Etc", accentBorder: "border-l-zinc-500", dotColor: "bg-zinc-500", labelColor: "text-zinc-700 dark:text-zinc-400" },
+    basic: { label: "기본기", accentBorder: "border-l-emerald-500", dotColor: "bg-emerald-500", labelColor: "text-emerald-700 dark:text-emerald-400", iconColor: "text-emerald-500", iconBg: "bg-emerald-50 dark:bg-emerald-500/10" },
+    preview: { label: "예습", accentBorder: "border-l-blue-500", dotColor: "bg-blue-500", labelColor: "text-blue-700 dark:text-blue-400", iconColor: "text-blue-500", iconBg: "bg-blue-50 dark:bg-blue-500/10" },
+    review: { label: "복습", accentBorder: "border-l-orange-500", dotColor: "bg-orange-500", labelColor: "text-orange-700 dark:text-orange-400", iconColor: "text-orange-500", iconBg: "bg-orange-50 dark:bg-orange-500/10" },
+    lesson_review: { label: "스윙키", accentBorder: "border-l-purple-500", dotColor: "bg-purple-500", labelColor: "text-purple-700 dark:text-purple-400", iconColor: "text-purple-500", iconBg: "bg-purple-50 dark:bg-purple-500/10" },
+    swing_pose: { label: "스윙모션", accentBorder: "border-l-rose-500", dotColor: "bg-rose-500", labelColor: "text-rose-700 dark:text-rose-400", iconColor: "text-rose-500", iconBg: "bg-rose-50 dark:bg-rose-500/10" },
 };
 
 interface TrainingTableProps {
     trainings: any[];
     totalCount?: number;
     onUpdate?: () => void;
+    basePath?: string;
 }
 
-export function TrainingTable({ trainings, totalCount, onUpdate }: TrainingTableProps) {
+export function TrainingTable({ trainings, totalCount, onUpdate, basePath }: TrainingTableProps) {
     const router = useRouter();
 
     // ── Completion Modal State ─────────────────────────────────────
@@ -57,8 +95,28 @@ export function TrainingTable({ trainings, totalCount, onUpdate }: TrainingTable
         return [];
     };
 
+    const getAuthorOrCourseName = (training: TrainingRecord) => {
+        if (training.type === 'preview' || training.type === 'review' || training.title?.includes('[예습]') || training.title?.includes('[복습]')) {
+            const reviewSetting = (training.template_settings || []).find((s: any) => s.type === "review_scorecard");
+            if (reviewSetting && reviewSetting.courseName) {
+                let courseStr = reviewSetting.courseName;
+                courseStr = courseStr.replace(/^(?:\d{2,4}[\.\-])?\d{1,2}[\.\-]\d{1,2}(?:,\s*|\s+)/, '');
+                return courseStr.trim();
+            }
+            if (training.title) {
+                const match = training.title.match(/^\[(?:예습|복습)\]\s*(.+)/);
+                if (match) {
+                    let courseStr = match[1].replace(/\s*라운드$/, '').trim();
+                    courseStr = courseStr.replace(/^(?:\d{2,4}[\.\-])?\d{1,2}[\.\-]\d{1,2}(?:,\s*|\s+)/, '');
+                    return courseStr.trim();
+                }
+            }
+        }
+        return training.coachName;
+    };
+
     const calculateProgress = (training: TrainingRecord) => {
-        if (training.title?.includes("[복습]")) {
+        if (training.title?.includes("[복습]") || training.title?.includes("[예습]")) {
             const reviewSetting = (training.template_settings || []).find((s: any) => s.type === "review_scorecard");
             if (reviewSetting) {
                 const completed = reviewSetting.completedHoles?.length || 0;
@@ -75,6 +133,10 @@ export function TrainingTable({ trainings, totalCount, onUpdate }: TrainingTable
 
     const handleCompleteTraining = (e: React.MouseEvent, training: TrainingRecord) => {
         e.stopPropagation();
+        if (training.title?.includes("[복습]") || training.title?.includes("[예습]")) {
+            router.push(`${basePath || '/training'}/${training.id}?autoStart=true`);
+            return;
+        }
         setSelectedTraining(training);
         setIsModalOpen(true);
     };
@@ -139,7 +201,7 @@ export function TrainingTable({ trainings, totalCount, onUpdate }: TrainingTable
             {/* ── Mobile Card Grid (hidden on md+) ── */}
             <div className="flex flex-col gap-2.5 md:hidden">
                 {trainings.map((training) => {
-                    const cfg = typeConfig[training.type] || typeConfig.etc;
+                    const cfg = typeConfig[training.type] || typeConfig.basic;
                     
                     // Extract training type from title if it exists (e.g., "[기본기] ...")
                     const typeMatch = training.title?.match(/^\[(.+?)\]/);
@@ -148,57 +210,58 @@ export function TrainingTable({ trainings, totalCount, onUpdate }: TrainingTable
                     return (
                         <div
                             key={training.id}
-                            onClick={() => router.push(`/training/${training.id}`)}
-                            className={cn(
-                                "w-full text-left bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 border-l-4 rounded-xl px-3 py-3 transition-all cursor-pointer hover:shadow-md active:scale-[0.99]",
-                                cfg.accentBorder
-                            )}
+                            onClick={() => {
+                                sessionStorage.setItem("gla_training_keep_alive", "true");
+                                router.push(`${basePath || '/training'}/${training.id}`);
+                            }}
+                            className="w-full text-left bg-white dark:bg-zinc-900 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-800 py-4 px-6 shadow-sm hover:border-brand-navy/30 hover:shadow-md transition-all group cursor-pointer"
                         >
                             <div className="flex items-center justify-between gap-2">
-                                {/* 1. Category Icon (Shortened) */}
-                                <div className={cn(
-                                    "w-7 h-7 rounded-lg flex items-center justify-center text-[11px] font-black text-white shrink-0 shadow-sm",
-                                    cfg.dotColor
-                                )}>
-                                    {cfg.label.charAt(0)}
-                                </div>
-
-                                {/* 2. Core Info */}
-                                <div className="flex items-center justify-start gap-2 flex-1 min-w-0 ml-3">
-                                    <div className="flex items-center shrink-0">
-                                        {training.title?.includes("[기본기]") && <span className="text-[12px] font-black text-brand-red">기본기</span>}
-                                        {training.title?.includes("[예습]") && <span className="text-[12px] font-black text-brand-navy">예습</span>}
-                                        {training.title?.includes("[복습]") && <span className="text-[12px] font-black text-zinc-500">복습</span>}
-                                        {(training.title?.includes("[기본기]") || training.title?.includes("[예습]") || training.title?.includes("[복습]")) && (
-                                            <span className="mx-2 text-zinc-300">|</span>
-                                        )}
+                                <div className="flex items-center gap-2">
+                                    <div className={cn("w-8 h-8 rounded-full flex items-center justify-center shrink-0", cfg.iconBg, cfg.iconColor)}>
+                                        <Dumbbell size={16} />
                                     </div>
-                                    <span className="text-[13px] font-bold text-zinc-900 dark:text-zinc-100 truncate">
-                                        {training.playerName}
-                                    </span>
-                                    <span className="mx-2 text-zinc-300">|</span>
-                                    <span className="text-[12px] font-black text-brand-navy shrink-0">
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                        <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 truncate mr-1">{cfg.label}</span>
+                                        <button 
+                                            onClick={(e) => handleCompleteTraining(e, training)}
+                                            className="p-1 bg-brand-red/10 text-brand-red rounded-lg hover:bg-brand-red hover:text-white transition-colors active:scale-90"
+                                        >
+                                            <CheckCircle2 size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0 mr-2">
+                                    <span className="text-[14px] font-black text-brand-navy shrink-0">
                                         {calculateProgress(training)}%
                                     </span>
                                 </div>
-
-                                {/* 3. Right Side (Coach & Date & Action) */}
-                                <div className="flex items-center gap-2 shrink-0">
-                                    <div className="flex flex-col items-end leading-tight mr-1">
-                                        <span className="text-[10px] text-zinc-400 font-medium">
-                                            {training.date.slice(5).replace("-", ".")}
+                            </div>
+                            
+                            <div className="flex items-end justify-between mt-3">
+                                {(() => {
+                                    const dateStr = training.date.slice(5).replace("-", ".");
+                                    const courseStr = getAuthorOrCourseName(training);
+                                    let scorecardId = null;
+                                    if (training.type === 'preview' || training.type === 'review' || training.title?.includes('[예습]') || training.title?.includes('[복습]')) {
+                                        const reviewSetting = (training.template_settings || []).find((s: any) => s.type === "review_scorecard" || s.type === "prep_scorecard");
+                                        if (reviewSetting && reviewSetting.scorecardId) {
+                                            scorecardId = reviewSetting.scorecardId;
+                                        }
+                                    }
+                                    
+                                    if (scorecardId) {
+                                        return <ScorecardMetaDisplay scorecardId={scorecardId} dateStr={dateStr} courseStr={courseStr} />;
+                                    }
+                                    return (
+                                        <span className="text-[11px] font-bold text-zinc-400 shrink-0 mb-0.5 pl-[40px]">
+                                            {dateStr} <span className="opacity-40 font-normal mx-0.5">|</span> {courseStr}
                                         </span>
-                                        <span className="text-[11px] text-zinc-600 dark:text-zinc-300 font-bold truncate max-w-[50px]">
-                                            {training.coachName}
-                                        </span>
-                                    </div>
-                                    <button 
-                                        onClick={(e) => handleCompleteTraining(e, training)}
-                                        className="p-1.5 bg-brand-red text-white rounded-lg shadow-sm active:scale-90 transition-all"
-                                    >
-                                        <CheckCircle2 size={16} />
-                                    </button>
-                                </div>
+                                    );
+                                })()}
+                                <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 truncate mr-2">
+                                    {training.playerName}
+                                </span>
                             </div>
                         </div>
                     );
@@ -214,18 +277,21 @@ export function TrainingTable({ trainings, totalCount, onUpdate }: TrainingTable
                             <th className="py-2.5 px-4 font-semibold text-center w-20">유형</th>
                             <th className="py-2.5 px-4 font-semibold text-center w-24">선수명</th>
                             <th className="py-2.5 px-4 font-semibold text-center w-24">진행률</th>
-                            <th className="py-2.5 px-4 font-semibold text-center w-20">작성자</th>
+                            <th className="py-2.5 px-4 font-semibold text-center w-24">작성자/골프장</th>
                             <th className="py-2.5 px-4 font-semibold text-center w-20">날짜</th>
                             <th className="py-2.5 px-4 font-semibold text-center w-20">완료</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                         {trainings.map((training, idx) => {
-                            const cfg = typeConfig[training.type] || typeConfig.etc;
+                            const cfg = typeConfig[training.type] || typeConfig.basic;
                             return (
                                 <tr
                                     key={training.id}
-                                    onClick={() => router.push(`/training/${training.id}`)}
+                                    onClick={() => {
+                                        sessionStorage.setItem("gla_training_keep_alive", "true");
+                                        router.push(`${basePath || '/training'}/${training.id}`);
+                                    }}
                                     className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer"
                                 >
                                     <td className="py-3.5 px-4 text-center text-zinc-500 dark:text-zinc-500">
@@ -233,9 +299,7 @@ export function TrainingTable({ trainings, totalCount, onUpdate }: TrainingTable
                                     </td>
                                     <td className="py-3.5 px-4 text-center">
                                         <div className="flex flex-col items-center leading-tight">
-                                            {training.title?.includes("[기본기]") && <span className="text-[12px] font-black text-brand-red">기본기</span>}
-                                            {training.title?.includes("[예습]") && <span className="text-[12px] font-black text-brand-navy">예습</span>}
-                                            {training.title?.includes("[복습]") && <span className="text-[12px] font-black text-zinc-500">복습</span>}
+
                                             <span className={cn("text-[11px] font-bold uppercase", cfg.labelColor)}>
                                                 {cfg.label}
                                             </span>
@@ -264,7 +328,7 @@ export function TrainingTable({ trainings, totalCount, onUpdate }: TrainingTable
                                         </div>
                                     </td>
                                     <td className="py-3.5 px-4 text-center text-zinc-600 dark:text-zinc-400 truncate">
-                                        {training.coachName}
+                                        {getAuthorOrCourseName(training)}
                                     </td>
                                     <td className="py-3.5 px-4 text-center text-zinc-500 dark:text-zinc-500">
                                         {training.date.slice(5).replace("-", ".")}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
     ChevronLeft,
@@ -8,7 +8,9 @@ import {
     Check,
     Layout,
     ChevronDown,
-    ChevronUp
+    ChevronUp,
+    Paperclip,
+    X
 } from "lucide-react";
 import { saveCourseInfo } from "@/lib/course-info-sync";
 import { cn } from "@/lib/utils";
@@ -23,6 +25,9 @@ export default function CreateCourseInfoPage() {
     const [holes, setHoles] = useState<Record<number, string>>({});
     const [openHoles, setOpenHoles] = useState<Record<number, boolean>>({});
     const [isHolesOpen, setIsHolesOpen] = useState(false);
+    
+    const [attachments, setAttachments] = useState<File[]>([]);
+    const fileInputRef = useRef<HTMLInputElement>(null);
     
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [userId, setUserId] = useState<string | null>(null);
@@ -71,6 +76,17 @@ export default function CreateCourseInfoPage() {
         setHoles(prev => ({ ...prev, [holeNum]: val }));
     };
 
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) {
+            setAttachments(prev => [...prev, ...Array.from(e.target.files!)]);
+        }
+        e.target.value = "";
+    };
+
+    const removeAttachment = (idx: number) => {
+        setAttachments(prev => prev.filter((_, i) => i !== idx));
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
@@ -84,10 +100,17 @@ export default function CreateCourseInfoPage() {
         try {
             setIsSubmitting(true);
             
+            let uploadedUrls: string[] = [];
+            if (attachments.length > 0) {
+                const { uploadFiles } = await import("@/lib/storage-sync");
+                uploadedUrls = await uploadFiles(attachments, "records");
+            }
+
             const contentData = {
                 courseDescription,
                 courseInput,
-                holes
+                holes,
+                attachments: uploadedUrls
             };
             
             await saveCourseInfo({
@@ -178,6 +201,45 @@ export default function CreateCourseInfoPage() {
                             placeholder="상세 내용을 기록해주세요..."
                             className="w-full p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all resize-y"
                         />
+                        
+                        <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                            <div className="flex items-center justify-between mb-3">
+                                <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+                                    <Paperclip size={16} className="text-zinc-400" />
+                                    첨부파일
+                                </label>
+                                <button
+                                    type="button"
+                                    onClick={() => fileInputRef.current?.click()}
+                                    className="px-3 py-1.5 text-xs font-bold text-brand-navy bg-brand-navy/5 hover:bg-brand-navy/10 rounded-lg transition-colors"
+                                >
+                                    파일 추가
+                                </button>
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    multiple
+                                    className="hidden"
+                                    onChange={handleFileChange}
+                                />
+                            </div>
+                            {attachments.length > 0 && (
+                                <div className="space-y-2">
+                                    {attachments.map((file, idx) => (
+                                        <div key={idx} className="flex items-center justify-between px-3 py-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800 rounded-lg">
+                                            <span className="text-xs text-zinc-600 dark:text-zinc-400 truncate flex-1 pr-4">{file.name}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => removeAttachment(idx)}
+                                                className="p-1 text-zinc-400 hover:text-brand-red transition-colors"
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </section>
 
                     {/* ── Hole Information Accordion ── */}

@@ -25,7 +25,8 @@ import {
     LogOut,
     UserCircle,
     MessageSquare,
-    Trophy
+    Trophy,
+    Medal
 } from "lucide-react";
 
 // Menu configuration based on user request
@@ -36,12 +37,6 @@ const menuItems = [
         title: "Home",
         icon: Home,
         href: "/",
-    },
-    {
-        key: "analysis",
-        title: "분석",
-        icon: Activity,
-        href: "/analysis",
     },
     {
         key: "lessons",
@@ -55,7 +50,6 @@ const menuItems = [
         icon: Dumbbell,
         href: "/training",
     },
-
     {
         key: "challenges",
         title: "챌린지",
@@ -63,11 +57,18 @@ const menuItems = [
         href: "/training/challenges",
     },
     {
+        title: "참가 대회",
+        icon: Medal,
+        subItems: [
+            { key: "tournament-schedule", title: "대회 스케쥴", href: "/schedule/tournaments" },
+            { key: "tournament-results-view", title: "대회 결과", href: "/schedule/tournament-results" },
+        ],
+    },
+    {
         title: "스케쥴",
         icon: Calendar,
         subItems: [
             { key: "schedule", title: "스케쥴", href: "/schedule" },
-            { key: "tournament-schedule", title: "대회 스케쥴", href: "/schedule/tournaments" },
             { key: "coach-trip-schedule", title: "출장 스케쥴", href: "/schedule/coach-trips" },
         ],
     },
@@ -86,20 +87,23 @@ const menuItems = [
             { key: "community", title: "공지사항", href: "/community" },
             { key: "polls", title: "투표", href: "/admin/polls" },
             { key: "consultations", title: "상담", href: "/consultations" },
+            { key: "training-plan", title: "훈련계획", href: "/admin/training-plan" },
             { key: "training-journal", title: "훈련일지", href: "/admin/training-journal" },
             { key: "attendance", title: "출석 체크", href: "/operations/attendance" },
-            { key: "todo-list", title: "To-Do 리스트", href: "/operations/todos" },
+            { key: "todo-list", title: "할일", href: "/operations/todos" },
             { key: "course-management", title: "골프IQ", href: "/course-management" },
             { key: "course-info", title: "코스 정보", href: "/course-info" },
             { key: "reports", title: "선수 레포트", href: "/operations/reports" },
+            { key: "coach-selection", title: "담임 코치 선택", href: "/coach-selection" },
         ],
     },
     {
         title: "운영/관리",
         icon: Settings,
         subItems: [
-            { key: "assigned-athletes", title: "담임 선수 배정", href: "/admin/assigned-athletes" },
             { key: "statistics", title: "운영 통계", href: "/admin/statistics" },
+            { key: "player-reports", title: "선수 레포트 작성", href: "/admin/player-reports" },
+            { key: "assigned-athletes", title: "담임 선수 배정", href: "/admin/assigned-athletes" },
             { key: "tournament-results", title: "대회 성적 관리", href: "/admin/tournament-results" },
             { key: "lesson-list", title: "스윙 오류 관리", href: "/system/lesson-list" },
             { key: "training-list", title: "훈련 리스트 관리", href: "/system/training-list" },
@@ -110,12 +114,22 @@ const menuItems = [
         title: "시스템 관리",
         icon: Server,
         subItems: [
+            { key: "attendance-kiosk", title: "출석체크 번호 입력", href: "/operations/attendance/kiosk" },
             { key: "branches", title: "지점 관리", href: "/system/branches" },
             { key: "athletes", title: "선수 관리", href: "/system/athletes" },
             { key: "coaches", title: "코치 관리", href: "/system/coaches" },
             { key: "parents", title: "학부모 관리", href: "/system/parents" },
             { key: "permissions", title: "권한 관리", href: "/system/permissions" },
             { key: "menu-management", title: "메뉴 관리", href: "/system/menu-management" },
+        ],
+    },
+    {
+        title: "테스트",
+        icon: ClipboardList,
+        subItems: [
+            { key: "temp-training", title: "훈련 (임시)", href: "/admin/training-temp" },
+            { key: "temp-swing-skeleton", title: "스윙 테스트 (임시)", href: "/training/swing-skeleton" },
+            { key: "temp-swing-test", title: "복습 카메라 (임시)", href: "/training/swing-test" },
         ],
     },
 ];
@@ -128,6 +142,7 @@ export function SideNav() {
     const [profileLink, setProfileLink] = useState("/");
     const [userRole, setUserRole] = useState<string | null>(null);
     const [userName, setUserName] = useState<string | null>(null);
+    const [userBranch, setUserBranch] = useState<string | null>(null);
     const [permissions, setPermissions] = useState<any[]>([]);
 
     // Close mobile menu when pathname changes
@@ -142,13 +157,14 @@ export function SideNav() {
             if (user) {
                 const { data: profile } = await supabase
                     .from("users")
-                    .select("id, role, name")
+                    .select("id, role, name, branch")
                     .eq("id", user.id)
                     .single();
 
                 if (profile) {
                     setUserRole(profile.role);
                     setUserName(profile.name);
+                    setUserBranch(profile.branch);
                     if (profile.role === "coach" || profile.role === "admin") {
                         setProfileLink(`/system/coaches/${profile.id}`);
                     } else if (profile.role === "athlete") {
@@ -161,17 +177,34 @@ export function SideNav() {
         };
         getProfile();
 
-        // Load permissions
-        if (typeof window !== "undefined") {
-            const saved = localStorage.getItem("gla_permissions");
-            if (saved) {
-                try {
-                    setPermissions(JSON.parse(saved));
-                } catch {
-                    setPermissions([]);
+        // Load permissions from Supabase
+        const getPermissions = async () => {
+            const { data, error } = await supabase.from('role_permissions').select('*');
+            if (data && !error) {
+                // Group by menuKey
+                const permMap: any[] = [];
+                const grouped = data.reduce((acc: any, curr: any) => {
+                    if (!acc[curr.menu_key]) {
+                        acc[curr.menu_key] = {
+                            menuKey: curr.menu_key,
+                            permissions: {}
+                        };
+                    }
+                    acc[curr.menu_key].permissions[curr.role] = {
+                        read: curr.can_read,
+                        write: curr.can_write
+                    };
+                    return acc;
+                }, {});
+                for (const key in grouped) {
+                    permMap.push(grouped[key]);
                 }
+                setPermissions(permMap);
+            } else {
+                setPermissions([]);
             }
-        }
+        };
+        getPermissions();
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
             if (session?.user) {
@@ -184,9 +217,27 @@ export function SideNav() {
 
     const canShowMenu = (item: any) => {
         if (!userRole) return false;
+
+        // Hide Admin & System menus explicitly for athletes
+        if (userRole === "athlete" && (item.title === "운영/관리" || item.title === "시스템 관리" || item.title === "테스트")) {
+            return false;
+        }
+
+        // Hide System menus explicitly for coaches
+        if (userRole === "coach" && item.title === "시스템 관리") {
+            return false;
+        }
+
+        if (item.title === "테스트") {
+            const isSuperAdmin = userRole === "admin" || userName === "슈퍼관리자";
+            const isHeadCoach = userRole === "coach" && userBranch === "총괄";
+            if (!isSuperAdmin && !isHeadCoach) {
+                return false;
+            }
+        }
+
         // Admins can see everything by default in the UI unless explicitly hidden?
         // Actually, follow the permission table strictly.
-        
         if (item.subItems) {
             // Folder is visible if any sub-item is visible
             return item.subItems.some((sub: any) => canShowSubItem(sub));
@@ -194,7 +245,7 @@ export function SideNav() {
 
         const perm = permissions.find(p => p.menuKey === item.key);
         if (!perm) return true; // Default to visible if not in perm table (e.g. newly added)
-        
+
         return perm.permissions[userRole]?.read;
     };
 
@@ -308,7 +359,7 @@ export function SideNav() {
                             </button>
                         </div>
 
-                        <div className="hidden md:flex flex-row items-center justify-center gap-3 pb-4 border-b border-zinc-100 dark:border-zinc-800/60">
+                        <div className="flex flex-row items-center justify-center gap-3 pb-4 border-b border-zinc-100 dark:border-zinc-800/60">
                             <Link href={profileLink} className="flex items-center gap-2 px-3 py-1.5 rounded-full text-zinc-400 hover:text-brand-navy dark:hover:text-brand-navy-light hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-all focus:outline-none">
                                 <UserCircle size={24} strokeWidth={1.5} />
                                 <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">{userName}</span>
@@ -332,85 +383,90 @@ export function SideNav() {
                                 const hasSubItems = !!filteredSubItems && filteredSubItems.length > 0;
 
                                 if (!item.subItems) {
-                                // For single links, we consider it active if the pathname starts with the href
-                                // But avoid double-highlighting if another menu item has a more specific (longer) match
-                                const isActive = pathname === item.href || (
-                                    item.href !== '/' &&
-                                    pathname.startsWith(item.href!) &&
-                                    !menuItems.some(other =>
-                                        other.href !== item.href &&
-                                        other.href &&
-                                        other.href !== '/' &&
-                                        pathname.startsWith(other.href) &&
-                                        other.href.length > item.href!.length
-                                    )
-                                );
-                                return (
-                                    <Link
-                                        key={item.title}
-                                        href={item.href!}
-                                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                                    // For single links, we consider it active if the pathname starts with the href
+                                    // But avoid double-highlighting if another menu item has a more specific (longer) match
+                                    const isActive = pathname === item.href || (
+                                        item.href !== '/' &&
+                                        pathname.startsWith(item.href!) &&
+                                        !menuItems.some(other =>
+                                            other.href !== item.href &&
+                                            other.href &&
+                                            other.href !== '/' &&
+                                            pathname.startsWith(other.href) &&
+                                            other.href.length > item.href!.length
+                                        )
+                                    );
+                                    return (
+                                        <Link
+                                            key={item.title}
+                                            href={item.href!}
+                                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
                                             ${isActive
-                                                ? "bg-brand-navy/10 text-brand-navy dark:bg-brand-navy/20 dark:text-white"
-                                                : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 hover:text-zinc-900 dark:hover:text-zinc-100"
-                                            }`}
-                                    >
-                                        <Icon size={18} />
-                                        {item.title}
-                                    </Link>
-                                );
-                            }
-
-                            // Foldable Item
-                            const isMenuOpen = openMenus[item.title];
-                            const isAnyChildActive = item.subItems?.some(
-                                sub => pathname === sub.href || pathname.startsWith(sub.href + '/')
-                            );
-
-                            return (
-                                <div key={item.title} className="space-y-1">
-                                    <button
-                                        onClick={() => toggleMenu(item.title)}
-                                        className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
-                                            ${isAnyChildActive
-                                                ? "text-brand-navy dark:text-white"
-                                                : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
-                                            }`}
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <Icon size={18} className={isAnyChildActive ? "text-brand-navy dark:text-brand-navy-light" : "text-zinc-400"} />
+                                                    ? "bg-brand-navy/10 text-brand-navy dark:bg-brand-navy/20 dark:text-white"
+                                                    : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-900/50 hover:text-zinc-900 dark:hover:text-zinc-100"
+                                                }`}
+                                        >
+                                            <Icon size={18} />
                                             {item.title}
-                                        </div>
-                                        {isMenuOpen ? (
-                                            <ChevronDown size={16} className="text-zinc-400" />
-                                        ) : (
-                                            <ChevronRight size={16} className="text-zinc-400" />
-                                        )}
-                                    </button>
+                                        </Link>
+                                    );
+                                }
 
-                                    {isMenuOpen && (
-                                        <div className="pl-10 space-y-1 mt-1 mb-2">
-                                            {filteredSubItems?.map((sub) => {
-                                                const isSubActive = pathname === sub.href;
-                                                return (
-                                                    <Link
-                                                        key={sub.title}
-                                                        href={sub.href}
-                                                        className={`block px-3 py-2 rounded-lg text-sm transition-colors
+                                // Foldable Item
+                                const isMenuOpen = openMenus[item.title];
+                                const isAnyChildActive = item.subItems?.some(
+                                    sub => pathname === sub.href || pathname.startsWith(sub.href + '/')
+                                );
+
+                                return (
+                                    <div key={item.title} className="space-y-1">
+                                        <button
+                                            onClick={() => toggleMenu(item.title)}
+                                            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors
+                                            ${isAnyChildActive
+                                                    ? "text-brand-navy dark:text-white"
+                                                    : "text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
+                                                }`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <Icon size={18} className={isAnyChildActive ? "text-brand-navy dark:text-brand-navy-light" : "text-zinc-400"} />
+                                                {item.title}
+                                            </div>
+                                            {isMenuOpen ? (
+                                                <ChevronDown size={16} className="text-zinc-400" />
+                                            ) : (
+                                                <ChevronRight size={16} className="text-zinc-400" />
+                                            )}
+                                        </button>
+
+                                        {isMenuOpen && (
+                                            <div className="pl-10 space-y-1 mt-1 mb-2">
+                                                {filteredSubItems?.map((sub) => {
+                                                    const isSubActive = pathname === sub.href;
+                                                    return (
+                                                        <Link
+                                                            key={sub.title}
+                                                            href={sub.href}
+                                                            onClick={() => {
+                                                                if (sub.href === "/admin/player-reports") {
+                                                                    sessionStorage.removeItem("gla_report_athlete_id");
+                                                                }
+                                                            }}
+                                                            className={`block px-3 py-2 rounded-lg text-sm transition-colors
                                                             ${isSubActive
-                                                                ? "bg-brand-navy/5 text-brand-navy font-semibold dark:bg-brand-navy/20 dark:text-white"
-                                                                : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
-                                                            }`}
-                                                    >
-                                                        {sub.title}
-                                                    </Link>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
+                                                                    ? "bg-brand-navy/5 text-brand-navy font-semibold dark:bg-brand-navy/20 dark:text-white"
+                                                                    : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-900/50"
+                                                                }`}
+                                                        >
+                                                            {sub.title}
+                                                        </Link>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
                     </nav>
                 </div>
             </aside>

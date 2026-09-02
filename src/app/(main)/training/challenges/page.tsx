@@ -6,35 +6,36 @@ import { useRouter } from "next/navigation";
 import { TestData, TestType, mockTests, mockTodayTests, TEST_TYPE_LABELS, fetchTestsByPlayer, TestRecord } from "@/lib/test-sync";
 import { TestTable } from "@/components/training/TestTable";
 import { ClipboardList, Plus, Search, Calendar, ChevronLeft, ChevronRight, Trophy, Medal, Crown } from "lucide-react";
+import { CategoryTabs } from "@/components/ui/CategoryTabs";
 import { getTodayScheduledItems } from "@/lib/schedule-sync";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { createClient } from "@/lib/supabase/client";
 import { DatePresets, DatePresetType } from "@/components/ui/DatePresets";
 import { cn, formatScore } from "@/lib/utils";
 
+import { PageTitle, SectionTitle, LabelText } from "@/components/ui/Typography";
+
 // ── Filter categories ────────────────────────────────────────
-type FilterType = "all" | "shot" | "short_game" | "putting" | "physical" | "etc";
+type FilterType = "all" | "shot" | "short_game" | "putting";
 
 const filterButtons: { key: FilterType; label: string }[] = [
     { key: "all", label: "ALL" },
     { key: "shot", label: "샷" },
     { key: "short_game", label: "숏게임" },
     { key: "putting", label: "퍼팅" },
-    { key: "physical", label: "피지컬" },
-    { key: "etc", label: "기타" },
 ];
 
 const categories = [
     { key: "shot", label: "샷", color: "from-amber-400 to-orange-500", icon: <Trophy size={18} /> },
     { key: "short_game", label: "숏게임", color: "from-emerald-400 to-teal-500", icon: <Medal size={18} /> },
-    { key: "putting", label: "퍼팅", color: "from-violet-400 to-fuchsia-500", icon: <Crown size={18} /> },
-    { key: "physical", label: "피지컬", color: "from-sky-400 to-indigo-500", icon: <Trophy size={18} /> },
-    { key: "etc", label: "기타", color: "from-zinc-400 to-slate-500", icon: <ClipboardList size={18} /> }
+    { key: "putting", label: "퍼팅", color: "from-violet-400 to-fuchsia-500", icon: <Crown size={18} /> }
 ];
 
 export default function ChallengesPage() {
     const router = useRouter();
     const [allTests, setAllTests] = useState<TestData[]>([]);
+    const [totalTestCount, setTotalTestCount] = useState(0);
+    const [leaderboardRecords, setLeaderboardRecords] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activeFilter, setActiveFilter] = useState<FilterType>("all");
     const [searchQuery, setSearchQuery] = useState("");
@@ -46,6 +47,7 @@ export default function ChallengesPage() {
     const [activePreset, setActivePreset] = useState<DatePresetType>("custom");
     const [displayLimit, setDisplayLimit] = useState(20);
     const [userRole, setUserRole] = useState<string | null>(null);
+    const [userName, setUserName] = useState<string>("");
 
     const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -55,7 +57,7 @@ export default function ChallengesPage() {
                 setIsLoading(true);
                 const supabase = createClient();
                 const { data: { user } } = await supabase.auth.getUser();
-                
+
                 if (!user) return;
 
                 const { data: profile } = await supabase
@@ -66,71 +68,38 @@ export default function ChallengesPage() {
 
                 if (!profile) return;
                 setUserRole(profile.role);
+                setUserName(profile.name);
 
-                // Fetch tests based on role
-                let fetchedRecords: TestRecord[] = [];
-                if (profile.role === 'athlete') {
-                    fetchedRecords = await fetchTestsByPlayer(profile.name);
-                } else {
-                    // For coach/admin, fetch all records from test_sessions
-                    const { data } = await supabase
-                        .from("test_sessions")
-                        .select(`
-                            id,
-                            category,
-                            title,
-                            raw_shot_data,
-                            total_score,
-                            created_at,
-                            athlete:users!test_sessions_user_id_fkey(name),
-                            coach:users!test_sessions_coach_id_fkey(name)
-                        `)
-                        .order("created_at", { ascending: false });
-                    
-                    if (data) {
-                        fetchedRecords = data.map((r: any) => ({
-                            id: r.id,
-                            type: "test",
-                            category: r.category as TestType,
-                            title: r.title || "",
-                            content: r.raw_shot_data, // mapped back to content for UI compatibility
-                            score: r.total_score,
-                            created_at: r.created_at,
-                            playerName: r.athlete?.name || "Unknown",
-                            coachName: r.coach?.name || "Unknown"
-                        }));
-                    }
+                // Fetch LEAN data for leaderboard (no raw_shot_data)
+                const { data: leanData } = await supabase
+                    .from("test_sessions")
+                    .select(`
+                        id,
+                        category,
+                        total_score,
+                        created_at,
+                        athlete:users!test_sessions_user_id_fkey(name)
+                    `)
+                    .order("inserted_at", { ascending: false });
 
-                    // If coach, filter by assigned athletes
-                    if (profile.role === 'coach' && profile.assigned_athletes) {
-                        const assignedNames = profile.assigned_athletes.split(',').map((n: string) => n.trim());
-                        fetchedRecords = fetchedRecords.filter(r => assignedNames.includes(r.playerName));
-                    }
+                if (leanData) {
+                    const mappedLean = leanData.map((r: any) => ({
+                        type: r.category,
+                        playerName: r.athlete?.name || "Unknown",
+                        date: r.created_at ? new Date(r.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }) : "",
+                        totalScore: r.total_score || 0
+                    }));
+                    setLeaderboardRecords(mappedLean);
                 }
 
-                const mapped: TestData[] = fetchedRecords.map(r => {
-                    // content might be a string or object depending on how Supabase returns it
-                    const parsedContent = typeof r.content === 'string' ? JSON.parse(r.content) : r.content;
-                    const displayScore = r.score !== undefined && r.score !== null ? r.score : (parsedContent?.totalScore || 0);
-
-                    return {
-                        id: r.id,
-                        type: r.category,
-                        title: r.title,
-                        playerName: r.playerName,
-                        coachName: r.coachName,
-                        comment: displayScore !== undefined ? `점수: ${Number(displayScore).toFixed(2)}` : "",
-                        date: r.created_at.split('T')[0],
-                        totalScore: Number(displayScore)
-                    };
-                });
-
-                setAllTests(mapped);
-                
-                const players = Array.from(new Set(mapped.map(t => t.playerName)));
-                setAllAthletes(players);
-                setSelectedPlayers(new Set(players));
-                setSelectAll(true);
+                // Athletes for chips
+                const { data: athletesData } = await supabase.from("users").select("name").eq("role", "athlete");
+                if (athletesData) {
+                    const players = athletesData.map((a: any) => a.name);
+                    setAllAthletes(players);
+                    setSelectedPlayers(new Set(players));
+                    setSelectAll(true);
+                }
 
             } catch (err) {
                 console.error("Error loading tests:", err);
@@ -141,6 +110,79 @@ export default function ChallengesPage() {
 
         loadInitialData();
     }, []);
+
+    // New useEffect for Server-side Pagination
+    useEffect(() => {
+        if (isLoading || !userRole) return;
+
+        const fetchFilteredTests = async () => {
+            const supabase = createClient();
+            let query = supabase
+                .from("test_sessions")
+                .select(`
+                    id, category, title, raw_shot_data, total_score, created_at,
+                    athlete:users!test_sessions_user_id_fkey(name),
+                    coach:users!test_sessions_coach_id_fkey(name)
+                `, { count: 'exact' });
+
+            if (activeFilter !== "all") {
+                if (activeFilter === "shot") {
+                    query = query.in("category", ["shot", "driver", "iron", "wood_iron"]);
+                } else if (activeFilter === "short_game") {
+                    query = query.in("category", ["around_green", "short_game", "approach", "bunker", "pitch", "A/G"]);
+                } else if (activeFilter === "putting") {
+                    query = query.in("category", ["putting", "long_putt", "middle_putt", "short_putt"]);
+                }
+            }
+            if (startDate) {
+                query = query.gte("created_at", startDate);
+            }
+            if (endDate) {
+                query = query.lte("created_at", endDate + " 23:59:59");
+            }
+
+            if ((userRole === 'coach' || userRole === 'admin') && !selectAll && selectedPlayers.size > 0) {
+                const { data: usersData } = await supabase.from("users").select("id").in("name", Array.from(selectedPlayers));
+                const userIds = usersData?.map(u => u.id) || [];
+                if (userIds.length > 0) {
+                    query = query.in("user_id", userIds);
+                } else {
+                    query = query.eq("user_id", "00000000-0000-0000-0000-000000000000");
+                }
+            } else if (userRole === 'athlete') {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    query = query.eq("user_id", user.id);
+                }
+            }
+
+            query = query.order("inserted_at", { ascending: false }).limit(displayLimit);
+
+            const { data, count, error } = await query;
+            if (error || !data) return;
+
+            setTotalTestCount(count || 0);
+
+            const mapped: TestData[] = data.map((r: any) => {
+                const parsedContent = typeof r.raw_shot_data === 'string' ? JSON.parse(r.raw_shot_data) : r.raw_shot_data;
+                const displayScore = r.total_score !== undefined && r.total_score !== null ? r.total_score : (parsedContent?.totalScore || 0);
+                return {
+                    id: r.id,
+                    type: r.category,
+                    title: r.title,
+                    playerName: r.athlete?.name || "Unknown",
+                    coachName: r.coach?.name || "Unknown",
+                    comment: displayScore !== undefined ? `점수: ${Number(displayScore).toFixed(2)}` : "",
+                    date: r.created_at ? new Date(r.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }) : "",
+                    totalScore: Number(displayScore)
+                };
+            });
+
+            setAllTests(mapped);
+        };
+
+        fetchFilteredTests();
+    }, [isLoading, activeFilter, startDate, endDate, selectAll, selectedPlayers, displayLimit, userRole]);
 
     const scroll = (direction: "left" | "right") => {
         if (scrollRef.current) {
@@ -176,44 +218,20 @@ export default function ChallengesPage() {
         setSearchQuery("");
     };
 
-    const filteredTests = useMemo(() => {
-        return allTests.filter((t) => {
-            let typeMatch = activeFilter === "all";
-            if (activeFilter === "shot") {
-                typeMatch = t.type === "shot" || t.type === "driver" || t.type === "iron" || t.type === "wood_iron";
-            } else if (activeFilter === "short_game") {
-                typeMatch = t.type === "around_green" || t.type === "short_game" || t.type === "approach" || t.type === "bunker" || t.type === "pitch";
-            } else if (activeFilter === "putting") {
-                typeMatch = t.type === "putting" || t.type === "long_putt" || t.type === "middle_putt" || t.type === "short_putt";
-            } else if (activeFilter === "physical") {
-                typeMatch = t.type === "physical";
-            } else if (activeFilter === "etc") {
-                typeMatch = t.type === "etc";
-            }
-            
-            const playerMatch = selectedPlayers.has(t.playerName);
-            const afterStart = !startDate || t.date >= startDate;
-            const beforeEnd = !endDate || t.date <= endDate;
-            return typeMatch && playerMatch && afterStart && beforeEnd;
-        });
-    }, [allTests, activeFilter, selectedPlayers, startDate, endDate]);
-
-    const displayedTests = useMemo(() => {
-        return filteredTests.slice(0, displayLimit);
-    }, [filteredTests, displayLimit]);
+    // Client side filtering is now replaced by server-side filtering
 
     const leaderboardData = useMemo(() => {
-        if (allTests.length === 0) return [];
-        
+        if (leaderboardRecords.length === 0) return [];
+
         const now = new Date();
         const startOfWeek = new Date(now);
         startOfWeek.setDate(now.getDate() - now.getDay());
-        startOfWeek.setHours(0,0,0,0);
-        
+        startOfWeek.setHours(0, 0, 0, 0);
+
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        
+
         return categories.map(cat => {
-            const catTests = allTests.filter(t => {
+            const catTests = leaderboardRecords.filter(t => {
                 if (cat.key === "shot") return t.type === "shot" || t.type === "driver" || t.type === "iron" || t.type === "wood_iron";
                 if (cat.key === "short_game") return t.type === "around_green" || t.type === "short_game" || t.type === "approach" || t.type === "bunker" || t.type === "pitch";
                 if (cat.key === "putting") return t.type === "putting" || t.type === "long_putt" || t.type === "middle_putt" || t.type === "short_putt";
@@ -221,23 +239,28 @@ export default function ChallengesPage() {
                 if (cat.key === "etc") return t.type === "etc";
                 return false;
             });
-            
+
             const weekly = catTests
                 .filter(t => new Date(t.date) >= startOfWeek)
                 .sort((a, b) => (a.totalScore || 0) - (b.totalScore || 0))[0];
-                
+
             const monthly = catTests
                 .filter(t => new Date(t.date) >= startOfMonth)
                 .sort((a, b) => (a.totalScore || 0) - (b.totalScore || 0))[0];
-                
+
+            const myRecord = catTests
+                .filter(t => t.playerName === userName)
+                .sort((a, b) => (a.totalScore || 0) - (b.totalScore || 0))[0];
+
             return {
                 ...cat,
                 weekly,
-                monthly
+                monthly,
+                myRecord
             };
         });
-    }, [allTests]);
-    
+    }, [leaderboardRecords, userName]);
+
     const todayCompletedTests = useMemo(() => {
         const now = new Date();
         const yyyy = now.getFullYear();
@@ -249,7 +272,7 @@ export default function ChallengesPage() {
 
     const todayBestSummary = useMemo(() => {
         const todayTests = todayCompletedTests;
-        
+
         const getBest = (categories: string[]) => {
             const filtered = todayTests.filter(t => categories.includes(t.type));
             if (filtered.length === 0) return null;
@@ -259,9 +282,9 @@ export default function ChallengesPage() {
         const shot = getBest(["shot", "driver", "iron", "wood_iron"]);
         const around = getBest(["around_green", "approach", "bunker", "pitch", "A/G"]);
         const putting = getBest(["putting", "long_putt", "middle_putt", "short_putt"]);
-        
+
         const total = (shot ?? 0) + (around ?? 0) + (putting ?? 0);
-        
+
         return { shot, around, putting, total, hasAny: shot !== null || around !== null || putting !== null };
     }, [todayCompletedTests]);
 
@@ -278,11 +301,11 @@ export default function ChallengesPage() {
             <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
                     <ClipboardList size={24} className="text-brand-navy dark:text-brand-navy-light shrink-0" />
-                    <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+                    <PageTitle>
                         Challenge
-                    </h1>
+                    </PageTitle>
                 </div>
-                {(userRole === 'coach' || userRole === 'admin') && (
+                {(userRole === 'coach' || userRole === 'admin' || userRole === 'athlete') && (
                     <Link
                         href="/training/challenges/create"
                         className="bg-brand-red hover:bg-brand-red-dark text-white px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
@@ -298,105 +321,87 @@ export default function ChallengesPage() {
                 <div className="flex items-center justify-between mb-4 px-1">
                     <div className="flex items-center gap-2 min-w-0">
                         <Trophy size={18} className="text-amber-500 shrink-0" />
-                        <h2 className="text-[15px] sm:text-lg font-black text-zinc-800 dark:text-zinc-100 tracking-tight whitespace-nowrap overflow-hidden text-ellipsis">
+                        <SectionTitle>
                             명예의 전당 <span className="hidden xs:inline">(HALL OF FAME)</span>
-                        </h2>
+                        </SectionTitle>
                     </div>
-                    <Link 
+                    <Link
                         href="/training/rankings"
                         className="px-2.5 sm:px-3 py-1 bg-amber-500 text-[10px] font-bold text-white rounded-full hover:bg-amber-600 shadow-sm shadow-amber-500/20 transition-all active:scale-95 flex items-center gap-1 shrink-0 whitespace-nowrap"
                     >
                         전체 랭킹보기 <ChevronRight size={12} />
                     </Link>
                 </div>
-                
-                <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide -mx-1 px-1">
-                    {userRole === 'athlete' && (
-                        <div className="sticky left-0 z-10 flex-shrink-0 w-64 bg-brand-navy dark:bg-zinc-900 border border-brand-navy dark:border-zinc-800 p-6 rounded-[2rem] shadow-xl text-white mr-2">
-                            <div className="flex items-center gap-2 mb-4">
-                                <Trophy size={18} className="text-amber-400" />
-                                <span className="text-[10px] font-black uppercase tracking-widest opacity-80">Today's Personal Best</span>
-                            </div>
-                            <div className="space-y-4">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-sm font-bold opacity-60">Shot</span>
-                                    <span className="text-sm font-black italic">{todayBestSummary.shot !== null ? formatScore(todayBestSummary.shot) : "-"}</span>
-                                </div>
-                                <div className="h-[1px] bg-white/10 w-full" />
-                                <div className="flex justify-between items-center">
-                                    <span className="text-sm font-bold opacity-60">Around Green</span>
-                                    <span className="text-sm font-black italic">{todayBestSummary.around !== null ? formatScore(todayBestSummary.around) : "-"}</span>
-                                </div>
-                                <div className="h-[1px] bg-white/10 w-full" />
-                                <div className="flex justify-between items-center">
-                                    <span className="text-sm font-bold opacity-60">Putting</span>
-                                    <span className="text-sm font-black italic">{todayBestSummary.putting !== null ? formatScore(todayBestSummary.putting) : "-"}</span>
-                                </div>
-                                <div className="pt-2 mt-4 border-t border-white/20 flex justify-between items-center">
-                                    <span className="text-xs font-black uppercase text-amber-400">Total Today</span>
-                                    <span className="text-2xl font-black italic text-amber-400">
-                                        {formatScore(todayBestSummary.total)}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    )}
+
+                <div className="grid grid-cols-1 gap-3 sm:gap-4 pb-4 -mx-1 px-1">
                     {leaderboardData.map((data) => (
-                        <button 
-                            key={data.key} 
+                        <button
+                            key={data.key}
                             onClick={() => router.push(`/training/rankings?category=${data.key}`)}
                             className={cn(
-                                "flex-shrink-0 w-64 rounded-[2rem] p-5 border shadow-lg transition-all hover:scale-[1.05] hover:shadow-xl active:scale-[0.98] text-left cursor-pointer group",
+                                "rounded-2xl sm:rounded-[1.5rem] p-3 sm:p-4 border shadow-lg transition-all hover:scale-[1.02] hover:shadow-xl active:scale-[0.98] text-left cursor-pointer group flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6",
                                 "bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800"
                             )}
                         >
-                            <div className="flex items-center justify-between mb-4">
-                                <div className={cn("p-2 rounded-xl bg-gradient-to-br text-white shadow-md", data.color)}>
+                            <div className="flex items-center gap-2 sm:w-32 shrink-0 mb-3 sm:mb-0">
+                                <div className={cn("p-1.5 sm:p-2 rounded-xl bg-gradient-to-br text-white shadow-md shrink-0", data.color)}>
                                     {data.icon}
                                 </div>
-                                <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">{data.label}</span>
+                                <span className="text-[13px] sm:text-sm font-black text-zinc-400 uppercase tracking-widest">{data.label}</span>
                             </div>
 
-                            <div className="space-y-4">
-                                {/* Weekly */}
-                                <div className="space-y-1">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-[10px] font-bold text-zinc-400">이번 주 최고</span>
-                                        <span className="text-[10px] font-bold text-blue-500 bg-blue-50 dark:bg-blue-900/30 px-1.5 py-0.5 rounded-md">WEEKLY</span>
-                                    </div>
-                                    {data.weekly ? (
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">{data.weekly.playerName}</span>
-                                            <span className="text-sm font-black italic text-zinc-800 dark:text-zinc-200">
-                                                {data.weekly.totalScore !== undefined ? (
-                                                    formatScore(data.weekly.totalScore)
-                                                ) : "0.0"}
+                            <div className="flex flex-col w-full flex-1 gap-1.5 sm:gap-2">
+                                {/* Monthly */}
+                                <div className="flex items-center justify-between gap-2 bg-zinc-50/50 dark:bg-zinc-800/30 px-3 py-1.5 sm:py-2 rounded-lg">
+                                    <span className="text-[11px] sm:text-[12px] font-bold text-zinc-500 dark:text-zinc-400 shrink-0 w-[64px] sm:w-[72px]">이번 달 1위</span>
+                                    {data.monthly ? (
+                                        <div className="flex items-center justify-end flex-1 gap-2 min-w-0">
+                                            <span className="text-[11px] sm:text-[13px] font-bold text-zinc-800 dark:text-zinc-100 truncate text-right">{data.monthly.playerName}</span>
+                                            <span className={cn(
+                                                "text-[12px] sm:text-[14px] font-black italic shrink-0 w-[42px] sm:w-[48px] text-right",
+                                                data.monthly.totalScore! < 0 ? "text-brand-red" : data.monthly.totalScore! > 0 ? "text-blue-600" : "text-zinc-900 dark:text-zinc-50"
+                                            )}>
+                                                {data.monthly.totalScore !== undefined ? formatScore(data.monthly.totalScore) : "0.0"}
                                             </span>
                                         </div>
                                     ) : (
-                                        <span className="text-[11px] text-zinc-300 italic">데이터 없음</span>
+                                        <span className="text-[10px] sm:text-[11px] text-zinc-400 italic text-right flex-1">데이터 없음</span>
                                     )}
                                 </div>
 
-                                <div className="h-[1px] bg-zinc-100 dark:bg-zinc-800 w-full" />
-
-                                {/* Monthly */}
-                                <div className="space-y-1">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-[10px] font-bold text-zinc-400">이번 달 최고</span>
-                                        <span className="text-[10px] font-bold text-amber-500 bg-amber-50 dark:bg-amber-900/30 px-1.5 py-0.5 rounded-md">MONTHLY</span>
-                                    </div>
-                                    {data.monthly ? (
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-sm font-bold text-zinc-900 dark:text-zinc-50">{data.monthly.playerName}</span>
-                                            <span className="text-sm font-black italic text-zinc-800 dark:text-zinc-200">
-                                                {data.monthly.totalScore !== undefined ? (
-                                                    formatScore(data.monthly.totalScore)
-                                                ) : "0.0"}
+                                {/* Weekly */}
+                                <div className="flex items-center justify-between gap-2 bg-zinc-50/50 dark:bg-zinc-800/30 px-3 py-1.5 sm:py-2 rounded-lg">
+                                    <span className="text-[11px] sm:text-[12px] font-bold text-zinc-500 dark:text-zinc-400 shrink-0 w-[64px] sm:w-[72px]">이번 주 1위</span>
+                                    {data.weekly ? (
+                                        <div className="flex items-center justify-end flex-1 gap-2 min-w-0">
+                                            <span className="text-[11px] sm:text-[13px] font-bold text-zinc-800 dark:text-zinc-100 truncate text-right">{data.weekly.playerName}</span>
+                                            <span className={cn(
+                                                "text-[12px] sm:text-[14px] font-black italic shrink-0 w-[42px] sm:w-[48px] text-right",
+                                                data.weekly.totalScore! < 0 ? "text-brand-red" : data.weekly.totalScore! > 0 ? "text-blue-600" : "text-zinc-900 dark:text-zinc-50"
+                                            )}>
+                                                {data.weekly.totalScore !== undefined ? formatScore(data.weekly.totalScore) : "0.0"}
                                             </span>
                                         </div>
                                     ) : (
-                                        <span className="text-[11px] text-zinc-300 italic">데이터 없음</span>
+                                        <span className="text-[10px] sm:text-[11px] text-zinc-400 italic text-right flex-1">데이터 없음</span>
+                                    )}
+                                </div>
+
+                                {/* My Record */}
+                                <div className="flex items-center justify-between gap-2 bg-zinc-50/50 dark:bg-zinc-800/30 px-3 py-1.5 sm:py-2 rounded-lg">
+                                    <span className="text-[11px] sm:text-[12px] font-bold text-zinc-500 dark:text-zinc-400 shrink-0 w-[64px] sm:w-[72px]">내 기록</span>
+                                    {data.myRecord ? (
+                                        <div className="flex items-center justify-end flex-1 gap-2 min-w-0">
+                                            <span className="text-[11px] sm:text-[13px] font-bold text-zinc-800 dark:text-zinc-100 truncate text-right">{data.myRecord.playerName}</span>
+                                            <span className={cn(
+                                                "text-[12px] sm:text-[14px] font-black italic shrink-0 w-[42px] sm:w-[48px] text-right",
+                                                data.myRecord.totalScore! < 0 ? "text-brand-red" : data.myRecord.totalScore! > 0 ? "text-blue-600" : "text-zinc-900 dark:text-zinc-50"
+                                            )}>
+                                                {data.myRecord.totalScore !== undefined ? formatScore(data.myRecord.totalScore) : "0.0"}
+                                            </span>
+                                        </div>
+                                    ) : (
+                                        <span className="text-[10px] sm:text-[11px] text-zinc-400 italic text-right flex-1">기록 없음</span>
                                     )}
                                 </div>
                             </div>
@@ -406,91 +411,17 @@ export default function ChallengesPage() {
             </div>
 
             {/* ── Filter Buttons ── */}
-            <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
-                {filterButtons.map((btn) => {
-                    const isActive = activeFilter === btn.key;
-                    return (
-                        <button
-                            key={btn.key}
-                            onClick={() => setActiveFilter(btn.key)}
-                            className={`whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200
-                                ${isActive
-                                    ? "bg-brand-navy text-white shadow-md"
-                                    : "bg-transparent text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 hover:bg-brand-navy-light dark:hover:bg-brand-navy-dark hover:text-brand-navy dark:hover:text-white"
-                                }`}
-                        >
-                            {btn.label}
-                        </button>
-                    );
-                })}
-            </div>
+            <CategoryTabs options={filterButtons} value={activeFilter} onChange={setActiveFilter} />
 
-            {/* ── Today's Completed Tests ── */}
-            <div className="mb-4">
-                <div className="flex items-center justify-between mb-3 px-1">
-                    <h2 className="text-sm font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-                        <Calendar size={16} className="text-brand-navy dark:text-brand-navy-light" />
-                        오늘 완료한 챌린지
-                    </h2>
-                    <span className="text-[10px] text-zinc-400 font-medium">등록된 챌린지 결과를 확인하세요.</span>
-                </div>
 
-                <div className="relative group/scroll">
-                    <button
-                        onClick={() => scroll("left")}
-                        className="absolute left-[-20px] top-[calc(50%-8px)] -translate-y-1/2 z-10 w-10 h-10 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full shadow-lg flex items-center justify-center text-zinc-600 dark:text-zinc-400 hover:text-brand-navy dark:hover:text-brand-navy-light transition-all opacity-0 group-hover/scroll:opacity-100 hidden md:flex"
-                    >
-                        <ChevronLeft size={20} />
-                    </button>
-                    <button
-                        onClick={() => scroll("right")}
-                        className="absolute right-[-20px] top-[calc(50%-8px)] -translate-y-1/2 z-10 w-10 h-10 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full shadow-lg flex items-center justify-center text-zinc-600 dark:text-zinc-400 hover:text-brand-navy dark:hover:text-brand-navy-light transition-all opacity-0 group-hover/scroll:opacity-100 hidden md:flex"
-                    >
-                        <ChevronRight size={20} />
-                    </button>
-
-                    <div
-                        ref={scrollRef}
-                        className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-1 px-1"
-                    >
-                        {todayCompletedTests.length > 0 ? (
-                            todayCompletedTests.map((t) => (
-                                <button
-                                    key={t.id}
-                                    onClick={() => router.push(`/training/challenges/${t.id}`)}
-                                    className="flex-shrink-0 w-40 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-3.5 rounded-2xl shadow-sm hover:border-brand-navy/50 hover:shadow-md transition-all active:scale-95 text-left"
-                                >
-                                    <div className="flex items-center justify-start mb-2">
-                                        <span className="text-[9px] font-black text-brand-navy uppercase tracking-widest px-1.5 py-0.5 bg-brand-navy/5 rounded-md">
-                                            {TEST_TYPE_LABELS[t.type] || t.type}
-                                        </span>
-                                    </div>
-                                    <div className="text-sm font-bold text-zinc-900 dark:text-zinc-50 mb-1">
-                                        {t.playerName}
-                                    </div>
-                                    <div className={cn(
-                                        "text-lg font-black italic tracking-tighter text-right",
-                                        (t.totalScore || 0) > 0 ? "text-blue-600" : (t.totalScore || 0) < 0 ? "text-brand-red" : "text-zinc-400"
-                                    )}>
-                                        {formatScore(t.totalScore)}
-                                        <span className="text-[9px] uppercase ml-1 not-italic opacity-40 font-bold">pts</span>
-                                    </div>
-                                </button>
-                            ))
-                        ) : (
-                            <div className="text-xs text-zinc-400 py-4 px-2 italic">오늘 완료된 챌린지가 없습니다.</div>
-                        )}
-                    </div>
-                </div>
-            </div>
 
             {/* ── Filter & Search Section ── */}
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 mb-6">
                 {/* Date range */}
                 <div className="flex items-center gap-2">
-                    <label className="w-24 shrink-0 text-center text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                    <LabelText>
                         챌린지 일자
-                    </label>
+                    </LabelText>
                     <div className="flex items-center gap-1 flex-1 min-w-0">
                         <DatePickerInput
                             value={startDate}
@@ -508,43 +439,47 @@ export default function ChallengesPage() {
                     </div>
                 </div>
 
-                {/* Player search */}
-                <div className="flex items-center gap-2 mt-3">
-                    <label className="w-24 shrink-0 text-center text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                        선수 검색
-                    </label>
-                    <div className="relative flex-1">
-                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                        <input
-                            type="text"
-                            placeholder="선수 검색..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all"
-                        />
-                    </div>
-                </div>
+                {/* Player Search & Select All */}
+                {(userRole === 'coach' || userRole === 'admin') && (
+                    <>
+                        <div className="flex items-center gap-2 mt-3">
+                            <LabelText>
+                                선수 검색
+                            </LabelText>
+                            <div className="relative flex-1">
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                <input
+                                    type="text"
+                                    placeholder="선수 검색..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all"
+                                />
+                            </div>
+                        </div>
 
-                {/* Player Chips */}
-                {playerChips.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-3 max-h-32 overflow-y-auto pr-1 custom-scrollbar">
-                        {playerChips.map((name) => {
-                            const isSelected = selectedPlayers.has(name);
-                            return (
-                                <button
-                                    key={name}
-                                    onClick={() => togglePlayer(name)}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-200 shrink-0
-                                        ${isSelected
-                                            ? "bg-brand-navy/10 text-brand-navy border-brand-navy dark:bg-brand-navy/30 dark:text-white"
-                                            : "bg-white dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-brand-navy"
-                                        }`}
-                                >
-                                    {name}
-                                </button>
-                            );
-                        })}
-                    </div>
+                        {/* Player Chips */}
+                        {playerChips.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-3 max-h-32 overflow-y-auto pr-1 custom-scrollbar" style={{ paddingLeft: '104px' }}>
+                                {playerChips.map((name) => {
+                                    const isSelected = selectedPlayers.has(name);
+                                    return (
+                                        <button
+                                            key={name}
+                                            onClick={() => togglePlayer(name)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-200 shrink-0
+                                                ${isSelected
+                                                    ? "bg-brand-navy/10 text-brand-navy border-brand-navy dark:bg-brand-navy/30 dark:text-white"
+                                                    : "bg-white dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-brand-navy"
+                                                }`}
+                                        >
+                                            {name}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
 
@@ -552,11 +487,11 @@ export default function ChallengesPage() {
             <section>
                 <div className="flex items-center justify-between mb-4 px-1">
                     <div className="flex items-center gap-2">
-                        <h2 className="text-lg font-bold text-zinc-800 dark:text-zinc-200 tracking-tight">
+                        <SectionTitle>
                             조회 결과
-                        </h2>
+                        </SectionTitle>
                         <span className="text-xs text-zinc-400 font-medium">
-                            ({filteredTests.length}건)
+                            ({totalTestCount}건)
                         </span>
                     </div>
 
@@ -570,22 +505,22 @@ export default function ChallengesPage() {
                     />
                 </div>
 
-                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-5 shadow-sm overflow-hidden">
+                <div className="overflow-hidden">
                     {isLoading ? (
                         <div className="py-20 flex flex-col items-center justify-center gap-3">
                             <div className="w-8 h-8 border-4 border-zinc-200 border-t-brand-navy rounded-full animate-spin"></div>
                             <p className="text-sm text-zinc-400 font-medium">데이터를 불러오는 중...</p>
                         </div>
-                    ) : displayedTests.length > 0 ? (
+                    ) : allTests.length > 0 ? (
                         <>
-                            <TestTable tests={displayedTests} basePath="/training/challenges" />
-                            {filteredTests.length > displayLimit && (
+                            <TestTable tests={allTests} totalCount={totalTestCount} basePath="/training/challenges" />
+                            {totalTestCount > allTests.length && (
                                 <div className="mt-8 flex justify-center">
                                     <button
                                         onClick={() => setDisplayLimit(prev => prev + 20)}
-                                        className="px-8 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all active:scale-95 shadow-sm"
+                                        className="px-8 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-700 text-sm font-bold text-zinc-600 dark:text-zinc-400 bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all active:scale-95 shadow-sm"
                                     >
-                                        더 보기 ({filteredTests.length - displayLimit}건 남음)
+                                        더 보기 ({totalTestCount - allTests.length}건 남음)
                                     </button>
                                 </div>
                             )}

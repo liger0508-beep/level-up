@@ -1,12 +1,14 @@
 "use client";
 
+import { ClipboardList } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { TestData, TEST_TYPE_LABELS, TEST_TYPE_COLORS } from "@/lib/test-sync";
 import { cn, formatScore } from "@/lib/utils";
 
 const typeLabelShort: Record<string, string> = {
     ...TEST_TYPE_LABELS,
-    short_game: "A/Green",
+    short_game: "S/G",
+    around_green: "S/G",
 };
 
 interface TestTableProps {
@@ -24,41 +26,45 @@ export function TestTable({ tests, totalCount = 0, basePath = "/training/tests" 
             <div className="flex flex-col gap-2.5 md:hidden">
                 {tests.map((test) => {
                     const colors = TEST_TYPE_COLORS[test.type];
-                    const dotColor = colors.border.replace("border-l-", "bg-");
-                    const typeLabel = (test.type === "around_green" ? "A/G" : (test.type === "shot" ? "SHOT" : (test.type === "putting" ? "PUTT" : test.type))).toUpperCase();
+                    const typeLabel = (test.type === "short_game" || test.type === "around_green" ? "S/G" : (test.type === "shot" ? "SHOT" : (test.type === "putting" ? "PUTT" : test.type))).toUpperCase();
+                    
+                    const yy = test.date.slice(2, 4);
+                    const mm = test.date.slice(5, 7);
+                    const dd = test.date.slice(8, 10);
+                    const formattedDate = `${yy}.${mm}.${dd}`;
                     
                     return (
                         <button
                             key={test.id}
                             onClick={() => router.push(`${basePath}/${test.id}`)}
-                            className={cn(
-                                "w-full text-left bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 border-l-4 rounded-xl px-4 py-3.5 transition-all active:scale-[0.98] hover:shadow-md hover:-translate-y-px",
-                                colors.border
-                            )}
+                            className="w-full text-left bg-white dark:bg-zinc-900 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-800 py-4 px-6 shadow-sm hover:border-brand-navy/30 hover:shadow-md transition-all group cursor-pointer"
                         >
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                    <span className={cn("w-2 h-2 rounded-full shrink-0", dotColor)} />
-                                    <span className={cn("w-14 text-[11px] font-bold uppercase tracking-widest shrink-0", colors.text)}>
-                                        {typeLabel}
-                                    </span>
-                                    <span className="w-[1px] h-3 bg-zinc-200 dark:bg-zinc-700 shrink-0" />
-                                    <div className={cn(
-                                        "text-[13px] font-black italic tracking-tighter shrink-0 min-w-[3.5rem] text-center",
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                    <div className={cn("w-8 h-8 rounded-full flex items-center justify-center shrink-0", colors?.bg, colors?.text)}>
+                                        <ClipboardList size={16} />
+                                    </div>
+                                    <div className="flex items-center gap-1.5 min-w-0">
+                                        <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 truncate mr-1">{typeLabel}</span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0 mr-2">
+                                    <span className={cn(
+                                        "text-[14px] font-black shrink-0",
                                         (test.totalScore || 0) > 0 ? "text-blue-600" : (test.totalScore || 0) < 0 ? "text-brand-red" : "text-zinc-400"
                                     )}>
                                         {formatScore(test.totalScore)}
-                                    </div>
-                                    <span className="w-[1px] h-3 bg-zinc-200 dark:bg-zinc-700 shrink-0" />
-                                    <span className="text-[14px] font-bold text-zinc-700 dark:text-zinc-100 truncate">
-                                        {test.playerName}
                                     </span>
                                 </div>
-                                <div className="shrink-0 pl-3">
-                                    <span className="text-[11px] text-zinc-400 font-medium">
-                                        {test.date.slice(5).replace("-", ".")}
-                                    </span>
-                                </div>
+                            </div>
+                            
+                            <div className="flex items-end justify-between mt-3">
+                                <span className="text-[11px] font-bold text-zinc-400 shrink-0 mb-0.5 pl-[40px]">
+                                    {test.date.slice(5).replace("-", ".")}
+                                </span>
+                                <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 truncate mr-2">
+                                    {test.playerName}
+                                </span>
                             </div>
                         </button>
                     );

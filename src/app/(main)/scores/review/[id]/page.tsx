@@ -22,6 +22,11 @@ const roundToOne = (num: number | undefined) => {
     return (Math.sign(num) * Math.round(Math.abs(num) * 10) / 10).toFixed(1);
 };
 
+const roundToTwo = (num: number | undefined) => {
+    if (num === undefined || num === null) return "";
+    return (Math.sign(num) * Math.round(Math.abs(num) * 100) / 100).toFixed(2);
+};
+
 export default function ScoreDetailReviewPage() {
     const router = useRouter();
     const { id } = useParams();
@@ -366,7 +371,7 @@ export default function ScoreDetailReviewPage() {
                     </tr>
                     <tr key="total-sg">
                         <td className="border border-zinc-200 dark:border-zinc-800 p-2 font-black sticky left-0 bg-zinc-100 dark:bg-zinc-800 text-brand-navy">총점</td>
-                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center font-black bg-zinc-50 dark:bg-zinc-800/50">{roundToOne(getAnalysis(n)?.totalSG)}</td>)}
+                        {holeNums.map(n => <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center font-black bg-zinc-50 dark:bg-zinc-800/50">{roundToTwo(getAnalysis(n)?.totalSG)}</td>)}
                     </tr>
                     {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(s => {
                         const rows = [
@@ -396,28 +401,28 @@ export default function ScoreDetailReviewPage() {
                                 <td className="border border-zinc-200 dark:border-zinc-800 p-2 sticky left-0 bg-white dark:bg-zinc-900">시도 위치</td>
                                 {holeNums.map(n => {
                                     const val = getShotResult(getAnalysis(n), s)?.tryPosition;
-                                    return <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center">{roundToOne(val)}</td>
+                                    return <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center">{roundToTwo(val)}</td>
                                 })}
                             </tr>,
                             <tr key={`analysis-shot-try-dist-${s}`}>
                                 <td className="border border-zinc-200 dark:border-zinc-800 p-2 sticky left-0 bg-white dark:bg-zinc-900">시도 거리</td>
                                 {holeNums.map(n => {
                                     const val = getShotResult(getAnalysis(n), s)?.tryDistance;
-                                    return <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center">{displayVal(val)}</td>
+                                    return <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center">{roundToTwo(val)}</td>
                                 })}
                             </tr>,
                             <tr key={`analysis-shot-pos-res-${s}`}>
                                 <td className="border border-zinc-200 dark:border-zinc-800 p-2 sticky left-0 bg-white dark:bg-zinc-900">위치 결과</td>
                                 {holeNums.map(n => {
                                     const val = getShotResult(getAnalysis(n), s)?.positionResult;
-                                    return <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center">{roundToOne(val)}</td>
+                                    return <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center">{roundToTwo(val)}</td>
                                 })}
                             </tr>,
                             <tr key={`analysis-shot-dist-res-${s}`}>
                                 <td className="border border-zinc-200 dark:border-zinc-800 p-2 sticky left-0 bg-white dark:bg-zinc-900">거리 결과</td>
                                 {holeNums.map(n => {
                                     const val = getShotResult(getAnalysis(n), s)?.distanceResult;
-                                    return <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center">{displayVal(val)}</td>
+                                    return <td key={n} className="border border-zinc-200 dark:border-zinc-800 p-2 text-center">{roundToTwo(val)}</td>
                                 })}
                             </tr>,
                             <tr key={`analysis-shot-sg-${s}`} className="font-bold border-b-2 border-zinc-100 dark:border-zinc-800">
@@ -425,7 +430,7 @@ export default function ScoreDetailReviewPage() {
                                 {holeNums.map(n => {
                                     const sg = getShotResult(getAnalysis(n), s)?.shotSG;
                                     return <td key={n} className={cn("border border-zinc-200 dark:border-zinc-800 p-2 text-center bg-zinc-50 dark:bg-zinc-800/50", (sg||0) > 0 ? "text-blue-500" : (sg||0) < 0 ? "text-red-500" : "")}>
-                                        {roundToOne(sg)}
+                                        {roundToTwo(sg)}
                                     </td>
                                 })}
                             </tr>

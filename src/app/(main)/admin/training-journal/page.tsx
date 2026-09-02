@@ -16,6 +16,9 @@ import { JournalTable } from "@/components/training-journal/JournalTable";
 import { cn } from "@/lib/utils";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { DatePresets, DatePresetType } from "@/components/ui/DatePresets";
+import { createClient } from "@/lib/supabase/client";
+
+import { PageTitle, SectionTitle, LabelText } from "@/components/ui/Typography";
 
 export default function TrainingJournalPage() {
     const [activeType, setActiveType] = useState<JournalType>("all");
@@ -24,17 +27,207 @@ export default function TrainingJournalPage() {
     const [endDate, setEndDate] = useState("");
     const [displayLimit, setDisplayLimit] = useState(20);
     const [activePreset, setActivePreset] = useState<DatePresetType>("custom");
-    const [journals, setJournals] = useState<Journal[]>([]);
+    const [allJournals, setAllJournals] = useState<Journal[]>([]);
+    const [recentJournals, setRecentJournals] = useState<Journal[]>([]);
+    const [totalJournalCount, setTotalJournalCount] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
+    const [viewMode, setViewMode] = useState<"list" | "content">("list");
+
+    const [allAthletes, setAllAthletes] = useState<string[]>([]);
+    const [selectedPlayers, setSelectedPlayers] = useState<Set<string>>(new Set());
+    const [selectAll, setSelectAll] = useState(true);
+    const [playerSearchQuery, setPlayerSearchQuery] = useState("");
+    const [userRole, setUserRole] = useState("athlete");
 
     const scrollRef = useRef<HTMLDivElement>(null);
 
+    const mapJournalRow = (item: any): Journal => ({
+        id: item.id,
+        type: (item.category as JournalType) || "good",
+        title: item.title,
+        content: item.content,
+        date: item.training_start,
+        author: (Array.isArray(item.coach) ? item.coach[0]?.name : item.coach?.name) || "알 수 없음",
+        athleteName: (Array.isArray(item.user) ? item.user[0]?.name : item.user?.name) || "알 수 없음",
+        isImportant: item.is_important || false,
+        keywords: item.keywords || [],
+        media_urls: item.media_urls || [],
+    });
+
     useEffect(() => {
-        fetchJournals().then(data => {
-            setJournals(data);
-            setIsLoading(false);
-        });
+        const loadInitial = async () => {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            let currentRole = "athlete";
+            
+            if (user) {
+                const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle();
+                if (profile) {
+                    currentRole = profile.role || "athlete";
+                    setUserRole(currentRole);
+                }
+            }
+
+            // Fetch Athletes for filter
+            if (['coach', 'admin', 'office', 'total', 'superadmin'].includes(currentRole)) {
+                const { data: athletesData } = await supabase.from("users").select("name").eq("role", "athlete").order("name");
+                if (athletesData) {
+                    const athleteNames = athletesData.map(a => a.name);
+                    setAllAthletes(athleteNames);
+                    
+                    let initialSelected = new Set(athleteNames);
+                    let initialSelectAll = true;
+                    
+                    if (typeof window !== "undefined") {
+                        const isFromDetail = sessionStorage.getItem("gla_journal_keep_alive") === "true";
+                        if (isFromDetail) {
+                            const stored = sessionStorage.getItem("gla_journal_filter");
+                            if (stored) {
+                                try {
+                                    const parsed = JSON.parse(stored);
+                                    if (parsed.activeType !== undefined) setActiveType(parsed.activeType);
+                                    if (parsed.searchQuery !== undefined) setSearchQuery(parsed.searchQuery);
+                                    if (parsed.startDate !== undefined) setStartDate(parsed.startDate);
+                                    if (parsed.endDate !== undefined) setEndDate(parsed.endDate);
+                                    if (parsed.activePreset !== undefined) setActivePreset(parsed.activePreset);
+                                    if (parsed.displayLimit !== undefined) setDisplayLimit(parsed.displayLimit);
+                                    if (parsed.viewMode !== undefined) setViewMode(parsed.viewMode);
+                                    if (parsed.selectAll !== undefined) {
+                                        initialSelectAll = parsed.selectAll;
+                                        setSelectAll(parsed.selectAll);
+                                    }
+                                    if (initialSelectAll) {
+                                        initialSelected = new Set(athleteNames);
+                                    } else if (parsed.selectedPlayers) {
+                                        initialSelected = new Set(parsed.selectedPlayers);
+                                    }
+                                } catch (e) { }
+                            }
+                            setTimeout(() => sessionStorage.removeItem("gla_journal_keep_alive"), 100);
+                        } else {
+                            sessionStorage.removeItem("gla_journal_filter");
+                            sessionStorage.removeItem("gla_journal_scroll");
+                        }
+                    }
+                    setSelectedPlayers(initialSelected);
+                }
+            }
+
+            // Fetch Recent Journals (top 3)
+            let recentQuery = supabase
+                .from("records")
+                .select(`
+                    id, title, content, category, media_urls, training_start, is_important, keywords,
+                    user:users!records_user_id_fkey(name),
+                    coach:users!records_coach_id_fkey(name)
+                `)
+                .eq("type", "journal")
+                .neq("category", "field")
+                .order("training_start", { ascending: false })
+                .limit(3);
+            
+            if (currentRole === 'athlete' && user) {
+                 recentQuery = recentQuery.eq("user_id", user.id);
+            }
+            const { data: recentData } = await recentQuery;
+            if (recentData) setRecentJournals(recentData.map(mapJournalRow));
+            
+            if (currentRole === 'athlete') setIsLoading(false);
+        };
+        
+        loadInitial();
     }, []);
+
+    // Server-side Pagination & Filtering
+    useEffect(() => {
+        if (isLoading && ['coach', 'admin', 'office', 'total', 'superadmin'].includes(userRole) && allAthletes.length === 0) return; // Wait until athletes load
+
+        const fetchFiltered = async () => {
+            const supabase = createClient();
+            let query = supabase
+                .from("records")
+                .select(`
+                    id, title, content, category, media_urls, training_start, is_important, keywords,
+                    user:users!records_user_id_fkey(id, name),
+                    coach:users!records_coach_id_fkey(name)
+                `, { count: 'exact' })
+                .eq("type", "journal")
+                .neq("category", "field");
+
+            if (userRole === 'athlete') {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) query = query.eq("user_id", user.id);
+            } else {
+                if (!selectAll && selectedPlayers.size > 0) {
+                    const { data: usersData } = await supabase.from("users").select("id").in("name", Array.from(selectedPlayers));
+                    const userIds = usersData?.map(u => u.id) || [];
+                    if (userIds.length > 0) query = query.in("user_id", userIds);
+                    else query = query.eq("user_id", "00000000-0000-0000-0000-000000000000");
+                } else if (!selectAll && selectedPlayers.size === 0) {
+                    query = query.eq("user_id", "00000000-0000-0000-0000-000000000000");
+                }
+            }
+
+            if (activeType !== "all") query = query.eq("category", activeType);
+            if (startDate) query = query.gte("training_start", startDate);
+            if (endDate) query = query.lte("training_start", endDate);
+
+            if (searchQuery) {
+                query = query.or(`title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%`);
+            }
+
+            query = query
+                .order("training_start", { ascending: false })
+                .limit(displayLimit);
+
+            const { data, count, error } = await query;
+            if (error || !data) return;
+
+            setTotalJournalCount(count || 0);
+            setAllJournals(data.map(mapJournalRow));
+            setIsLoading(false);
+        };
+
+        const debounceTimer = setTimeout(() => {
+            fetchFiltered();
+        }, 300);
+        return () => clearTimeout(debounceTimer);
+
+    }, [userRole, activeType, searchQuery, startDate, endDate, selectAll, selectedPlayers, displayLimit, allAthletes.length, isLoading]);
+
+    // Save filter state
+    useEffect(() => {
+        if (allAthletes.length === 0) return;
+        sessionStorage.setItem("gla_journal_filter", JSON.stringify({
+            activeType,
+            searchQuery,
+            startDate,
+            endDate,
+            activePreset,
+            displayLimit,
+            selectAll,
+            selectedPlayers: Array.from(selectedPlayers)
+        }));
+    }, [activeType, searchQuery, startDate, endDate, activePreset, displayLimit, selectAll, selectedPlayers, allAthletes]);
+
+    // Scroll state management
+    useEffect(() => {
+        if (typeof window !== "undefined" && !isLoading) {
+            const savedScroll = sessionStorage.getItem("gla_journal_scroll");
+            if (savedScroll) {
+                setTimeout(() => {
+                    window.scrollTo({ top: parseInt(savedScroll, 10), behavior: 'instant' });
+                }, 100);
+                sessionStorage.removeItem("gla_journal_scroll");
+            }
+
+            const handleScroll = () => {
+                sessionStorage.setItem("gla_journal_scroll", window.scrollY.toString());
+            };
+            window.addEventListener("scroll", handleScroll);
+            return () => window.removeEventListener("scroll", handleScroll);
+        }
+    }, [isLoading]);
 
     const scroll = (direction: "left" | "right") => {
         if (scrollRef.current) {
@@ -47,36 +240,55 @@ export default function TrainingJournalPage() {
         }
     };
 
-    // Filtered journals for the main list
-    const filteredJournals = useMemo(() => {
-        return journals.filter((j) => {
-            const typeMatch = activeType === "all" || j.type === activeType;
-            const titleMatch = !searchQuery || j.title.toLowerCase().includes(searchQuery.toLowerCase()) || j.content.toLowerCase().includes(searchQuery.toLowerCase());
-            const afterStart = !startDate || j.date >= startDate;
-            const beforeEnd = !endDate || j.date <= endDate;
-            return typeMatch && titleMatch && afterStart && beforeEnd;
+    const togglePlayer = (name: string) => {
+        setSelectedPlayers((prev) => {
+            let next: Set<string>;
+
+            if (selectAll) {
+                next = new Set([name]);
+                setSelectAll(false);
+            } else {
+                next = new Set(prev);
+                if (next.has(name)) {
+                    next.delete(name);
+                } else {
+                    next.add(name);
+                }
+            }
+
+            if (next.size === 0 || next.size === allAthletes.length) {
+                setSelectAll(true);
+                return new Set(allAthletes);
+            }
+
+            return next;
         });
-    }, [journals, activeType, searchQuery, startDate, endDate]);
 
-    // Recent 3 journals for the top carousel
-    const recentJournals = useMemo(() => {
-        return [...journals]
-            .sort((a, b) => b.date.localeCompare(a.date))
-            .slice(0, 3);
-    }, [journals]);
+        setPlayerSearchQuery("");
+    };
 
-    const displayedJournals = useMemo(() => {
-        return filteredJournals.slice(0, displayLimit);
-    }, [filteredJournals, displayLimit]);
+    const visiblePlayersArr = useMemo(() => {
+        const queryMatches = playerSearchQuery
+            ? allAthletes.filter((p) => p.toLowerCase().includes(playerSearchQuery.toLowerCase()))
+            : [];
+
+        if (selectAll && !playerSearchQuery) return [];
+
+        const selectedList = selectAll ? [] : Array.from(selectedPlayers);
+        const combined = new Set([...selectedList, ...queryMatches]);
+        return Array.from(combined);
+    }, [playerSearchQuery, allAthletes, selectAll, selectedPlayers]);
+
+    // Client side filtering is now replaced by server-side filtering
 
     return (
         <div className="p-4 sm:p-8 max-w-4xl mx-auto">
             <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
                     <MessageSquare size={24} className="text-brand-navy dark:text-brand-navy-light shrink-0" />
-                    <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+                    <PageTitle>
                         훈련일지
-                    </h1>
+                    </PageTitle>
                 </div>
                 <Link
                     href="/admin/training-journal/create"
@@ -89,32 +301,34 @@ export default function TrainingJournalPage() {
 
             {/* ── Type Filters ── */}
             <div className="flex flex-nowrap gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
-                {(Object.entries(JOURNAL_TYPE_LABELS) as [JournalType, string][]).map(([key, label]) => {
-                    const isActive = activeType === key;
-                    return (
-                        <button
-                            key={key}
-                            onClick={() => setActiveType(key)}
-                            className={cn(
-                                "whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all border",
-                                isActive
-                                    ? "bg-brand-navy text-white border-brand-navy shadow-md"
-                                    : "bg-white dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50 hover:text-brand-navy dark:hover:text-white"
-                            )}
-                        >
-                            {label}
-                        </button>
-                    );
-                })}
+                {(Object.entries(JOURNAL_TYPE_LABELS) as [JournalType, string][])
+                    .filter(([key]) => key !== "field")
+                    .map(([key, label]) => {
+                        const isActive = activeType === key;
+                        return (
+                            <button
+                                key={key}
+                                onClick={() => setActiveType(key)}
+                                className={cn(
+                                    "whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all border",
+                                    isActive
+                                        ? "bg-brand-navy text-white border-brand-navy shadow-md"
+                                        : "bg-white dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50 hover:text-brand-navy dark:hover:text-white"
+                                )}
+                            >
+                                {label}
+                            </button>
+                        );
+                    })}
             </div>
 
             {/* ── Recent Journals (Top Carousel) ── */}
             <div className="mb-4">
                 <div className="flex items-center justify-between mb-3 px-1">
-                    <h2 className="text-sm font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
+                    <SectionTitle>
                         <Megaphone size={16} className="text-brand-navy dark:text-brand-navy-light" />
                         최근 게시물
-                    </h2>
+                    </SectionTitle>
                 </div>
 
                 <div className="relative group/scroll">
@@ -139,6 +353,7 @@ export default function TrainingJournalPage() {
                             <Link
                                 key={journal.id}
                                 href={`/admin/training-journal/${journal.id}`}
+                                onClick={() => sessionStorage.setItem("gla_journal_keep_alive", "true")}
                                 className="flex-shrink-0 w-64 md:w-72 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 rounded-2xl shadow-sm hover:border-brand-navy/50 hover:shadow-md transition-all active:scale-95 cursor-pointer group"
                             >
                                 <div className="flex items-center justify-between mb-2">
@@ -157,7 +372,7 @@ export default function TrainingJournalPage() {
                                     {journal.author}
                                 </h3>
                                 <div className="text-[11px] text-zinc-400 font-medium flex items-center justify-end gap-2 mt-auto pt-2 border-t border-zinc-50 dark:border-zinc-800/50">
-                                    <span>{journal.date.replace(/-/g, ".")}</span>
+                                    <span>{journal.date.slice(5).replace(/-/g, ".")}</span>
                                 </div>
                             </Link>
                         ))}
@@ -168,9 +383,9 @@ export default function TrainingJournalPage() {
             {/* ── Filter Bar ── */}
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 mb-6 shadow-sm">
                 <div className="flex items-center gap-2">
-                    <label className="w-20 shrink-0 text-center text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                    <LabelText className="w-16 shrink-0 text-center">
                         일자
-                    </label>
+                    </LabelText>
                     <div className="flex items-center gap-1.5 flex-1 min-w-0">
                         <DatePickerInput
                             value={startDate}
@@ -188,7 +403,7 @@ export default function TrainingJournalPage() {
                     </div>
                     {(startDate || endDate) && (
                         <button
-                            onClick={() => { setStartDate(""); setEndDate(""); }}
+                            onClick={() => { setStartDate(""); setEndDate(""); setActivePreset(undefined as any); }}
                             className="shrink-0 px-2 text-xs font-bold text-zinc-400 hover:text-zinc-600 transition-colors"
                         >
                             초기화
@@ -196,34 +411,108 @@ export default function TrainingJournalPage() {
                     )}
                 </div>
 
-                <div className="flex items-center gap-2 mt-3">
-                    <label className="w-20 shrink-0 text-center text-sm font-bold text-zinc-700 dark:text-zinc-300">
-                        검색
-                    </label>
-                    <div className="relative flex-1">
-                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                        <input
-                            type="text"
-                            placeholder="제목 또는 내용 검색..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all"
-                        />
-                    </div>
-                </div>
+                {['coach', 'admin', 'office', 'total', 'superadmin'].includes(userRole) ? (
+                    <>
+                        {/* ── Player Search ── */}
+                        <div className="flex items-center gap-2 mt-3">
+                            <LabelText className="w-16 shrink-0 text-center">
+                                선수 검색
+                            </LabelText>
+                            <div className="relative flex-1">
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                <input
+                                    type="text"
+                                    placeholder="선수 검색..."
+                                    value={playerSearchQuery}
+                                    onChange={(e) => setPlayerSearchQuery(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && playerSearchQuery.trim()) {
+                                            const match = allAthletes.find((p) =>
+                                                p.toLowerCase().includes(playerSearchQuery.toLowerCase())
+                                            );
+                                            if (match) togglePlayer(match);
+                                        }
+                                    }}
+                                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all"
+                                />
+                            </div>
+                        </div>
+
+                        {/* ── Player Chips ── */}
+                        {visiblePlayersArr.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-3 max-h-32 overflow-y-auto pr-1 custom-scrollbar" style={{ paddingLeft: '88px' }}>
+                                {visiblePlayersArr.map((name) => {
+                                    const isSelected = selectedPlayers.has(name);
+                                    return (
+                                        <button
+                                            key={name}
+                                            onClick={() => togglePlayer(name)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-200 shrink-0
+                                                ${isSelected
+                                                    ? "bg-brand-navy/10 text-brand-navy border-brand-navy dark:bg-brand-navy/30 dark:text-white"
+                                                    : "bg-white dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-brand-navy"
+                                                }`}
+                                        >
+                                            {name}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </>
+                ) : (
+                    <>
+                        {/* ── Content Search ── */}
+                        <div className="flex items-center gap-2 mt-3">
+                            <LabelText className="w-16 shrink-0 text-center">
+                                검색
+                            </LabelText>
+                            <div className="relative flex-1">
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                <input
+                                    type="text"
+                                    placeholder="제목 또는 내용 검색..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all"
+                                />
+                            </div>
+                        </div>
+                    </>
+                )}
             </div>
 
             {/* ── Journal List section ── */}
             <section>
                 <div className="flex items-center justify-between mb-4 px-1">
-                    <div className="flex items-center gap-2">
-                        <SlidersHorizontal size={18} className="text-brand-navy dark:text-brand-navy-light" />
-                        <h2 className="text-lg font-bold text-zinc-800 dark:text-zinc-200">
+                    <div className="flex items-center gap-3">
+                        <SectionTitle>
                             조회 결과
-                        </h2>
-                        <span className="text-xs text-zinc-400 font-medium">
-                            ({filteredJournals.length}건)
-                        </span>
+                        </SectionTitle>
+                        <div className="flex items-center bg-white dark:bg-zinc-900 p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                            <button
+                                onClick={() => setViewMode("list")}
+                                className={cn(
+                                    "px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200",
+                                    viewMode === "list"
+                                        ? "bg-brand-navy text-white shadow-sm"
+                                        : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100"
+                                )}
+                            >
+                                리스트
+                            </button>
+                            <button
+                                onClick={() => setViewMode("content")}
+                                className={cn(
+                                    "px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200",
+                                    viewMode === "content"
+                                        ? "bg-brand-navy text-white shadow-sm"
+                                        : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100"
+                                )}
+                            >
+                                내용
+                            </button>
+                        </div>
                     </div>
 
                     <DatePresets
@@ -236,17 +525,17 @@ export default function TrainingJournalPage() {
                     />
                 </div>
 
-                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm overflow-hidden min-h-[300px]">
-                    {displayedJournals.length > 0 ? (
+                <div className="md:bg-white md:dark:bg-zinc-900 md:border md:border-zinc-200 md:dark:border-zinc-800 md:rounded-2xl md:p-5 md:shadow-sm md:overflow-hidden min-h-[300px] mt-2">
+                    {allJournals.length > 0 ? (
                         <>
-                            <JournalTable journals={displayedJournals} />
-                            {filteredJournals.length > displayLimit && (
+                            <JournalTable journals={allJournals} viewMode={viewMode} />
+                            {totalJournalCount > allJournals.length && (
                                 <div className="mt-8 flex justify-center">
                                     <button
                                         onClick={() => setDisplayLimit(prev => prev + 20)}
                                         className="px-8 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all active:scale-95 shadow-sm"
                                     >
-                                        더 보기 ({filteredJournals.length - displayLimit}건 남음)
+                                        더 보기 ({totalJournalCount - allJournals.length}건 남음)
                                     </button>
                                 </div>
                             )}

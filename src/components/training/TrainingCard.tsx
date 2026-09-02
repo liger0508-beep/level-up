@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
-export type TrainingType = "shot" | "pitch" | "bunker" | "approach" | "putt" | "physical" | "field" | "etc";
+export type TrainingType = "basic" | "preview" | "review" | "lesson_review" | "swing_pose" | "motion_test";
 
 export interface TrainingData {
     id: string;
-    type: TrainingType; // Part: shot, pitch, bunker, approach, putt, physical, etc
+    type: TrainingType; // Part: basic, preview, review
     trainingType?: "intensive" | "group" | "special"; // 집중, 단체, 특별
     title: string;
     playerName: string;
@@ -22,53 +22,41 @@ export interface TrainingData {
 }
 
 const typeBadgeConfig: Record<TrainingType, { label: string; bg: string; text: string; border: string }> = {
-    shot: {
-        label: "Shot",
+    basic: {
+        label: "기본기",
         bg: "bg-emerald-50 text-emerald-600 border-l-emerald-500",
         text: "text-emerald-600",
         border: "border-l-emerald-500",
     },
-    pitch: {
-        label: "Pitch",
-        bg: "bg-teal-50 text-teal-600 border-l-teal-500",
-        text: "text-teal-600",
-        border: "border-l-teal-500",
-    },
-    bunker: {
-        label: "Bunker",
-        bg: "bg-orange-50 text-orange-600 border-l-orange-500",
-        text: "text-orange-600",
-        border: "border-l-orange-500",
-    },
-    approach: {
-        label: "Approach",
-        bg: "bg-sky-50 text-sky-600 border-l-sky-500",
-        text: "text-sky-600",
-        border: "border-l-sky-500",
-    },
-    putt: {
-        label: "Putt",
+    preview: {
+        label: "예습",
         bg: "bg-blue-50 text-blue-600 border-l-blue-500",
         text: "text-blue-600",
         border: "border-l-blue-500",
     },
-    physical: {
-        label: "Physical",
+    review: {
+        label: "복습",
+        bg: "bg-orange-50 text-orange-600 border-l-orange-500",
+        text: "text-orange-600",
+        border: "border-l-orange-500",
+    },
+    lesson_review: {
+        label: "스윙키",
+        bg: "bg-purple-50 text-purple-600 border-l-purple-500",
+        text: "text-purple-600",
+        border: "border-l-purple-500",
+    },
+    swing_pose: {
+        label: "스윙모션",
         bg: "bg-rose-50 text-rose-600 border-l-rose-500",
         text: "text-rose-600",
         border: "border-l-rose-500",
     },
-    field: {
-        label: "Field",
-        bg: "bg-indigo-50 text-indigo-600 border-l-indigo-500",
-        text: "text-indigo-600",
-        border: "border-l-indigo-500",
-    },
-    etc: {
-        label: "Etc",
-        bg: "bg-zinc-50 text-zinc-600 border-l-zinc-500",
-        text: "text-zinc-600",
-        border: "border-l-zinc-500",
+    motion_test: {
+        label: "모션",
+        bg: "bg-teal-50 text-teal-600 border-l-teal-500",
+        text: "text-teal-600",
+        border: "border-l-teal-500",
     },
 };
 
@@ -77,7 +65,7 @@ interface TrainingCardProps {
 }
 
 export function TrainingCard({ training }: TrainingCardProps) {
-    const badge = typeBadgeConfig[training.type] || typeBadgeConfig.etc;
+    const badge = typeBadgeConfig[training.type] || typeBadgeConfig.basic;
 
     return (
         <Link

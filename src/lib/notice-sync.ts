@@ -33,18 +33,24 @@ export const NOTICE_TYPE_COLORS: Record<NoticeType, { bg: string; text: string; 
 export const getPlainText = (html: string) => {
     if (!html) return "";
     return html
+        .replace(/<\/p>|<\/div>|<br\s*\/?>/gi, '\n') // Preserve newlines for block elements
         .replace(/<[^>]*>?/gm, '') // Strip HTML tags
         .replace(/&nbsp;/g, ' ')   // Replace non-breaking spaces
-        .replace(/\s+/g, ' ')      // Collapse whitespace
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/[ \t]+/g, ' ')      // Collapse spaces but keep newlines
         .trim();
 };
 
 /**
  * Fetch all notices from Supabase.
  */
-export async function getNotices(): Promise<Notice[]> {
+export async function getNotices(limit?: number): Promise<Notice[]> {
     const supabase = createClient();
-    const { data, error } = await supabase
+    let query = supabase
         .from("notices")
         .select(`
             *,
@@ -52,6 +58,10 @@ export async function getNotices(): Promise<Notice[]> {
         `)
         .neq("type", "course_info")
         .order("created_at", { ascending: false });
+
+    if (limit) query = query.limit(limit);
+
+    const { data, error } = await query;
 
     if (error) {
         console.error("Error fetching notices:", error);

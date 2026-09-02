@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Calendar, User, Trash2, Zap, BookOpen, MoreVertical, Edit2 } from "lucide-react";
-import { cn, formatScore } from "@/lib/utils";
+import { User, Calendar, Target, Settings, ChevronLeft, ChevronRight, BookOpen, MoreVertical, Trash2, Check, Share2, HelpCircle } from "lucide-react";
+import { PageTitle, SectionTitle, LabelText } from "@/components/ui/Typography";
+import { cn, formatScore, formatLocalDate } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { fetchScoringBaselines, calculateChallengeSG, getChallengePuttScore } from "@/lib/challenge-score-calculations";
 import { TestType, TEST_TYPE_LABELS } from "@/lib/test-sync";
 
 // --- Constants ---
@@ -18,177 +20,67 @@ const IRON_RESULT_SCORES: Record<number, number> = {
     0: -1, 1: -0.9, 2: -0.65, 3: -0.4, 4: -0.3, 5: -0.2, 6: -0.15, 7: -0.1, 8: -0.05, 9: 0,
     10: 0.05, 11: 0.1, 12: 0.14, 13: 0.18, 14: 0.21, 15: 0.24, 16: 0.26, 17: 0.28, 18: 0.3, 19: 0.31, 20: 0.32
 };
-const APPROACH_SCORES: Record<number, number> = {
-    0: -0.35, 1: -0.25, 2: 0, 3: 0.25, 4: 0.35, 5: 0.45,
-    6: 0.5, 7: 0.55, 8: 0.6, 9: 0.65, 10: 0.7, 11: 0.75,
-    12: 0.79, 13: 0.83, 14: 0.86, 15: 0.89, 16: 0.91,
-    17: 0.93, 18: 0.95, 19: 0.96, 20: 0.97, 21: 0.98, 22: 0.99, 23: 1.0
+
+const getIronScore = (distance: number, prox: number): number => {
+    if (distance >= 40 && distance <= 80) {
+        if (prox >= 0 && prox <= 2) return -0.11;
+    } else if (distance >= 90 && distance <= 130) {
+        if (prox >= 0 && prox <= 3) return -0.11;
+        if (prox >= 4 && prox <= 6) {
+            if (distance === 90) return -0.02;
+            if (distance === 100) return -0.04;
+            if (distance === 110) return -0.06;
+            if (distance === 120) return -0.08;
+            if (distance === 130) return -0.09;
+        }
+    } else if (distance >= 140 && distance <= 180) {
+        if (prox >= 0 && prox <= 4) return -0.12;
+        if (prox >= 5 && prox <= 8) return -0.03;
+        if (prox >= 9 && prox <= 12) return 0.13;
+        return 0.23;
+    } else if (distance >= 190 && distance <= 230) {
+        if (prox >= 0 && prox <= 5) return -0.18;
+        if (prox >= 6 && prox <= 10) return -0.10;
+        if (prox >= 11 && prox <= 15) return 0.02;
+        return 0.13;
+    }
+    const safeProx = Math.min(20, prox);
+    return (IRON_START_SCORES[distance] ?? 0) + (IRON_RESULT_SCORES[safeProx] ?? 0.32);
 };
 
-const getShortApproachScore = (prox: number): number => {
-    if (prox <= 0) return -1.1;
-    if (prox === 1) return -0.01;
-    if (prox === 2) return 0.25;
-    if (prox === 3) return 0.5;
-    if (prox === 4) return 0.6;
-    if (prox === 5) return 0.7;
-    if (prox === 6) return 0.75;
-    if (prox === 7) return 0.8;
-    if (prox === 8) return 0.85;
-    if (prox === 9) return 0.9;
-    if (prox === 10) return 0.95;
-    if (prox === 11) return 1.0;
-    if (prox === 12) return 1.04;
-    if (prox === 13) return 1.08;
-    if (prox === 14) return 1.11;
-    if (prox === 15) return 1.14;
-    if (prox === 16) return 1.16;
-    if (prox === 17) return 1.18;
-    if (prox === 18) return 1.2;
-    if (prox === 19) return 1.21;
-    if (prox <= 29) return 1.22;
-    return 1.23;
-};
-
-const getMiddleApproachScore = (prox: number): number => {
-    if (prox <= 0) return -0.34;
-    if (prox === 1) return -0.24;
-    if (prox === 2) return -0.01;
-    if (prox === 3) return 0.25;
-    if (prox === 4) return 0.35;
-    if (prox === 5) return 0.45;
-    if (prox === 6) return 0.5;
-    if (prox === 7) return 0.55;
-    if (prox === 8) return 0.6;
-    if (prox === 9) return 0.65;
-    if (prox === 10) return 0.7;
-    if (prox === 11) return 0.75;
-    if (prox === 12) return 0.79;
-    if (prox === 13) return 0.83;
-    if (prox === 14) return 0.86;
-    if (prox === 15) return 0.89;
-    if (prox === 16) return 0.91;
-    if (prox === 17) return 0.93;
-    if (prox === 18) return 0.95;
-    if (prox === 19) return 0.96;
-    if (prox <= 29) return 0.97;
-    return 0.98;
-};
-
-const getLongApproachScore = (prox: number): number => {
-    if (prox <= 0) return -0.59;
-    if (prox === 1) return -0.49;
-    if (prox === 2) return -0.24;
-    if (prox === 3) return -0.01;
-    if (prox === 4) return 0.1;
-    if (prox === 5) return 0.2;
-    if (prox === 6) return 0.25;
-    if (prox === 7) return 0.3;
-    if (prox === 8) return 0.35;
-    if (prox === 9) return 0.4;
-    if (prox === 10) return 0.45;
-    if (prox === 11) return 0.5;
-    if (prox === 12) return 0.54;
-    if (prox === 13) return 0.58;
-    if (prox === 14) return 0.61;
-    if (prox === 15) return 0.64;
-    if (prox === 16) return 0.66;
-    if (prox === 17) return 0.68;
-    if (prox === 18) return 0.7;
-    if (prox === 19) return 0.71;
-    if (prox <= 29) return 0.72;
-    return 0.73;
-};
-const getShortBunkerScore = (prox: number): number => {
-    if (prox <= 0) return -0.59;
-    if (prox === 1) return -0.49;
-    if (prox === 2) return -0.24;
-    if (prox === 3) return -0.01;
-    if (prox === 4) return 0.1;
-    if (prox === 5) return 0.2;
-    if (prox === 6) return 0.25;
-    if (prox === 7) return 0.3;
-    if (prox === 8) return 0.35;
-    if (prox === 9) return 0.4;
-    if (prox === 10) return 0.45;
-    if (prox === 11) return 0.5;
-    if (prox === 12) return 0.54;
-    if (prox === 13) return 0.58;
-    if (prox === 14) return 0.61;
-    if (prox === 15) return 0.64;
-    if (prox === 16) return 0.66;
-    if (prox === 17) return 0.68;
-    if (prox === 18) return 0.7;
-    if (prox === 19) return 0.71;
-    if (prox <= 29) return 0.72;
-    return 0.73;
-};
-
-const getLongBunkerScore = (prox: number): number => {
-    if (prox <= 0) return -0.64;
-    if (prox === 1) return -0.55;
-    if (prox === 2) return -0.29;
-    if (prox === 3) return -0.06;
-    if (prox === 4) return 0.05;
-    if (prox === 5) return 0.15;
-    if (prox === 6) return 0.2;
-    if (prox === 7) return 0.25;
-    if (prox === 8) return 0.3;
-    if (prox === 9) return 0.35;
-    if (prox === 10) return 0.4;
-    if (prox === 11) return 0.45;
-    if (prox === 12) return 0.49;
-    if (prox === 13) return 0.53;
-    if (prox === 14) return 0.56;
-    if (prox === 15) return 0.59;
-    if (prox === 16) return 0.61;
-    if (prox === 17) return 0.63;
-    if (prox === 18) return 0.65;
-    if (prox === 19) return 0.66;
-    if (prox <= 29) return 0.67;
-    return 0.68;
-};
-const PUTTING_RESULT_SCORES: Record<number, number> = {
-    0: -1, 1: 0.1, 2: 0.35, 3: 0.6, 4: 0.7, 5: 0.8, 6: 0.85, 7: 0.9, 8: 0.95, 9: 1,
-    10: 1.05, 11: 1.1, 12: 1.15, 13: 1.2, 14: 1.25, 15: 1.3, 16: 1.35, 17: 1.4, 18: 1.45, 19: 1.5, 20: 1.55
-};
-const PUTTING_ATTEMPT_SCORES: any = {
-    long_putt: { 1: -0.06, 2: -0.14, 3: -0.20, 4: -0.26 },
-    middle_putt: { 1: 0.29, 2: 0.3, 3: 0.19, 4: 0.2, 5: 0.12, 6: 0.15, 7: 0.06, 8: 0.1 },
-    short_putt: { 1: 0.89, 2: 0.9, 3: 0.64, 4: 0.65, 5: 0.39, 6: 0.4 }
-};
+const PUTTING_ATTEMPT_SCORES = {};
 
 const LONG_PUTT_LABELS: Record<number, string> = {
-    1: "10m 슬라이스",
-    2: "12m 훅",
-    3: "14m 내리막",
-    4: "16m 오르막"
+    1: "10m",
+    2: "13m",
+    3: "16m",
+    4: "19m"
 };
 
 const MIDDLE_PUTT_LABELS: Record<number, string> = {
-    1: "4m 내리막",
-    2: "4m 오르막",
-    3: "5m 슬라이스",
-    4: "5m 훅",
-    5: "6m 내리막",
-    6: "6m 오르막",
-    7: "7m 슬라이스",
-    8: "7m 훅"
+    1: "4m",
+    2: "4.5m",
+    3: "5m",
+    4: "5.5m",
+    5: "6m",
+    6: "6.5m",
+    7: "7m",
+    8: "7.5m"
 };
 
 const SHORT_PUTT_LABELS: Record<number, string> = {
-    1: "1m 슬라이스",
-    2: "1m 훅",
-    3: "2m 내리막",
-    4: "2m 오르막",
-    5: "3m 슬라이스",
-    6: "3m 훅"
+    1: "1m",
+    2: "1.5m",
+    3: "2m",
+    4: "2.5m",
+    5: "3m",
+    6: "3.5m"
 };
 
 const APPROACH_LABELS: Record<number, string> = {
     1: "5~10m", 2: "5~10m", 3: "5~10m", 4: "5~10m",
     5: "15m", 6: "15m", 7: "20m", 8: "20m",
-    9: "25m", 10: "25m", 11: "30m", 12: "30m"
+    9: "26m 이상", 10: "26m 이상", 11: "30m", 12: "30m"
 };
 
 const BUNKER_LABELS: Record<number, string> = {
@@ -200,13 +92,15 @@ const GroupScrollRow = ({
     title,
     gIdx,
     formatScore,
-    cn
+    cn,
+    baselines
 }: {
     group: { title: string; shots: any[]; labelMap: any };
     title: string;
     gIdx: number;
     formatScore: (val: any) => string;
     cn: (...args: any[]) => string;
+    baselines: any[];
 }) => {
     const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -222,14 +116,12 @@ const GroupScrollRow = ({
 
     return (
         <div className="relative group/scroll">
-            {/* Left Button */}
             <button
                 onClick={() => scroll("left")}
                 className="absolute left-[-16px] top-1/2 -translate-y-1/2 z-10 w-8 h-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full shadow-lg flex items-center justify-center text-zinc-650 dark:text-zinc-400 hover:text-brand-navy dark:hover:text-brand-navy-light transition-all opacity-0 group-hover/scroll:opacity-100 hidden md:flex active:scale-95 hover:scale-105"
             >
                 <ChevronLeft size={16} />
             </button>
-            {/* Right Button */}
             <button
                 onClick={() => scroll("right")}
                 className="absolute right-[-16px] top-1/2 -translate-y-1/2 z-10 w-8 h-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full shadow-lg flex items-center justify-center text-zinc-650 dark:text-zinc-400 hover:text-brand-navy dark:hover:text-brand-navy-light transition-all opacity-0 group-hover/scroll:opacity-100 hidden md:flex active:scale-95 hover:scale-105"
@@ -263,33 +155,42 @@ const GroupScrollRow = ({
                     } else if (title === "IRON") {
                         label = `${shot.distance}m`;
                         resultValue = shot.proximity === 0 ? "Cup in" : `${shot.proximity}m`;
-                        const prox = shot.proximity !== "" ? Math.min(20, Math.round(Number(shot.proximity))) : 0;
-                        scoreValue = shot.proximity !== "" ? (IRON_START_SCORES[shot.distance] || 0) + (IRON_RESULT_SCORES[prox] || 0.32) : 0;
+                        const prox = shot.proximity !== "" ? Math.round(Number(shot.proximity)) : 0;
+                        scoreValue = shot.proximity !== "" ? getIronScore(shot.distance, prox) : 0;
                     } else if (title === "APPROACH") {
-                        label = group.labelMap[shotId] || `${shotId}번 시도`;
+                        label = group.labelMap ? group.labelMap[shotId] : `${shotId}번 시도`;
                         resultValue = shot.proximity === 0 ? "Cup in" : `${shot.proximity}m`;
                         const prox = shot.proximity !== "" ? Math.round(Number(shot.proximity)) : 0;
                         if (shot.proximity !== "") {
-                            if (shotId <= 4) scoreValue = getShortApproachScore(prox);
-                            else if (shotId <= 8) scoreValue = getMiddleApproachScore(prox);
-                            else scoreValue = getLongApproachScore(prox);
+                            let attemptDist = 0;
+                            if (shotId <= 4) attemptDist = 8;
+                            else if (shotId <= 6) attemptDist = 15;
+                            else if (shotId <= 8) attemptDist = 20;
+                            else if (shotId <= 10) attemptDist = 25;
+                            else attemptDist = 30;
+                            scoreValue = calculateChallengeSG(attemptDist, prox, baselines);
                         }
                     } else if (title === "BUNKER") {
-                        label = group.labelMap[shotId] || shot.distance || `${shotId}번 시도`;
+                        label = (group.labelMap ? group.labelMap[shotId] : null) || shot.distance || `${shotId}번 시도`;
                         resultValue = shot.proximity === 0 ? "Cup in" : `${shot.proximity}m`;
                         const prox = shot.proximity !== "" ? Math.round(Number(shot.proximity)) : 0;
                         if (shot.proximity !== "") {
-                            if (shotId <= 3) scoreValue = getShortBunkerScore(prox);
-                            else scoreValue = getLongBunkerScore(prox);
+                            const attemptDist = shotId <= 3 ? 17 : 27;
+                            scoreValue = calculateChallengeSG(attemptDist, prox, baselines);
                         }
                     } else if (title.includes("PUTT")) {
-                        label = group.labelMap[shotId] || `${shotId}번 시도`;
-                        resultValue = shot.proximity === 0 ? "Cup in" : `${shot.proximity}m`;
-                        const typeKey = title.toLowerCase().replace(" ", "_");
-                        const attemptScore = PUTTING_ATTEMPT_SCORES[typeKey]?.[shotId] || 0;
-                        const prox = shot.proximity !== "" ? Math.min(20, Math.round(Number(shot.proximity))) : 0;
-                        const resultScore = shot.proximity !== "" ? (PUTTING_RESULT_SCORES[prox] || 1.55) : 0;
-                        scoreValue = shot.proximity !== "" ? (attemptScore + resultScore) : 0;
+                        label = (group.labelMap ? group.labelMap[shotId] : null) || `${shotId}번 시도`;
+                        resultValue = shot.proximity === "" ? "N/A" : `${shot.proximity} putt`;
+                        if (shot.proximity !== "") {
+                            const putts = Number(shot.proximity);
+                            let distance = 0;
+                            if (title === "LONG PUTT") distance = [10, 13, 16, 19][shotId - 1];
+                            else if (title === "MIDDLE PUTT") distance = [4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5][shotId - 1];
+                            else if (title === "SHORT PUTT") distance = [1, 1.5, 2, 2.5, 3, 3.5][shotId - 1];
+                            scoreValue = getChallengePuttScore(distance, putts);
+                        } else {
+                            scoreValue = 0;
+                        }
                     }
 
                     return (
@@ -326,12 +227,14 @@ export default function TestDetailPage() {
     const router = useRouter();
     const [test, setTest] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [baselines, setBaselines] = useState<any[]>([]);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    const menuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        async function fetchTest() {
+        async function fetchInitial() {
             const { id } = params;
+            const b = await fetchScoringBaselines();
+            setBaselines(b);
             const supabase = createClient();
             const { data, error } = await supabase
                 .from("test_sessions")
@@ -352,7 +255,7 @@ export default function TestDetailPage() {
                     ...data,
                     content: typeof data.raw_shot_data === 'string' ? JSON.parse(data.raw_shot_data) : data.raw_shot_data,
                     title: data.title || "제목 없음",
-                    date: data.created_at ? data.created_at.split('T')[0] : "",
+                    date: data.created_at ? ((data.created_at) ? new Date(data.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }) : "") : "",
                     coach: { name: (data.coach as any)?.name || "알 수 없음" },
                     player: { name: (data.player as any)?.name || "알 수 없음" }
                 };
@@ -360,7 +263,7 @@ export default function TestDetailPage() {
             }
             setLoading(false);
         }
-        fetchTest();
+        fetchInitial();
     }, [params]);
 
     const handleDelete = async () => {
@@ -389,26 +292,28 @@ export default function TestDetailPage() {
                 return acc + (SCORING[shot.result as keyof typeof SCORING] || 0);
             }, 0);
         }
-        
+
         if (content.iron) {
             s.iron = content.iron.shots.reduce((acc: number, shot: any) => {
                 if (shot.proximity === "") return acc;
-                const startScore = IRON_START_SCORES[shot.distance] || 0;
-                const prox = Math.min(20, Math.round(Number(shot.proximity)));
-                const resultScore = IRON_RESULT_SCORES[prox] || 0.32;
-                return acc + startScore + resultScore;
+                const prox = Math.round(Number(shot.proximity));
+                return acc + getIronScore(shot.distance, prox);
             }, 0);
         }
-        
+
         if (category === "around_green") {
             if (content.approach) {
                 s.approach = content.approach.shots.reduce((acc: number, shot: any, idx: number) => {
                     if (shot.proximity === "") return acc;
                     const prox = Math.round(Number(shot.proximity));
                     const shotId = idx + 1;
-                    if (shotId <= 4) return acc + getShortApproachScore(prox);
-                    if (shotId <= 8) return acc + getMiddleApproachScore(prox);
-                    return acc + getLongApproachScore(prox);
+                    let attemptDist = 0;
+                    if (shotId <= 4) attemptDist = 8;
+                    else if (shotId <= 6) attemptDist = 15;
+                    else if (shotId <= 8) attemptDist = 20;
+                    else if (shotId <= 10) attemptDist = 25;
+                    else attemptDist = 30;
+                    return acc + calculateChallengeSG(attemptDist, prox, baselines);
                 }, 0);
             }
             if (content.bunker) {
@@ -416,8 +321,8 @@ export default function TestDetailPage() {
                     if (shot.proximity === "") return acc;
                     const prox = Math.round(Number(shot.proximity));
                     const shotId = idx + 1;
-                    if (shotId <= 3) return acc + getShortBunkerScore(prox);
-                    return acc + getLongBunkerScore(prox);
+                    const attemptDist = shotId <= 3 ? 17 : 27;
+                    return acc + calculateChallengeSG(attemptDist, prox, baselines);
                 }, 0);
             }
         } else if (category === "approach") {
@@ -425,17 +330,21 @@ export default function TestDetailPage() {
                 if (shot.proximity === "") return acc;
                 const prox = Math.round(Number(shot.proximity));
                 const shotId = idx + 1;
-                if (shotId <= 4) return acc + getShortApproachScore(prox);
-                if (shotId <= 8) return acc + getMiddleApproachScore(prox);
-                return acc + getLongApproachScore(prox);
+                let attemptDist = 0;
+                if (shotId <= 4) attemptDist = 8;
+                else if (shotId <= 6) attemptDist = 15;
+                else if (shotId <= 8) attemptDist = 20;
+                else if (shotId <= 10) attemptDist = 25;
+                else attemptDist = 30;
+                return acc + calculateChallengeSG(attemptDist, prox, baselines);
             }, 0);
         } else if (category === "bunker") {
             s.bunker = content.shots.reduce((acc: number, shot: any, idx: number) => {
                 if (shot.proximity === "") return acc;
                 const prox = Math.round(Number(shot.proximity));
                 const shotId = idx + 1;
-                if (shotId <= 3) return acc + getShortBunkerScore(prox);
-                return acc + getLongBunkerScore(prox);
+                const attemptDist = shotId <= 3 ? 17 : 27;
+                return acc + calculateChallengeSG(attemptDist, prox, baselines);
             }, 0);
         }
 
@@ -443,53 +352,47 @@ export default function TestDetailPage() {
             if (content.long) {
                 s.long_putt = content.long.shots.reduce((acc: number, shot: any) => {
                     if (shot.proximity === "") return acc;
-                    const attemptScore = PUTTING_ATTEMPT_SCORES.long_putt[shot.shotId] || 0;
-                    const prox = Math.min(20, Math.round(Number(shot.proximity)));
-                    const resultScore = PUTTING_RESULT_SCORES[prox] || 1.55;
-                    return acc + attemptScore + resultScore;
+                    const putts = Number(shot.proximity);
+                    const distance = [10, 13, 16, 19][shot.shotId - 1];
+                    return acc + getChallengePuttScore(distance, putts);
                 }, 0);
             }
             if (content.middle) {
                 s.middle_putt = content.middle.shots.reduce((acc: number, shot: any) => {
                     if (shot.proximity === "") return acc;
-                    const attemptScore = PUTTING_ATTEMPT_SCORES.middle_putt[shot.shotId] || 0;
-                    const prox = Math.min(20, Math.round(Number(shot.proximity)));
-                    const resultScore = PUTTING_RESULT_SCORES[prox] || 1.55;
-                    return acc + attemptScore + resultScore;
+                    const putts = Number(shot.proximity);
+                    const distance = [4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5][shot.shotId - 1];
+                    return acc + getChallengePuttScore(distance, putts);
                 }, 0);
             }
             if (content.short) {
                 s.short_putt = content.short.shots.reduce((acc: number, shot: any) => {
                     if (shot.proximity === "") return acc;
-                    const attemptScore = PUTTING_ATTEMPT_SCORES.short_putt[shot.shotId] || 0;
-                    const prox = Math.min(20, Math.round(Number(shot.proximity)));
-                    const resultScore = PUTTING_RESULT_SCORES[prox] || 1.55;
-                    return acc + attemptScore + resultScore;
+                    const putts = Number(shot.proximity);
+                    const distance = [1, 1.5, 2, 2.5, 3, 3.5][shot.shotId - 1];
+                    return acc + getChallengePuttScore(distance, putts);
                 }, 0);
             }
         } else if (category === "long_putt") {
             s.long_putt = content.shots.reduce((acc: number, shot: any) => {
                 if (shot.proximity === "") return acc;
-                const attemptScore = PUTTING_ATTEMPT_SCORES.long_putt[shot.shotId] || 0;
-                const prox = Math.min(20, Math.round(Number(shot.proximity)));
-                const resultScore = PUTTING_RESULT_SCORES[prox] || 1.55;
-                return acc + attemptScore + resultScore;
+                const putts = Number(shot.proximity);
+                const distance = [10, 13, 16, 19][shot.shotId - 1];
+                return acc + getChallengePuttScore(distance, putts);
             }, 0);
         } else if (category === "middle_putt") {
             s.middle_putt = content.shots.reduce((acc: number, shot: any) => {
                 if (shot.proximity === "") return acc;
-                const attemptScore = PUTTING_ATTEMPT_SCORES.middle_putt[shot.shotId] || 0;
-                const prox = Math.min(20, Math.round(Number(shot.proximity)));
-                const resultScore = PUTTING_RESULT_SCORES[prox] || 1.55;
-                return acc + attemptScore + resultScore;
+                const putts = Number(shot.proximity);
+                const distance = [4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5][shot.shotId - 1];
+                return acc + getChallengePuttScore(distance, putts);
             }, 0);
         } else if (category === "short_putt") {
             s.short_putt = content.shots.reduce((acc: number, shot: any) => {
                 if (shot.proximity === "") return acc;
-                const attemptScore = PUTTING_ATTEMPT_SCORES.short_putt[shot.shotId] || 0;
-                const prox = Math.min(20, Math.round(Number(shot.proximity)));
-                const resultScore = PUTTING_RESULT_SCORES[prox] || 1.55;
-                return acc + attemptScore + resultScore;
+                const putts = Number(shot.proximity);
+                const distance = [1, 1.5, 2, 2.5, 3, 3.5][shot.shotId - 1];
+                return acc + getChallengePuttScore(distance, putts);
             }, 0);
         }
 
@@ -566,6 +469,7 @@ export default function TestDetailPage() {
                                 gIdx={gIdx}
                                 formatScore={formatScore}
                                 cn={cn}
+                                baselines={baselines}
                             />
                         </div>
                     );
@@ -584,7 +488,7 @@ export default function TestDetailPage() {
                         </button>
                         <div className="flex items-center gap-2">
                             <BookOpen size={18} className="text-brand-navy dark:text-brand-navy-light" />
-                            <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">챌린지 결과</h1>
+                            <PageTitle>챌린지 결과</PageTitle>
                         </div>
                     </div>
                     <div className="relative">
@@ -616,15 +520,15 @@ export default function TestDetailPage() {
                             </span>
                         </div>
                     </div>
-                    <h2 className="text-2xl font-black text-zinc-900 dark:text-white leading-tight mt-2">
+                    <SectionTitle>
                         {test.player?.name || "선수"}
-                    </h2>
+                    </SectionTitle>
                     <div className="border-t border-zinc-100 dark:border-zinc-800 my-4"></div>
                     <div className="grid grid-cols-2 gap-4">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-400"><User size={20} /></div>
                             <div>
-                                <p className="text-[11px] text-zinc-400 font-bold mb-0.5">담당 코치</p>
+                                <p className="text-[11px] text-zinc-400 font-bold mb-0.5">작성자</p>
                                 <p className="text-[15px] font-bold text-zinc-900 dark:text-zinc-100">{test.coach?.name}</p>
                             </div>
                         </div>
@@ -682,10 +586,8 @@ export default function TestDetailPage() {
                                                     const distShots = ironShotsList.filter((s: any) => s.distance === dist);
                                                     const subtotal = distShots.reduce((acc: number, shot: any) => {
                                                         if (shot.proximity === "") return acc;
-                                                        const startScore = IRON_START_SCORES[shot.distance as keyof typeof IRON_START_SCORES] || 0;
-                                                        const prox = Math.min(20, Math.round(Number(shot.proximity)));
-                                                        const resultScore = IRON_RESULT_SCORES[prox as keyof typeof IRON_RESULT_SCORES] || 0.32;
-                                                        return acc + startScore + resultScore;
+                                                        const prox = Math.round(Number(shot.proximity));
+                                                        return acc + getIronScore(shot.distance, prox);
                                                     }, 0);
                                                     return (
                                                         <div key={dist} className="flex items-center justify-between gap-4 w-full">
@@ -715,15 +617,17 @@ export default function TestDetailPage() {
                                     if (approachShotsList.length > 0) {
                                         const shortApp = approachShotsList.slice(0, 4).reduce((acc: number, shot: any) => {
                                             if (shot.proximity === "") return acc;
-                                            return acc + getShortApproachScore(Math.round(Number(shot.proximity)));
+                                            return acc + calculateChallengeSG(8, Math.round(Number(shot.proximity)), baselines);
                                         }, 0);
-                                        const middleApp = approachShotsList.slice(4, 8).reduce((acc: number, shot: any) => {
+                                        const middleApp = approachShotsList.slice(4, 8).reduce((acc: number, shot: any, idx: number) => {
                                             if (shot.proximity === "") return acc;
-                                            return acc + getMiddleApproachScore(Math.round(Number(shot.proximity)));
+                                            const attemptDist = idx <= 1 ? 15 : 20;
+                                            return acc + calculateChallengeSG(attemptDist, Math.round(Number(shot.proximity)), baselines);
                                         }, 0);
-                                        const longApp = approachShotsList.slice(8, 12).reduce((acc: number, shot: any) => {
+                                        const longApp = approachShotsList.slice(8, 12).reduce((acc: number, shot: any, idx: number) => {
                                             if (shot.proximity === "") return acc;
-                                            return acc + getLongApproachScore(Math.round(Number(shot.proximity)));
+                                            const attemptDist = idx <= 1 ? 25 : 30;
+                                            return acc + calculateChallengeSG(attemptDist, Math.round(Number(shot.proximity)), baselines);
                                         }, 0);
 
                                         const subtotals = [
@@ -761,11 +665,11 @@ export default function TestDetailPage() {
                                     if (bunkerShotsList.length > 0) {
                                         const shortBunk = bunkerShotsList.slice(0, 3).reduce((acc: number, shot: any) => {
                                             if (shot.proximity === "") return acc;
-                                            return acc + getShortBunkerScore(Math.round(Number(shot.proximity)));
+                                            return acc + calculateChallengeSG(17, Math.round(Number(shot.proximity)), baselines);
                                         }, 0);
                                         const longBunk = bunkerShotsList.slice(3, 6).reduce((acc: number, shot: any) => {
                                             if (shot.proximity === "") return acc;
-                                            return acc + getLongBunkerScore(Math.round(Number(shot.proximity)));
+                                            return acc + calculateChallengeSG(27, Math.round(Number(shot.proximity)), baselines);
                                         }, 0);
 
                                         const subtotals = [

@@ -373,22 +373,12 @@ export default function TournamentResultsPage() {
                                                     return (
                                                         <tr key={playerName} className="group hover:bg-zinc-50/30 dark:hover:bg-zinc-800/20 transition-colors">
                                                             <td className="px-6 py-4">
-                                                                <div className="flex items-center justify-between gap-4">
+                                                                <div className="flex items-center justify-start md:justify-center gap-4">
                                                                     <div className="flex items-center gap-2.5 shrink-0">
                                                                         <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 shrink-0">
                                                                             <User size={14} />
                                                                         </div>
                                                                         <span className="text-base font-bold text-zinc-900 dark:text-zinc-100 whitespace-nowrap">{playerName}</span>
-                                                                    </div>
-                                                                    <div className="flex items-center gap-3 bg-zinc-100/50 dark:bg-zinc-800/50 rounded-xl py-1.5 px-4 shadow-inner border border-zinc-200/50 dark:border-zinc-700/50 w-[120px] shrink-0 justify-between">
-                                                                        <div className="flex items-baseline gap-1">
-                                                                            <span className="text-base font-bold text-zinc-900 dark:text-zinc-100">{finalStrokes || "-"}</span>
-                                                                            <span className="text-[10px] font-bold text-zinc-400">타</span>
-                                                                        </div>
-                                                                        <div className="flex items-baseline gap-1">
-                                                                            <span className="text-base font-bold text-zinc-900 dark:text-zinc-100 whitespace-nowrap">{finalRank || "-"}</span>
-                                                                            <span className="text-[10px] font-bold text-zinc-500">위</span>
-                                                                        </div>
                                                                     </div>
                                                                 </div>
                                                             </td>
@@ -485,80 +475,70 @@ export default function TournamentResultsPage() {
                                             const isCutoff = currentRes.isCutoff;
 
                                             return (
-                                                <div key={playerName} className="p-6 flex flex-col gap-5">
+                                                <div key={playerName} className="p-4 flex flex-col gap-3">
                                                     <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-4">
-                                                            <div className="w-12 h-12 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 shadow-inner">
-                                                                <User size={22} />
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="w-8 h-8 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 shadow-inner shrink-0">
+                                                                <User size={14} />
                                                             </div>
                                                             <div className="flex items-center gap-3">
-                                                                <span className="text-xl font-black text-zinc-900 dark:text-zinc-100">{playerName}</span>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex items-center gap-4 bg-zinc-100 dark:bg-zinc-800 h-10 px-4 rounded-2xl shadow-inner border border-zinc-200 dark:border-zinc-700 min-w-[120px] justify-between">
-                                                            <div className="flex items-baseline gap-0.5">
-                                                                <span className="text-lg font-black text-brand-navy dark:text-brand-navy-light">{finalStrokes || "-"}</span>
-                                                                <span className="text-[10px] font-bold text-zinc-400">타</span>
-                                                            </div>
-                                                            <div className="flex items-baseline gap-0.5">
-                                                                <span className="text-lg font-black text-brand-navy dark:text-brand-navy-light">{finalRank || "-"}</span>
-                                                                <span className="text-[10px] font-bold text-zinc-400">위</span>
+                                                                <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{playerName}</span>
                                                             </div>
                                                         </div>
                                                     </div>
 
-                                                    <div className="grid grid-cols-2 gap-4">
+                                                    <div className="grid grid-cols-2 gap-3">
                                                         {/* Strokes Input (Mobile) */}
-                                                        <div className="flex flex-col gap-1.5">
-                                                            <span className="text-xs font-black text-zinc-500 px-1 uppercase tracking-widest text-center">타수(±)</span>
+                                                        <div className="flex flex-col gap-1">
+                                                            <span className="text-[10px] font-bold text-zinc-500 px-1 uppercase tracking-wider text-center">타수(±)</span>
                                                             <div className="relative">
                                                                 <input
                                                                     type="text"
                                                                     className={cn(
-                                                                        "w-full h-10 px-4 pr-10 border rounded-2xl text-center font-black text-lg outline-none focus:ring-4 focus:ring-brand-navy/10",
-                                                                        currentRes.daily_score?.toUpperCase() === 'C' ? "bg-red-50 border-red-200 text-red-500" : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700"
+                                                                        "w-full h-9 px-3 pr-8 border rounded-xl text-center font-bold text-[13px] outline-none focus:ring-2 focus:ring-brand-navy/10",
+                                                                        currentRes.daily_score?.toUpperCase() === 'C' ? "bg-red-50 border-red-200 text-red-500" : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 focus:border-brand-navy"
                                                                     )}
                                                                     value={currentRes.daily_score ?? ""}
                                                                     onChange={(e) => handleUpdateResult(t.id, playerName, currentRoundIdx + 1, 'daily_score', e.target.value || null)}
                                                                 />
-                                                                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5">
+                                                                <div className="absolute right-1 top-1/2 -translate-y-1/2 flex flex-col items-center">
                                                                     <button 
                                                                         onClick={() => adjustValue(t.id, playerName, currentRoundIdx + 1, 'daily_score', 1)}
-                                                                        className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors"
+                                                                        className="p-0.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors"
                                                                     >
-                                                                        <ChevronUp size={14} className="text-zinc-400" />
+                                                                        <ChevronUp size={12} className="text-zinc-400" />
                                                                     </button>
                                                                     <button 
                                                                         onClick={() => adjustValue(t.id, playerName, currentRoundIdx + 1, 'daily_score', -1)}
-                                                                        className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors"
+                                                                        className="p-0.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors"
                                                                     >
-                                                                        <ChevronDown size={14} className="text-zinc-400" />
+                                                                        <ChevronDown size={12} className="text-zinc-400" />
                                                                     </button>
                                                                 </div>
                                                             </div>
                                                         </div>
                                                         {/* Rank Input (Mobile) */}
-                                                        <div className="flex flex-col gap-1.5">
-                                                            <span className="text-xs font-black text-zinc-500 px-1 uppercase tracking-widest text-center">순위</span>
+                                                        <div className="flex flex-col gap-1">
+                                                            <span className="text-[10px] font-bold text-zinc-500 px-1 uppercase tracking-wider text-center">순위</span>
                                                             <div className="relative">
                                                                 <input
                                                                     type="text"
-                                                                    className="w-full h-10 px-4 pr-10 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl text-center font-bold text-lg outline-none focus:ring-4 focus:ring-brand-navy/10"
+                                                                    className="w-full h-9 px-3 pr-8 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-center font-bold text-[13px] outline-none focus:ring-2 focus:ring-brand-navy/10 focus:border-brand-navy"
                                                                     value={currentRes.daily_rank ?? ""}
                                                                     onChange={(e) => handleUpdateResult(t.id, playerName, currentRoundIdx + 1, 'daily_rank', e.target.value ? parseInt(e.target.value) : null)}
                                                                 />
-                                                                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col items-center gap-0.5">
+                                                                <div className="absolute right-1 top-1/2 -translate-y-1/2 flex flex-col items-center">
                                                                     <button 
                                                                         onClick={() => adjustValue(t.id, playerName, currentRoundIdx + 1, 'daily_rank', 1)}
-                                                                        className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors"
+                                                                        className="p-0.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors"
                                                                     >
-                                                                        <ChevronUp size={14} className="text-zinc-400" />
+                                                                        <ChevronUp size={12} className="text-zinc-400" />
                                                                     </button>
                                                                     <button 
                                                                         onClick={() => adjustValue(t.id, playerName, currentRoundIdx + 1, 'daily_rank', -1)}
-                                                                        className="p-1 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors"
+                                                                        className="p-0.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded transition-colors"
                                                                     >
-                                                                        <ChevronDown size={14} className="text-zinc-400" />
+                                                                        <ChevronDown size={12} className="text-zinc-400" />
                                                                     </button>
                                                                 </div>
                                                             </div>
@@ -566,14 +546,15 @@ export default function TournamentResultsPage() {
                                                     </div>
                                                     
                                                     {isCutoff && (
-                                                        <div className="bg-red-500 text-white py-2 rounded-xl text-center shadow-lg shadow-red-500/20">
-                                                            <span className="text-xs font-black tracking-[0.2em] uppercase">CUT OFF</span>
+                                                        <div className="bg-red-500 text-white py-1 rounded-lg text-center shadow-lg shadow-red-500/20">
+                                                            <span className="text-[10px] font-bold tracking-[0.2em] uppercase">CUT OFF</span>
                                                         </div>
                                                     )}
 
                                                     <input
                                                         type="text"
-                                                        className="w-full h-10 px-5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-3xl text-center font-black focus:ring-4 focus:ring-brand-navy/10 focus:border-brand-navy outline-none transition-all shadow-sm"
+                                                        placeholder="비고 (선택 사항)"
+                                                        className="w-full h-9 px-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-center font-bold text-[13px] focus:ring-2 focus:ring-brand-navy/10 focus:border-brand-navy outline-none transition-all shadow-sm"
                                                         value={athleteNotes}
                                                         onChange={(e) => handleUpdateResult(t.id, playerName, 1, 'notes', e.target.value)}
                                                     />

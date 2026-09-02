@@ -19,7 +19,7 @@ interface ScheduleEventDialogProps {
 }
 
 const EVENT_TYPES: { value: ScheduleEvent["type"]; label: string; color: string }[] = [
-    { value: "analysis", label: "분석", color: "bg-orange-500" },
+    { value: "analysis", label: "측정", color: "bg-orange-500" },
     { value: "lesson", label: "레슨", color: "bg-blue-500" },
     { value: "training", label: "훈련", color: "bg-emerald-500" },
     { value: "consultation", label: "상담", color: "bg-amber-500" },

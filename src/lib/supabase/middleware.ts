@@ -43,6 +43,9 @@ export async function updateSession(request: NextRequest) {
         !request.nextUrl.pathname.startsWith('/find-id') && 
         !request.nextUrl.pathname.startsWith('/forgot-password') && 
         !request.nextUrl.pathname.startsWith('/auth') && 
+        !request.nextUrl.pathname.startsWith('/public') && 
+        !request.nextUrl.pathname.startsWith('/api/public-report') && 
+        !request.nextUrl.pathname.startsWith('/api/admin/check-sg') && 
         !request.nextUrl.pathname.startsWith('/api/debug-records')) {
         const url = request.nextUrl.clone()
         url.pathname = '/login'

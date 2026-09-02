@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { LabelText, BodyText } from "@/components/ui/Typography";
 
 export type LessonType = "shot" | "pitch" | "bunker" | "approach" | "putt" | "physical" | "etc" | "field";
 
@@ -13,6 +14,13 @@ export interface LessonData {
     coachName: string;
     comment: string;
     date: string;
+    is_corrected?: boolean;
+    hasDirectorComment?: boolean;
+    updated_at?: string;
+    created_at?: string;
+    connected_lesson_id?: string | null;
+    is_core_lesson?: boolean;
+    subLessons?: LessonData[];
 }
 
 const typeBadgeConfig: Record<LessonType, { label: string; bg: string; text: string; border: string }> = {
@@ -89,14 +97,14 @@ export function LessonCard({ lesson }: LessonCardProps) {
             </span>
 
             {/* Player Name */}
-            <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
+            <LabelText className="text-base cursor-pointer">
                 {lesson.playerName}
-            </h3>
+            </LabelText>
 
             {/* Coach Comment — max 3 lines */}
-            <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed line-clamp-3">
+            <BodyText className="line-clamp-3">
                 {lesson.comment}
-            </p>
+            </BodyText>
         </Link>
     );
 }

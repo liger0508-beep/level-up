@@ -234,7 +234,7 @@ export default function TodoPage() {
         });
 
         const mappedOtherRecords: UnifiedItem[] = (recordsData || []).filter(r => {
-            if (r.type === 'course_management') return false;
+            if (r.type === 'course_management' || r.type === 'score') return false;
             // Filter out journals and trainings already handled or matched to schedules
             const isUsedInTraining = r.type === 'training' && trainingData?.some(at => r.id === at.id);
             const matchesSchedule = (scheduleData || []).some(s => 
@@ -291,14 +291,24 @@ export default function TodoPage() {
             }
         }
 
-        const allItems = [...mappedTodos, ...mappedSchedules, ...mappedTrainings, ...mappedOtherRecords, ...mappedScores, ...dailyJournals];
-        allItems.sort((a, b) => {
+        const allItems = [...mappedTodos, ...mappedSchedules, ...dailyJournals];
+        
+        const uniqueItemsMap = new Map<string, UnifiedItem>();
+        allItems.forEach(item => {
+            const key = `${item.type}-${item.id}`;
+            if (!uniqueItemsMap.has(key)) {
+                uniqueItemsMap.set(key, item);
+            }
+        });
+        const uniqueItems = Array.from(uniqueItemsMap.values());
+
+        uniqueItems.sort((a, b) => {
             if (a.is_completed !== b.is_completed) return a.is_completed ? 1 : -1;
             const typeOrder = { todo: 0, schedule: 1, training: 2, lesson: 3, analysis: 4, score: 5, journal: 6 };
             return (typeOrder[a.type as keyof typeof typeOrder] || 99) - (typeOrder[b.type as keyof typeof typeOrder] || 99);
         });
 
-        setItems(allItems);
+        setItems(uniqueItems);
     };
 
     const handleAddTodo = async (e: React.FormEvent) => {

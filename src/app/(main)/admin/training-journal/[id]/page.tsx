@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { fetchComments, saveComment, updateComment, deleteComment, AnalysisComment } from "@/lib/analysis-sync";
 import { uploadFile } from "@/lib/storage-sync";
+import { CustomVideoPlayer } from "@/components/ui/CustomVideoPlayer";
 
 export default function JournalDetailPage() {
     const router = useRouter();
@@ -57,6 +58,15 @@ export default function JournalDetailPage() {
     const commentFileInputRef = useRef<HTMLInputElement>(null);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
+
+    const mediaCarouselRef = useRef<HTMLDivElement>(null);
+    const scrollMediaCarousel = (direction: "left" | "right") => {
+        if (mediaCarouselRef.current) {
+            const { scrollLeft, clientWidth } = mediaCarouselRef.current;
+            const scrollTo = direction === "left" ? scrollLeft - clientWidth : scrollLeft + clientWidth;
+            mediaCarouselRef.current.scrollTo({ left: scrollTo, behavior: "smooth" });
+        }
+    };
 
     const [filterType, setFilterType] = useState<JournalType>("all");
     const [searchQuery, setSearchQuery] = useState("");
@@ -279,7 +289,7 @@ export default function JournalDetailPage() {
                             </div>
                             <div>
                                 <p className="text-[10px] text-zinc-500">훈련 일자</p>
-                                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{journal.date.replace(/-/g, ".")}</p>
+                                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{journal.date.slice(5).replace(/-/g, ".")}</p>
                             </div>
                         </div>
                     </div>
@@ -291,29 +301,47 @@ export default function JournalDetailPage() {
                         <Play size={14} className="text-zinc-400" />
                         <h3 className="text-[11px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">첨부 파일</h3>
                     </div>
-                    
-                    <div className="p-4 space-y-4">
+
+                    <div className="p-4 bg-transparent relative group">
                         {journal.media_urls && journal.media_urls.length > 0 ? (
-                            journal.media_urls.map((url, idx) => {
-                                const isVideo = url.toLowerCase().includes('.mp4') || url.toLowerCase().includes('.mov') || url.toLowerCase().includes('.webm');
-                                return (
-                                    <div key={idx} className="relative aspect-[4/5] sm:aspect-[4/3] bg-white rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800">
-                                        {isVideo ? (
-                                            <video 
-                                                src={url} 
-                                                controls 
-                                                className="w-full h-full object-contain"
-                                            />
-                                        ) : (
-                                            <img 
-                                                src={url} 
-                                                alt={`첨부파일 ${idx + 1}`} 
-                                                className="w-full h-full object-contain"
-                                            />
-                                        )}
-                                    </div>
-                                );
-                            })
+                            <>
+                                <div
+                                    ref={mediaCarouselRef}
+                                    className="flex overflow-x-auto snap-x snap-mandatory gap-4 pb-2 scrollbar-hide"
+                                >
+                                    {journal.media_urls?.map((url, idx) => {
+                                        const isVideo = url.toLowerCase().includes('.mp4') || url.toLowerCase().includes('.mov') || url.toLowerCase().includes('.webm');
+                                        return (
+                                            <div key={idx} className="shrink-0 w-full aspect-[2/3] sm:aspect-[4/3] snap-center rounded-3xl overflow-hidden shadow-sm relative border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 py-4 sm:py-8 px-2 sm:px-4 flex items-center justify-center">
+                                                {isVideo ? (
+                                                    <CustomVideoPlayer src={url} className="w-full h-full" />
+                                                ) : (
+                                                    <img
+                                                        src={url}
+                                                        alt={`첨부파일 ${idx + 1}`}
+                                                        className="w-full h-full object-contain rounded-2xl"
+                                                    />
+                                                )}
+                                                {journal.media_urls?.length && journal.media_urls.length > 1 && (
+                                                    <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-sm text-white text-xs font-semibold px-3 py-1.5 rounded-full z-10 pointer-events-none">
+                                                        {idx + 1} / {journal.media_urls.length}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                {journal.media_urls?.length && journal.media_urls.length > 1 && (
+                                    <>
+                                        <button onClick={() => scrollMediaCarousel("left")} className="hidden sm:flex absolute left-6 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 dark:bg-black/60 backdrop-blur-sm hover:bg-white dark:hover:bg-black text-zinc-800 dark:text-zinc-200 rounded-full items-center justify-center shadow-lg transition-all opacity-0 group-hover:opacity-100 z-10">
+                                            <ChevronLeft size={24} />
+                                        </button>
+                                        <button onClick={() => scrollMediaCarousel("right")} className="hidden sm:flex absolute right-6 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 dark:bg-black/60 backdrop-blur-sm hover:bg-white dark:hover:bg-black text-zinc-800 dark:text-zinc-200 rounded-full items-center justify-center shadow-lg transition-all opacity-0 group-hover:opacity-100 z-10">
+                                            <ChevronRight size={24} />
+                                        </button>
+                                    </>
+                                )}
+                            </>
                         ) : (
                             <div className="aspect-[4/5] sm:aspect-[4/3] bg-zinc-50 dark:bg-zinc-800/50 rounded-xl flex flex-col items-center justify-center gap-2 border border-dashed border-zinc-300 dark:border-zinc-700">
                                 <div className="w-12 h-12 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400">
@@ -358,7 +386,7 @@ export default function JournalDetailPage() {
                                             </span>
                                             {currentUser?.id === c.userId && (
                                                 <div className="flex items-center gap-1 ml-1">
-                                                    <button 
+                                                    <button
                                                         onClick={() => {
                                                             setEditingCommentId(c.id);
                                                             setEditingCommentText(c.text);
@@ -367,7 +395,7 @@ export default function JournalDetailPage() {
                                                     >
                                                         <Edit2 size={12} />
                                                     </button>
-                                                    <button 
+                                                    <button
                                                         onClick={() => handleDeleteComment(c.id)}
                                                         className="text-zinc-400 hover:text-brand-red"
                                                     >
@@ -377,7 +405,7 @@ export default function JournalDetailPage() {
                                             )}
                                         </div>
                                     </div>
-                                    
+
                                     {editingCommentId === c.id ? (
                                         <div className="space-y-2 mt-1">
                                             <textarea
@@ -387,13 +415,13 @@ export default function JournalDetailPage() {
                                                 rows={2}
                                             />
                                             <div className="flex justify-end gap-2">
-                                                <button 
+                                                <button
                                                     onClick={() => setEditingCommentId(null)}
                                                     className="px-2 py-1 text-[10px] font-medium text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded"
                                                 >
                                                     취소
                                                 </button>
-                                                <button 
+                                                <button
                                                     onClick={() => handleEditComment(c.id)}
                                                     className="px-2 py-1 text-[10px] font-bold bg-brand-navy text-white rounded hover:bg-brand-navy/90"
                                                 >

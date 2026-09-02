@@ -1,11 +1,24 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { Plus, Image as ImageIcon, Trash2, Edit2, Search, X, BookOpen, Upload, Loader2 } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { LessonTemplate, fetchLessonTemplates, saveLessonTemplate, deleteLessonTemplate } from "@/lib/lesson-template-sync";
 
 export default function LessonListPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-zinc-400">로딩 중...</div>}>
+            <LessonListContent />
+        </Suspense>
+    );
+}
+
+function LessonListContent() {
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const isSelectMode = searchParams.get("mode") === "select";
+
     const [templates, setTemplates] = useState<LessonTemplate[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
@@ -29,7 +42,7 @@ export default function LessonListPage() {
     async function loadTemplates() {
         setIsLoading(true);
         const data = await fetchLessonTemplates();
-        setTemplates(data);
+        setTemplates([...data].reverse());
         setIsLoading(false);
     }
 
@@ -100,6 +113,33 @@ export default function LessonListPage() {
         setIsSaving(false);
     };
 
+    const handleSelectTemplate = (template: LessonTemplate) => {
+        if (confirm(`'${template.title}' 스윙 오류를 배정하시겠습니까?`)) {
+            const resumeEditId = searchParams.get("resumeEdit");
+            const DRAFT_KEY = resumeEditId ? `lesson_edit_draft_${resumeEditId}` : "lesson_create_draft";
+            try {
+                const draftStr = sessionStorage.getItem(DRAFT_KEY);
+                const draft = draftStr ? JSON.parse(draftStr) : {};
+                
+                if (!draft.selectedImages) draft.selectedImages = [];
+                
+                if (!draft.selectedImages.includes(template.id)) {
+                    draft.selectedImages.push(template.id);
+                    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+                }
+                
+                if (resumeEditId) {
+                    router.push(`/lessons/${resumeEditId}/edit?resumeEdit=true&ts=${Date.now()}#swing-error-section`);
+                } else {
+                    router.push(`/lessons/create?ts=${Date.now()}#swing-error-section`);
+                }
+            } catch (e) {
+                console.error("Failed to save to draft", e);
+                alert("배정 중 오류가 발생했습니다.");
+            }
+        }
+    };
+
     return (
         <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 pb-24">
             <main className="max-w-6xl mx-auto px-4 sm:px-8 py-10">
@@ -110,20 +150,41 @@ export default function LessonListPage() {
                             <div className="flex items-center gap-2 mb-2">
                                 <BookOpen size={24} className="text-brand-navy dark:text-brand-navy-light shrink-0" />
                                 <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 tracking-tight">
-                                    스윙 오류 관리
+                                    {isSelectMode ? "스윙 오류 배정" : "스윙 오류 관리"}
                                 </h1>
                             </div>
                             <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                                레슨 작성 시 선택할 수 있는 <b>스윙 오류(이미지 및 설명)</b> 리스트를 관리합니다.
+                                {isSelectMode 
+                                    ? "레슨 작성에 배정할 스윙 오류 항목을 선택해주세요."
+                                    : "레슨 작성 시 선택할 수 있는 스윙 오류(이미지 및 설명) 리스트를 관리합니다."}
                             </p>
                         </div>
-                        <button
-                            onClick={handleOpenAddModal}
-                            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-navy hover:bg-brand-navy-light text-white text-sm font-bold rounded-xl transition-colors shadow-sm shrink-0 whitespace-nowrap"
-                        >
-                            <Plus size={16} />
-                            항목 추가
-                        </button>
+                        <div className="flex items-center gap-2 shrink-0">
+                            {isSelectMode && (
+                                <button
+                                    onClick={() => {
+                                        const resumeEditId = searchParams.get("resumeEdit");
+                                        if (resumeEditId) {
+                                            router.push(`/lessons/${resumeEditId}/edit?resumeEdit=true&ts=${Date.now()}#swing-error-section`);
+                                        } else {
+                                            router.push(`/lessons/create?ts=${Date.now()}#swing-error-section`);
+                                        }
+                                    }}
+                                    className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-sm font-bold rounded-xl transition-colors shadow-sm shrink-0 whitespace-nowrap"
+                                >
+                                    뒤로 가기
+                                </button>
+                            )}
+                            {!isSelectMode && (
+                                <button
+                                    onClick={handleOpenAddModal}
+                                    className="flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-navy hover:bg-brand-navy-light text-white text-sm font-bold rounded-xl transition-colors shadow-sm shrink-0 whitespace-nowrap"
+                                >
+                                    <Plus size={16} />
+                                    항목 추가
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
 
@@ -176,19 +237,30 @@ export default function LessonListPage() {
                                 </div>
 
                                 {/* Actions */}
-                                <div className="flex items-center gap-1 pr-3 sm:pr-4 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button
-                                        onClick={() => handleOpenEditModal(template)}
-                                        className="p-2 hover:bg-brand-navy/10 hover:text-brand-navy text-zinc-400 rounded-lg transition-colors"
-                                    >
-                                        <Edit2 size={15} />
-                                    </button>
-                                    <button
-                                        onClick={() => handleDelete(template.id)}
-                                        className="p-2 hover:bg-red-50 hover:text-red-500 text-zinc-400 rounded-lg transition-colors"
-                                    >
-                                        <Trash2 size={15} />
-                                    </button>
+                                <div className={`flex items-center gap-1 pr-3 sm:pr-4 shrink-0 transition-opacity ${isSelectMode ? "opacity-100" : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100"}`}>
+                                    {isSelectMode ? (
+                                        <button
+                                            onClick={() => handleSelectTemplate(template)}
+                                            className="px-4 py-2 bg-brand-navy hover:bg-brand-navy-light text-white text-sm font-bold rounded-lg transition-colors shadow-sm"
+                                        >
+                                            배정
+                                        </button>
+                                    ) : (
+                                        <>
+                                            <button
+                                                onClick={() => handleOpenEditModal(template)}
+                                                className="p-2 hover:bg-brand-navy/10 hover:text-brand-navy text-zinc-400 rounded-lg transition-colors"
+                                            >
+                                                <Edit2 size={15} />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(template.id)}
+                                                className="p-2 hover:bg-red-50 hover:text-red-500 text-zinc-400 rounded-lg transition-colors"
+                                            >
+                                                <Trash2 size={15} />
+                                            </button>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         ))

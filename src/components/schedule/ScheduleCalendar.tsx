@@ -17,7 +17,7 @@ import {
     eachDayOfInterval,
 } from "date-fns";
 import { ko } from "date-fns/locale";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, Calendar } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 
@@ -47,7 +47,7 @@ const EVENT_COLORS: Record<ScheduleEvent["type"], { bg: string; dot: string }> =
 };
 
 const EVENT_TYPE_LABELS: Record<ScheduleEvent["type"], string> = {
-    analysis: "분석",
+    analysis: "측정",
     lesson: "레슨",
     training: "훈련",
     consultation: "상담",
@@ -179,7 +179,7 @@ export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEve
                             "flex items-center gap-1 px-4 py-2 rounded-full text-sm font-semibold border transition-all duration-200 shrink-0",
                             typeFilter === "all"
                                 ? "bg-brand-navy text-white border-brand-navy shadow-md"
-                                : "bg-transparent text-zinc-600 border-zinc-200 hover:bg-brand-navy-light hover:text-brand-navy dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700 dark:hover:bg-brand-navy-dark dark:hover:text-white"
+                                : "bg-white text-zinc-600 border-zinc-200 hover:bg-brand-navy-light hover:text-brand-navy dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700 dark:hover:bg-brand-navy-dark dark:hover:text-white"
                         )}
                     >전체</button>
                     {Object.entries(EVENT_TYPE_LABELS).map(([type, label]) => {
@@ -193,7 +193,7 @@ export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEve
                                     "flex items-center gap-1 px-4 py-2 rounded-full text-sm font-semibold border transition-all duration-200 shrink-0",
                                     typeFilter === t
                                         ? "bg-brand-navy text-white border-brand-navy shadow-md"
-                                        : "bg-transparent text-zinc-600 border-zinc-200 hover:bg-brand-navy-light hover:text-brand-navy dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700 dark:hover:bg-brand-navy-dark dark:hover:text-white"
+                                        : "bg-white text-zinc-600 border-zinc-200 hover:bg-brand-navy-light hover:text-brand-navy dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700 dark:hover:bg-brand-navy-dark dark:hover:text-white"
                                 )}
                             >{label}</button>
                         );
@@ -298,68 +298,63 @@ export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEve
                                 <div
                                     key={event.id}
                                     className={cn(
-                                        "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 border-l-4 rounded-xl px-3 py-2.5 sm:px-4 sm:py-3.5 flex items-center gap-2 sm:gap-3 transition-all hover:shadow-md hover:-translate-y-px active:scale-[0.98]",
-                                        borderMap[event.type],
-                                        completed ? "bg-zinc-50 dark:bg-zinc-800/50 opacity-80" : ""
+                                        "bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] py-4 px-6 transition-all hover:shadow-md w-full cursor-pointer",
+                                        completed ? "opacity-80" : ""
                                     )}
                                     onClick={() => onEditEvent?.(event)}
                                 >
-                                    {/* Left: dot + "유형 파트" | participantName */}
-                                    <div className="flex items-center gap-1.5 sm:gap-2 flex-1 min-w-0">
-                                        <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", completed ? "bg-zinc-300" : colors.dot)} />
-                                        <span className={cn("w-[3.2rem] sm:w-[4.5rem] text-[10px] sm:text-[11px] font-bold uppercase tracking-tight sm:tracking-widest shrink-0", labelColorMap[event.type])}>
-                                            {EVENT_TYPE_LABELS[event.type]}{event.category ? `(${event.category.slice(0, 1)})` : ""}
-                                        </span>
-                                        <span className="w-[1px] h-3 bg-zinc-100 dark:bg-zinc-800 shrink-0" />
-                                        <span className={cn("text-[13px] sm:text-[14px] font-bold truncate", completed ? "text-zinc-400" : "text-zinc-900 dark:text-zinc-100")}>
-                                            {event.participantName || event.title}
-                                            {event.coachName && (
-                                                <span className="ml-1.5 text-[11px] font-normal text-zinc-400 dark:text-zinc-500">
-                                                    | {event.coachName}
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-8 h-8 rounded-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 shrink-0">
+                                                <Calendar size={16} />
+                                            </div>
+                                            <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300">
+                                                {EVENT_TYPE_LABELS[event.type]}{event.category ? `(${event.category.slice(0, 1)})` : ""}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0 mr-2">
+                                            {event.groupCount > 1 && (
+                                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-brand-navy/10 text-brand-navy shrink-0">
+                                                    +{event.groupCount - 1}
                                                 </span>
                                             )}
-                                        </span>
-                                        {event.groupCount > 1 && (
-                                            <span className={cn("ml-0.5 shrink-0 text-[9px] font-bold px-1 py-0.5 rounded", completed ? "bg-zinc-100 text-zinc-400" : "bg-brand-navy/10 text-brand-navy dark:text-brand-navy-light")}>
-                                                +{event.groupCount - 1}
-                                            </span>
-                                        )}
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (completed) return;
+                                                    const params = new URLSearchParams({
+                                                        player: event.participantName || "",
+                                                        type: event.category || "shot",
+                                                        start: format(event.start, "HH:mm"),
+                                                        end: format(event.end, "HH:mm"),
+                                                        scheduleId: event.id
+                                                    });
+                                                    if (event.type === "lesson") router.push(`/lessons/create?${params.toString()}`);
+                                                    else if (event.type === "analysis") router.push(`/analysis/create?${params.toString()}`);
+                                                    else if (event.type === "training") router.push(`/training/create?${params.toString()}`);
+                                                    else if (event.type === "consultation") router.push(`/consultations/create?${params.toString()}`);
+                                                }}
+                                                className={cn(
+                                                    "text-center text-[10px] px-3 py-1.5 rounded-lg font-bold shrink-0 transition-all",
+                                                    completed
+                                                        ? "bg-zinc-200 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-500 cursor-default"
+                                                        : "bg-brand-navy text-white hover:bg-brand-navy-dark active:scale-95 shadow-sm"
+                                                )}
+                                            >
+                                                {completed ? "완료" : EVENT_TYPE_LABELS[event.type]}
+                                            </button>
+                                        </div>
                                     </div>
 
-                                    {/* Center: time */}
-                                    <div className="flex flex-col items-end gap-0 shrink-0">
-                                        <span className="text-[10px] text-zinc-400 font-medium whitespace-nowrap">
-                                            {format(event.start, "HH:mm")}
+                                    <div className="flex items-end justify-between mt-3">
+                                        <span className="text-[11px] font-bold text-zinc-400 shrink-0 mb-0.5 pl-[40px]">
+                                            {format(event.start, "HH:mm")} <span className="opacity-40 font-normal mx-0.5">|</span> {event.coachName || "코치"}
+                                        </span>
+                                        <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 truncate mr-2">
+                                            {event.participantName || event.title}
                                         </span>
                                     </div>
-
-                                    {/* Right: action button */}
-                                    <button
-                                        type="button"
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            if (completed) return;
-                                            const params = new URLSearchParams({
-                                                player: event.participantName || "",
-                                                type: event.category || "shot",
-                                                start: format(event.start, "HH:mm"),
-                                                end: format(event.end, "HH:mm"),
-                                                scheduleId: event.id
-                                            });
-                                            if (event.type === "lesson") router.push(`/lessons/create?${params.toString()}`);
-                                            else if (event.type === "analysis") router.push(`/analysis/create?${params.toString()}`);
-                                            else if (event.type === "training") router.push(`/training/create?${params.toString()}`);
-                                            else if (event.type === "consultation") router.push(`/consultations/create?${params.toString()}`);
-                                        }}
-                                        className={cn(
-                                            "w-[4.6rem] sm:w-[5.5rem] text-center text-[10px] sm:text-[11px] px-2 py-1.5 rounded-lg font-bold shrink-0 transition-all shadow-sm whitespace-nowrap",
-                                            completed
-                                                ? "bg-zinc-200 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-500 cursor-default"
-                                                : "bg-brand-navy text-white hover:bg-brand-navy-dark active:scale-95"
-                                        )}
-                                    >
-                                        {completed ? "완료" : EVENT_TYPE_LABELS[event.type]}
-                                    </button>
                                 </div>
                             );
                         })

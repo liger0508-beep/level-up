@@ -42,6 +42,38 @@ export default function CreateCourseManagementPage() {
     const [videoUrl, setVideoUrl] = useState("");
     const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
 
+    const [isDraftLoaded, setIsDraftLoaded] = useState(false);
+    const DRAFT_KEY = "gla_course_management_draft";
+
+    useEffect(() => {
+        try {
+            const draft = sessionStorage.getItem(DRAFT_KEY);
+            if (draft) {
+                const parsed = JSON.parse(draft);
+                if (parsed.selectedPlayer) setSelectedPlayer(parsed.selectedPlayer);
+                if (parsed.category) setCategory(parsed.category);
+                if (parsed.keywords) setKeywords(parsed.keywords);
+                if (parsed.keywordInput !== undefined) setKeywordInput(parsed.keywordInput);
+                if (parsed.content) setContent(parsed.content);
+                if (parsed.date) setDate(parsed.date);
+                if (parsed.videoUrl !== undefined) setVideoUrl(parsed.videoUrl);
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setIsDraftLoaded(true);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!isDraftLoaded) return;
+        try {
+            sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+                selectedPlayer, category, keywords, keywordInput, content, date, videoUrl
+            }));
+        } catch (e) {}
+    }, [isDraftLoaded, selectedPlayer, category, keywords, keywordInput, content, date, videoUrl]);
+
     // RBAC
     useEffect(() => {
         const supabase = createClient();
@@ -104,6 +136,7 @@ export default function CreateCourseManagementPage() {
             });
 
             alert("골프IQ 기록이 등록되었습니다.");
+            sessionStorage.removeItem(DRAFT_KEY);
             router.push("/course-management");
         } catch (err: any) {
             console.error("Course Save Error:", err.message || err);

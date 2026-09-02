@@ -5,12 +5,16 @@ import Link from 'next/link';
 import { LessonData, LessonType } from "@/components/lesson/LessonCard";
 import { LessonTable } from "@/components/lesson/LessonTable";
 import { BookOpen, Plus, Search, Calendar, ChevronLeft, ChevronRight } from "lucide-react";
+import { CategoryTabs } from "@/components/ui/CategoryTabs";
+import { PlayerLessonHistoryModal } from "@/components/lesson/PlayerLessonHistoryModal";
 import { getTodayScheduledItems } from "@/lib/schedule-sync";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { fetchAthletes } from "@/lib/athlete-sync";
 import { createClient } from "@/lib/supabase/client";
 import { DatePresets, DatePresetType } from "@/components/ui/DatePresets";
 import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import { PageTitle, SectionTitle, LabelText } from "@/components/ui/Typography";
 
 // ── Mock data ────────────────────────────────────────────────
 const mockLessons: LessonData[] = [
@@ -118,12 +122,24 @@ export default function LessonsPage() {
     const [todaySchedule, setTodaySchedule] = useState<any[]>([]);
     const [allAthletes, setAllAthletes] = useState<string[]>([]);
     const [selectedPlayers, setSelectedPlayers] = useState<Set<string>>(new Set());
+    const [activePreset, setActivePreset] = useState<DatePresetType | undefined>(undefined);
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
     const [displayLimit, setDisplayLimit] = useState(20);
     const [userRole, setUserRole] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [activePreset, setActivePreset] = useState<DatePresetType>("custom");
+    const [viewMode, setViewMode] = useState<"list" | "content">("list");
+    const [isPlayerHistoryModalOpen, setIsPlayerHistoryModalOpen] = useState(false);
+    const [totalLessonCount, setTotalLessonCount] = useState(0);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const saved = sessionStorage.getItem('openPlayerLessonHistoryModal');
+            if (saved === 'true') {
+                setIsPlayerHistoryModalOpen(true);
+            }
+        }
+    }, []);
 
     const [realLessons, setRealLessons] = useState<LessonData[]>([]);
 
@@ -138,7 +154,54 @@ export default function LessonsPage() {
             ]);
 
             setAllAthletes(athletes);
-            setSelectedPlayers(new Set(athletes));
+
+            let initialSelectAll = true;
+            let initialSelectedPlayers = new Set(athletes);
+
+            try {
+                let stored = sessionStorage.getItem("gla_lessons_filter");
+                const isFromDetail = sessionStorage.getItem("gla_lessons_keep_alive") === "true";
+                const navEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+                const isReload = navEntries.length > 0 && navEntries[0].type === 'reload';
+
+                if (!isFromDetail && !isReload) {
+                    sessionStorage.removeItem("gla_lessons_filter");
+                    sessionStorage.removeItem("gla_lessons_scroll");
+                    stored = null;
+                } else {
+                    // React Strict Mode (개발 환경)의 2번 렌더링으로 인해 바로 삭제하면 필터가 초기화되는 버그 방지
+                    setTimeout(() => {
+                        sessionStorage.removeItem("gla_lessons_keep_alive");
+                    }, 500);
+                }
+
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    if (parsed.activeFilter) setActiveFilter(parsed.activeFilter);
+                    if (parsed.searchQuery !== undefined) setSearchQuery(parsed.searchQuery);
+                    if (parsed.startDate !== undefined) setStartDate(parsed.startDate);
+                    if (parsed.endDate !== undefined) setEndDate(parsed.endDate);
+                    if (parsed.activePreset !== undefined) setActivePreset(parsed.activePreset);
+                    if (parsed.selectAll !== undefined) {
+                        initialSelectAll = parsed.selectAll;
+                        setSelectAll(parsed.selectAll);
+                    }
+                    if (parsed.displayLimit) setDisplayLimit(parsed.displayLimit);
+                    if (parsed.viewMode) setViewMode(parsed.viewMode);
+
+                    if (initialSelectAll) {
+                        initialSelectedPlayers = new Set(athletes);
+                    } else if (parsed.selectedPlayers) {
+                        initialSelectedPlayers = new Set(parsed.selectedPlayers);
+                    }
+                    setSelectedPlayers(initialSelectedPlayers);
+                } else {
+                    setSelectedPlayers(initialSelectedPlayers);
+                }
+            } catch (e) {
+                console.warn("Failed to restore lessons filter", e);
+                setSelectedPlayers(initialSelectedPlayers);
+            }
 
             let currentRole = "athlete";
             if (user) {
@@ -151,34 +214,7 @@ export default function LessonsPage() {
                 setUserRole(currentRole);
             }
 
-            // Fetch actual lessons from DB
-            const { data: lessonsData, error: lessonsError } = await supabase
-                .from("records")
-                .select(`
-                    id,
-                    type,
-                    category,
-                    title,
-                    content,
-                    created_at,
-                    users!records_user_id_fkey(name),
-                    coach:users!records_coach_id_fkey(name)
-                `)
-                .eq("type", "lesson")
-                .order("created_at", { ascending: false });
-
-            if (!lessonsError && lessonsData) {
-                const formatted: LessonData[] = lessonsData.map((item: any) => ({
-                    id: item.id,
-                    type: item.category as LessonType,
-                    title: item.title || "",
-                    playerName: item.users?.name || "Unknown",
-                    coachName: item.coach?.name || "Unknown",
-                    comment: item.content || "",
-                    date: item.created_at.split("T")[0]
-                }));
-                setRealLessons(formatted);
-            }
+            // Fetch actual lessons from DB is now handled in a separate useEffect for pagination
 
             // Fetch today's schedule out of the new 'schedules' table
             const startOfDay = new Date();
@@ -230,6 +266,135 @@ export default function LessonsPage() {
 
         fetchData();
     }, []);
+
+    // New useEffect for Server-side Pagination
+    useEffect(() => {
+        if (isLoading) return; // Wait until initial setup is done
+
+        const fetchFilteredLessons = async () => {
+            const supabase = createClient();
+            let query = supabase
+                .from("records")
+                .select(`
+                    id, type, category, title, content, is_corrected, created_at, connected_lesson_id, user_id,
+                    users!records_user_id_fkey(name),
+                    coach:users!records_coach_id_fkey(name)
+                `, { count: 'exact' })
+                .eq("type", "lesson");
+
+            if (activeFilter !== "all") {
+                query = query.eq("category", activeFilter);
+            }
+            if (startDate) {
+                query = query.gte("created_at", startDate);
+            }
+            if (endDate) {
+                query = query.lte("created_at", endDate + " 23:59:59");
+            }
+            if (!selectAll && selectedPlayers.size > 0) {
+                const { data: usersData } = await supabase.from("users").select("id").in("name", Array.from(selectedPlayers));
+                const userIds = usersData?.map(u => u.id) || [];
+                if (userIds.length > 0) {
+                    query = query.in("user_id", userIds);
+                } else {
+                    query = query.eq("user_id", "00000000-0000-0000-0000-000000000000"); // return nothing
+                }
+            }
+
+            query = query.order("created_at", { ascending: false }).limit(displayLimit);
+
+            const { data: lessonsData, error: lessonsError, count } = await query;
+            if (lessonsError || !lessonsData) return;
+
+            setTotalLessonCount(count || 0);
+
+            const parentIdsToFetch = new Set<string>();
+            lessonsData.forEach((item: any) => {
+                if (item.connected_lesson_id) {
+                    const parentExists = lessonsData.some((l: any) => l.id === item.connected_lesson_id);
+                    if (!parentExists) {
+                        parentIdsToFetch.add(item.connected_lesson_id);
+                    }
+                }
+            });
+
+            let finalLessonsData = [...lessonsData];
+
+            if (parentIdsToFetch.size > 0) {
+                const { data: parentData } = await supabase.from("records").select(`
+                    id, type, category, title, content, is_corrected, created_at, connected_lesson_id, user_id,
+                    users!records_user_id_fkey(name),
+                    coach:users!records_coach_id_fkey(name)
+                `).in("id", Array.from(parentIdsToFetch));
+                
+                if (parentData) {
+                    finalLessonsData = [...finalLessonsData, ...parentData];
+                }
+            }
+
+            const formatted: LessonData[] = finalLessonsData.map((item: any) => ({
+                id: item.id,
+                type: item.category as LessonType,
+                title: item.title || "",
+                playerName: item.users?.name || "Unknown",
+                coachName: item.coach?.name || "Unknown",
+                comment: item.content || "",
+                date: item.created_at ? format(new Date(item.created_at), 'yyyy-MM-dd') : "",
+                is_corrected: item.is_corrected,
+                created_at: item.created_at,
+                connected_lesson_id: item.connected_lesson_id,
+                hasDirectorComment: typeof item.content === 'string' && item.content.includes("[감독 코멘트]")
+            }));
+
+            // Deduplicate
+            const uniqueFormatted = Array.from(new Map(formatted.map(item => [item.id, item])).values());
+            
+            setRealLessons(uniqueFormatted);
+        };
+
+        fetchFilteredLessons();
+    }, [activeFilter, selectAll, selectedPlayers, startDate, endDate, displayLimit, isLoading]);
+
+    const [scrollRestored, setScrollRestored] = useState(false);
+
+    // Save filter state to sessionStorage whenever it changes
+    useEffect(() => {
+        // Skip saving if athletes haven't loaded yet to avoid overwriting with empty state
+        if (allAthletes.length === 0) return;
+
+        try {
+            sessionStorage.setItem("gla_lessons_filter", JSON.stringify({
+                activeFilter,
+                searchQuery,
+                selectAll,
+                selectedPlayers: Array.from(selectedPlayers),
+                startDate,
+                endDate,
+                activePreset,
+                displayLimit,
+                viewMode
+            }));
+        } catch (e) {
+            console.warn("Failed to save lessons filter", e);
+        }
+    }, [activeFilter, searchQuery, selectAll, selectedPlayers, startDate, endDate, activePreset, displayLimit, viewMode, allAthletes]);
+
+    // Scroll Preservation logic is now handled in LessonTable's handleRowClick
+
+    // Restore scroll after data is loaded and rendered
+    useEffect(() => {
+        if (!isLoading && !scrollRestored) {
+            const savedScroll = sessionStorage.getItem("gla_lessons_scroll");
+            if (savedScroll) {
+                setTimeout(() => {
+                    requestAnimationFrame(() => {
+                        window.scrollTo({ top: parseInt(savedScroll, 10), behavior: 'auto' });
+                    });
+                }, 200);
+            }
+            setScrollRestored(true);
+        }
+    }, [isLoading, scrollRestored]);
 
     const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -293,20 +458,95 @@ export default function LessonsPage() {
         return Array.from(new Set([...selectedArr, ...queryMatches]));
     }, [searchQuery, selectedPlayers, selectAll, allAthletes]);
 
-    // Final filtered lessons
-    const filteredLessons = useMemo(() => {
-        return realLessons.filter((l) => {
-            const typeMatch = activeFilter === "all" || l.type === activeFilter;
-            const playerMatch = selectedPlayers.has(l.playerName);
-            const afterStart = !startDate || l.date >= startDate;
-            const beforeEnd = !endDate || l.date <= endDate;
-            return typeMatch && playerMatch && afterStart && beforeEnd;
+    // Group lessons (Thread View)
+    const groupedLessons = useMemo(() => {
+        // 1. Build a map of all lessons for quick lookup
+        const lessonMap = new Map<string, LessonData>();
+        realLessons.forEach(l => lessonMap.set(l.id, { ...l, subLessons: [] }));
+
+        // 2. Resolve roots and descendants
+        const rootLessons: LessonData[] = [];
+
+        const getRootId = (id: string): string => {
+            let current = lessonMap.get(id);
+            const visited = new Set<string>();
+            while (current?.connected_lesson_id) {
+                if (visited.has(current.id)) break; // Prevent infinite loops
+                visited.add(current.id);
+                const parent = lessonMap.get(current.connected_lesson_id);
+                if (!parent) break;
+                current = parent;
+            }
+            return current?.id || id;
+        };
+
+        const treeMap = new Map<string, LessonData[]>();
+
+        realLessons.forEach(l => {
+            const rootId = getRootId(l.id);
+            if (rootId === l.id) {
+                if (!treeMap.has(rootId)) treeMap.set(rootId, []);
+            } else {
+                if (!treeMap.has(rootId)) treeMap.set(rootId, []);
+                treeMap.get(rootId)!.push(lessonMap.get(l.id)!);
+            }
         });
-    }, [activeFilter, selectedPlayers, startDate, endDate, realLessons]);
+
+        // 3. Assemble roots and apply core badge
+        Array.from(treeMap.keys()).forEach(rootId => {
+            const root = lessonMap.get(rootId);
+            if (root) {
+                const descendants = treeMap.get(rootId)!;
+                descendants.sort((a, b) => {
+                    const dateA = new Date(a.created_at || a.date).getTime();
+                    const dateB = new Date(b.created_at || b.date).getTime();
+                    return dateB - dateA;
+                });
+
+                root.subLessons = descendants;
+
+                if (descendants.length >= 2) {
+                    root.is_core_lesson = true;
+                }
+
+                rootLessons.push(root);
+            }
+        });
+
+        rootLessons.sort((a, b) => {
+            let maxDateA = new Date(a.created_at || a.date).getTime();
+            if (a.subLessons && a.subLessons.length > 0) {
+                const latestSubA = new Date(a.subLessons[0].created_at || a.subLessons[0].date).getTime();
+                if (latestSubA > maxDateA) maxDateA = latestSubA;
+            }
+
+            let maxDateB = new Date(b.created_at || b.date).getTime();
+            if (b.subLessons && b.subLessons.length > 0) {
+                const latestSubB = new Date(b.subLessons[0].created_at || b.subLessons[0].date).getTime();
+                if (latestSubB > maxDateB) maxDateB = latestSubB;
+            }
+
+            return maxDateB - maxDateA;
+        });
+
+        // 4. Apply filters
+        return rootLessons.filter(root => {
+            const typeMatch = (l: LessonData) => activeFilter === "all" || l.type === activeFilter;
+            const playerMatch = (l: LessonData) => selectedPlayers.has(l.playerName);
+            const dateMatch = (l: LessonData) => (!startDate || l.date >= startDate) && (!endDate || l.date <= endDate);
+
+            const isMatch = (l: LessonData) => typeMatch(l) && playerMatch(l) && dateMatch(l);
+
+            if (isMatch(root)) return true;
+            if (root.subLessons?.some(sub => isMatch(sub))) return true;
+
+            return false;
+        });
+    }, [realLessons, activeFilter, selectedPlayers, startDate, endDate]);
 
     const displayedLessons = useMemo(() => {
-        return filteredLessons.slice(0, displayLimit);
-    }, [filteredLessons, displayLimit]);
+        return groupedLessons.slice(0, displayLimit);
+    }, [groupedLessons, displayLimit]);
 
     const filteredTodaySchedule = useMemo(() => {
         if (activeFilter === "all") return todaySchedule;
@@ -320,119 +560,48 @@ export default function LessonsPage() {
             <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
                     <BookOpen size={24} className="text-brand-navy dark:text-brand-navy-light shrink-0" />
-                    <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-                        Lesson
-                    </h1>
+                    <PageTitle>Lesson</PageTitle>
                 </div>
                 {(userRole === 'coach' || userRole === 'admin') && (
-                    <Link
-                        href="/lessons/create"
-                        className="bg-brand-red hover:bg-brand-red-dark text-white px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
-                    >
-                        <Plus size={18} />
-                        작성
-                    </Link>
+                    <div className="flex items-center gap-2 shrink-0">
+                        <button
+                            onClick={() => setIsPlayerHistoryModalOpen(true)}
+                            className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-sm active:scale-95"
+                            title="선수별 레슨 히스토리 검색"
+                        >
+                            <Search size={18} />
+                        </button>
+                        <Link
+                            href="/lessons/create"
+                            className="bg-brand-red hover:bg-brand-red-dark text-white px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+                        >
+                            <Plus size={18} />
+                            작성
+                        </Link>
+                    </div>
                 )}
             </div>
 
+            <PlayerLessonHistoryModal
+                isOpen={isPlayerHistoryModalOpen}
+                onClose={() => {
+                    setIsPlayerHistoryModalOpen(false);
+                    sessionStorage.removeItem('openPlayerLessonHistoryModal');
+                }}
+                allAthletes={allAthletes}
+            />
+
             {/* ── Filter Buttons ── */}
-            <div className="flex flex-nowrap gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
-                {filterButtons.map((btn) => {
-                    const isActive = activeFilter === btn.key;
-                    return (
-                        <button
-                            key={btn.key}
-                            onClick={() => setActiveFilter(btn.key)}
-                            className={`whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200
-                                ${isActive
-                                    ? "bg-brand-navy text-white shadow-md"
-                                    : "bg-transparent text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 hover:bg-brand-navy-light dark:hover:bg-brand-navy-dark hover:text-brand-navy dark:hover:text-white"
-                                }`}
-                        >
-                            {btn.label}
-                        </button>
-                    );
-                })}
-            </div>
+            <CategoryTabs options={filterButtons} value={activeFilter} onChange={setActiveFilter} />
 
-            {/* ── Today's Completed Lessons ── */}
-            <div className="mb-4">
-                <div className="flex items-center justify-between mb-3 px-1">
-                    <h2 className="text-sm font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-                        <Calendar size={16} className="text-brand-navy dark:text-brand-navy-light" />
-                        오늘의 레슨
-                    </h2>
-                    <span className="text-[10px] text-zinc-400 font-medium">일정을 클릭하여 레슨을 기록하세요.</span>
-                </div>
 
-                <div className="relative group/scroll">
-                    {/* Desktop Navigation Arrows */}
-                    <button
-                        onClick={() => scroll("left")}
-                        className="absolute left-[-20px] top-[calc(50%-8px)] -translate-y-1/2 z-10 w-10 h-10 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full shadow-lg flex items-center justify-center text-zinc-600 dark:text-zinc-400 hover:text-brand-navy dark:hover:text-brand-navy-light transition-all opacity-0 group-hover/scroll:opacity-100 hidden md:flex"
-                    >
-                        <ChevronLeft size={20} />
-                    </button>
-                    <button
-                        onClick={() => scroll("right")}
-                        className="absolute right-[-20px] top-[calc(50%-8px)] -translate-y-1/2 z-10 w-10 h-10 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full shadow-lg flex items-center justify-center text-zinc-600 dark:text-zinc-400 hover:text-brand-navy dark:hover:text-brand-navy-light transition-all opacity-0 group-hover/scroll:opacity-100 hidden md:flex"
-                    >
-                        <ChevronRight size={20} />
-                    </button>
-
-                    <div
-                        ref={scrollRef}
-                        className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-1 px-1"
-                    >
-                        {(filteredTodaySchedule as any[]).map((s) => {
-                            const isCompleted = s.status === "completed";
-                            const canCreate = (userRole === 'coach' || userRole === 'admin') && !isCompleted;
-                            return (
-                                <Link
-                                    key={s.id}
-                                    href={canCreate ? `/lessons/create?player=${encodeURIComponent(s.playerName)}&start=${s.time.split('~')[0]}&end=${s.time.split('~')[1]}&type=${s.type}&scheduleId=${s.id}` : "#"}
-                                    className={cn(
-                                        "flex-shrink-0 w-40 border p-3.5 rounded-2xl shadow-sm transition-all active:scale-95 cursor-pointer group",
-                                        isCompleted
-                                            ? "bg-zinc-100 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700 opacity-60 pointer-events-none"
-                                            : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50 hover:shadow-md",
-                                        !canCreate && !isCompleted && "pointer-events-none opacity-80"
-                                    )}
-                                >
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className={cn(
-                                            "text-[10px] font-bold px-1.5 py-0.5 rounded-md",
-                                            isCompleted ? "bg-zinc-200 dark:bg-zinc-700 text-zinc-400" : "bg-brand-navy/5 dark:bg-brand-navy/20 text-brand-navy dark:text-brand-navy-light"
-                                        )}>
-                                            {isCompleted ? "완료" : "예약"}
-                                        </span>
-                                        {!isCompleted && canCreate && <Plus size={14} className="text-zinc-300 group-hover:text-brand-navy transition-colors" />}
-                                    </div>
-                                    <div className={cn(
-                                        "text-sm font-bold mb-1",
-                                        isCompleted ? "text-zinc-400" : "text-zinc-900 dark:text-zinc-50"
-                                    )}>
-                                        {s.playerName}
-                                    </div>
-                                    <div className={cn(
-                                        "text-[11px] font-medium",
-                                        isCompleted ? "text-zinc-300 dark:text-zinc-600" : "text-zinc-400"
-                                    )}>
-                                        {s.time}
-                                    </div>
-                                </Link>
-                            );
-                        })}
-                    </div>
-                </div>
-            </div>
 
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 mb-6">
                 {/* Date Range: 레슨일자 */}
                 <div className="flex items-center gap-2">
-                    <label className="w-24 shrink-0 text-center text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                    <LabelText className="w-24 shrink-0 text-center">
                         레슨 일자
-                    </label>
+                    </LabelText>
                     <div className="flex items-center gap-1 flex-1 min-w-0">
                         <DatePickerInput
 
@@ -452,7 +621,7 @@ export default function LessonsPage() {
                     </div>
                     {(startDate || endDate) && (
                         <button
-                            onClick={() => { setStartDate(""); setEndDate(""); }}
+                            onClick={() => { setStartDate(""); setEndDate(""); setActivePreset(undefined as any); }}
                             className="shrink-0 px-1 py-2 text-xs font-bold text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
                         >
                             초기화
@@ -461,70 +630,95 @@ export default function LessonsPage() {
                 </div>
 
                 {/* Player Search & Select All */}
-                <div className="flex items-center gap-2 mt-3">
-                    <label className="w-24 shrink-0 text-center text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                        선수 검색
-                    </label>
-                    <div className="relative flex-1">
-                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                        <input
-                            type="text"
-                            placeholder="선수 검색..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && searchQuery.trim()) {
-                                    const match = allAthletes.find((p) =>
-                                        p.toLowerCase().includes(searchQuery.toLowerCase())
-                                    );
-                                    if (match) {
-                                        togglePlayer(match);
-                                        // searchQuery is cleared inside togglePlayer
-                                    }
-                                }
-                            }}
-                            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all"
-                        />
-                    </div>
-                </div>
+                {(userRole === 'coach' || userRole === 'admin') && (
+                    <>
+                        <div className="flex items-center gap-2 mt-3">
+                            <LabelText className="w-24 shrink-0 text-center">
+                                선수 검색
+                            </LabelText>
+                            <div className="relative flex-1">
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                <input
+                                    type="text"
+                                    placeholder="선수 검색..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && searchQuery.trim()) {
+                                            const match = allAthletes.find((p) =>
+                                                p.toLowerCase().includes(searchQuery.toLowerCase())
+                                            );
+                                            if (match) {
+                                                togglePlayer(match);
+                                                // searchQuery is cleared inside togglePlayer
+                                            }
+                                        }
+                                    }}
+                                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all"
+                                />
+                            </div>
+                        </div>
 
-                {/* Player Chips */}
-                {visiblePlayersArr.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-3 max-h-32 overflow-y-auto pr-1 custom-scrollbar">
-                        {visiblePlayersArr.map((name) => {
-                            const isSelected = selectedPlayers.has(name);
-                            return (
-                                <button
-                                    key={name}
-                                    onClick={() => togglePlayer(name)}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-200 shrink-0
-                                        ${isSelected
-                                            ? "bg-brand-navy/10 text-brand-navy border-brand-navy dark:bg-brand-navy/30 dark:text-white"
-                                            : "bg-white dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-brand-navy"
-                                        }`}
-                                >
-                                    {name}
-                                </button>
-                            );
-                        })}
-                    </div>
+                        {/* Player Chips */}
+                        {visiblePlayersArr.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-3 max-h-32 overflow-y-auto pr-1 custom-scrollbar" style={{ paddingLeft: '104px' }}>
+                                {visiblePlayersArr.map((name) => {
+                                    const isSelected = selectedPlayers.has(name);
+                                    return (
+                                        <button
+                                            key={name}
+                                            onClick={() => togglePlayer(name)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-200 shrink-0
+                                                ${isSelected
+                                                    ? "bg-brand-navy/10 text-brand-navy border-brand-navy dark:bg-brand-navy/30 dark:text-white"
+                                                    : "bg-white dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-brand-navy"
+                                                }`}
+                                        >
+                                            {name}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
 
             {/* ── Lesson Table ── */}
             <section>
                 <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                        <h2 className="text-lg font-bold text-zinc-800 dark:text-zinc-200">
+                    <div className="flex items-center gap-3">
+                        <SectionTitle>
                             조회 결과
-                        </h2>
-                        <span className="text-xs text-zinc-400 font-medium">
-                            ({filteredLessons.length}건)
-                        </span>
+                        </SectionTitle>
+                        <div className="flex items-center bg-white dark:bg-zinc-900 p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
+                            <button
+                                onClick={() => setViewMode("list")}
+                                className={cn(
+                                    "px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200",
+                                    viewMode === "list"
+                                        ? "bg-brand-navy text-white shadow-sm"
+                                        : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100"
+                                )}
+                            >
+                                리스트
+                            </button>
+                            <button
+                                onClick={() => setViewMode("content")}
+                                className={cn(
+                                    "px-4 py-1.5 rounded-lg text-xs font-bold transition-all duration-200",
+                                    viewMode === "content"
+                                        ? "bg-brand-navy text-white shadow-sm"
+                                        : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100"
+                                )}
+                            >
+                                내용
+                            </button>
+                        </div>
                     </div>
 
                     <DatePresets
-                        activePreset={activePreset}
+                        activePreset={activePreset as DatePresetType}
                         onPresetChange={(start, end, preset) => {
                             setStartDate(start);
                             setEndDate(end);
@@ -532,17 +726,17 @@ export default function LessonsPage() {
                         }}
                     />
                 </div>
-                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
+                <div className="mt-2">
                     {displayedLessons.length > 0 ? (
                         <>
-                            <LessonTable lessons={displayedLessons} />
-                            {filteredLessons.length > displayLimit && (
+                            <LessonTable lessons={displayedLessons} totalCount={totalLessonCount} viewMode={viewMode} userRole={userRole} />
+                            {totalLessonCount > displayLimit && (
                                 <div className="mt-6 flex justify-center">
                                     <button
                                         onClick={() => setDisplayLimit(prev => prev + 20)}
                                         className="px-6 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-sm font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all active:scale-95"
                                     >
-                                        더 보기 ({filteredLessons.length - displayLimit}건 남음)
+                                        더 보기 ({totalLessonCount - displayLimit > 0 ? totalLessonCount - displayLimit : 0}건 남음)
                                     </button>
                                 </div>
                             )}
@@ -557,4 +751,3 @@ export default function LessonsPage() {
         </div >
     );
 }
-

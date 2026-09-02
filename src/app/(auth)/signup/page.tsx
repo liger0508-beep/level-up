@@ -8,26 +8,69 @@ export default function SignupPage(props: { searchParams: Promise<{ [key: string
     const searchParams = use(props.searchParams);
     const [passwordError, setPasswordError] = useState('');
     const [selectedRole, setSelectedRole] = useState('athlete');
+    const [phone, setPhone] = useState('');
+    const [isVerifying, setIsVerifying] = useState(false);
     const formRef = useRef<HTMLFormElement>(null);
 
-    const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+    const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        let value = e.target.value.replace(/[^0-9]/g, '');
+        if (value.length > 3 && value.length <= 7) {
+            value = value.replace(/^(\d{3})(\d{1,4})$/, '$1-$2');
+        } else if (value.length > 7) {
+            value = value.replace(/^(\d{3})(\d{3,4})(\d{1,4})$/, '$1-$2-$3');
+        }
+        setPhone(value.slice(0, 13)); // Limit to max 13 characters (e.g. 010-1234-5678)
+    };
+
+    const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         setPasswordError('');
 
         const formData = new FormData(e.currentTarget);
         const password = formData.get('password') as string;
         const confirmPassword = formData.get('confirmPassword') as string;
+        const role = formData.get('role') as string;
+        const name = formData.get('name') as string;
+        const branch = formData.get('branch') as string;
 
         if (password !== confirmPassword) {
             setPasswordError('비밀번호가 일치하지 않습니다.');
             return;
         }
 
-        // If validation passes, manually submit the form data to the server action
-        const submitAction = async () => {
-            const result = await signup(formData);
+        setIsVerifying(true);
+
+        try {
+            if (role === 'parent') {
+                // Verify athlete details
+                const verifyRes = await fetch('/api/auth/verify-athlete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, phone, branch })
+                });
+
+                const verifyData = await verifyRes.json();
+
+                if (!verifyRes.ok) {
+                    setPasswordError(verifyData.error || '선수 인증에 실패했습니다.');
+                    setIsVerifying(false);
+                    return;
+                }
+
+                // Override name with parent display name
+                formData.set('name', verifyData.parentDisplayName);
+                // Append athlete_id to pass it to the server action
+                formData.append('athlete_id', verifyData.athleteId);
+            }
+
+            // If validation passes, manually submit the form data to the server action
+            await signup(formData);
+        } catch (error) {
+            console.error(error);
+            setPasswordError('가입 처리 중 오류가 발생했습니다.');
+        } finally {
+            setIsVerifying(false);
         }
-        submitAction();
     };
 
 
@@ -44,8 +87,25 @@ export default function SignupPage(props: { searchParams: Promise<{ [key: string
                 </div>
             )}
             <div className="flex flex-col gap-2">
+                <label className="text-sm font-semibold text-zinc-700 dark:text-zinc-300" htmlFor="role">
+                    역할
+                </label>
+                <select
+                    className="rounded-lg px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100 transition-all text-sm appearance-none font-medium"
+                    name="role"
+                    required
+                    value={selectedRole}
+                    onChange={(e) => setSelectedRole(e.target.value)}
+                >
+                    <option value="athlete">선수 (Athlete)</option>
+                    <option value="coach">코치 (Coach)</option>
+                    <option value="parent">학부모 (Parent)</option>
+                </select>
+                <p className="text-[11px] text-zinc-500">주의: 학부모 및 코치 계정은 관리자의 승인이 필요할 수 있습니다.</p>
+            </div>
+            <div className="flex flex-col gap-2">
                 <label className="text-sm font-semibold text-zinc-700 dark:text-zinc-300" htmlFor="name">
-                    이름(실명)
+                    {selectedRole === 'parent' ? '선수 이름(실명)' : '이름(실명)'}
                 </label>
                 <input
                     className="rounded-lg px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100 transition-all text-sm placeholder:text-zinc-400"
@@ -56,7 +116,7 @@ export default function SignupPage(props: { searchParams: Promise<{ [key: string
             </div>
             <div className="flex flex-col gap-2">
                 <label className="text-sm font-semibold text-zinc-700 dark:text-zinc-300" htmlFor="phone">
-                    휴대폰 번호
+                    {selectedRole === 'parent' ? '선수 휴대폰 번호' : '휴대폰 번호'}
                 </label>
                 <input
                     className="rounded-lg px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100 transition-all text-sm placeholder:text-zinc-400"
@@ -64,24 +124,9 @@ export default function SignupPage(props: { searchParams: Promise<{ [key: string
                     placeholder="010-0000-0000"
                     required
                     type="tel"
+                    value={phone}
+                    onChange={handlePhoneChange}
                 />
-            </div>
-            <div className="flex flex-col gap-2">
-                <label className="text-sm font-semibold text-zinc-700 dark:text-zinc-300" htmlFor="role">
-                    역할
-                </label>
-                <select
-                    className="rounded-lg px-4 py-2.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 outline-none focus:ring-2 focus:ring-zinc-900 dark:focus:ring-zinc-100 transition-all text-sm appearance-none font-medium"
-                    name="role"
-                    required
-                    defaultValue="athlete"
-                    onChange={(e) => setSelectedRole(e.target.value)}
-                >
-                    <option value="athlete">선수 (Athlete)</option>
-                    <option value="coach">코치 (Coach)</option>
-                    <option value="parent">학부모 (Parent)</option>
-                </select>
-                <p className="text-[11px] text-zinc-500">주의: 학부모 및 코치 계정은 관리자의 승인이 필요할 수 있습니다.</p>
             </div>
             <div className="flex flex-col gap-2">
                 <label className="text-sm font-semibold text-zinc-700 dark:text-zinc-300" htmlFor="branch">
@@ -93,7 +138,12 @@ export default function SignupPage(props: { searchParams: Promise<{ [key: string
                     required
                     defaultValue="조이마루점"
                 >
-                    {selectedRole === 'coach' && <option value="오피스">오피스</option>}
+                    {selectedRole === 'coach' && (
+                        <>
+                            <option value="총괄">총괄</option>
+                            <option value="오피스">오피스</option>
+                        </>
+                    )}
                     <option value="조이마루점">조이마루점</option>
                     <option value="구미점">구미점</option>
                 </select>
@@ -136,8 +186,11 @@ export default function SignupPage(props: { searchParams: Promise<{ [key: string
                     minLength={6}
                 />
             </div>
-            <button className="bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 font-semibold rounded-lg px-4 py-3 mt-4 transition-colors shadow-sm active:scale-[0.98]">
-                가입하기
+            <button
+                className="bg-zinc-900 dark:bg-zinc-50 text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 font-semibold rounded-lg px-4 py-3 mt-4 transition-colors shadow-sm active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isVerifying}
+            >
+                {isVerifying ? '확인 중...' : '가입하기'}
             </button>
             <p className="text-sm text-center text-zinc-500 dark:text-zinc-400 mt-2 font-medium">
                 이미 계정이 있으신가요? <Link href="/login" className="text-zinc-900 dark:text-zinc-100 hover:underline transition-all">로그인</Link>

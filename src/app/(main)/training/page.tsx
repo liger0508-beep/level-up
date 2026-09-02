@@ -6,18 +6,20 @@ import { TrainingData, TrainingType } from "@/components/training/TrainingCard";
 import { TrainingTable } from "@/components/training/TrainingTable";
 import { fetchTrainingRecords, TrainingRecord } from "@/lib/training-sync";
 import { Dumbbell, Plus, Search, Calendar, ChevronLeft, ChevronRight, TrendingUp, ClipboardList, CheckCircle2 } from "lucide-react";
+import { CategoryTabs } from "@/components/ui/CategoryTabs";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { fetchAthletes } from "@/lib/athlete-sync";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { useRef } from "react";
 import { DatePresets, DatePresetType } from "@/components/ui/DatePresets";
+import { PageTitle, SectionTitle, LabelText } from "@/components/ui/Typography";
 
 // ── Mock data ────────────────────────────────────────────────
 const mockTrainings: TrainingData[] = [
     {
         id: "1",
-        type: "shot",
+        type: "basic",
         title: "[기본기] 드라이버 스윙 교정 훈련",
         playerName: "김민수",
         coachName: "박코치",
@@ -27,7 +29,7 @@ const mockTrainings: TrainingData[] = [
     },
     {
         id: "2",
-        type: "putt",
+        type: "preview",
         title: "[예습] 퍼팅 거리감 훈련",
         playerName: "이수진",
         coachName: "박코치",
@@ -37,7 +39,7 @@ const mockTrainings: TrainingData[] = [
     },
     {
         id: "3",
-        type: "physical",
+        type: "review",
         title: "[복습] 코어 안정성 트레이닝",
         playerName: "박현우",
         coachName: "김피지컬코치",
@@ -47,7 +49,7 @@ const mockTrainings: TrainingData[] = [
     },
     {
         id: "4",
-        type: "shot",
+        type: "basic",
         title: "[기본기] 아이언 임팩트 훈련",
         playerName: "정세민",
         coachName: "박코치",
@@ -57,7 +59,7 @@ const mockTrainings: TrainingData[] = [
     },
     {
         id: "5",
-        type: "bunker",
+        type: "review",
         title: "[복습] 벙커 탈출 기초 훈련",
         playerName: "김민수",
         coachName: "박코치",
@@ -68,17 +70,13 @@ const mockTrainings: TrainingData[] = [
 ];
 
 // ── Filter categories ────────────────────────────────────────
-type FilterType = "all" | TrainingType;
+type FilterType = "all" | TrainingType | "lesson_review" | "swing_pose";
 
 const filterButtons: { key: FilterType; label: string }[] = [
-    { key: "all", label: "ALL" },
-    { key: "shot", label: "Shot" },
-    { key: "pitch", label: "Pitch" },
-    { key: "bunker", label: "Bunker" },
-    { key: "approach", label: "Approach" },
-    { key: "putt", label: "Putt" },
-    { key: "physical", label: "Physical" },
-    { key: "etc", label: "Etc" },
+    { key: "all", label: "전체" },
+    { key: "preview", label: "예습" },
+    { key: "review", label: "복습" },
+    { key: "lesson_review", label: "스윙키" },
 ];
 
 // ── Unique player list (from data) ───────────────────────────
@@ -87,6 +85,7 @@ const filterButtons: { key: FilterType; label: string }[] = [
 // ── Page component ───────────────────────────────────────────
 export default function TrainingsPage() {
     const [trainings, setTrainings] = useState<TrainingRecord[]>([]);
+    const [totalTrainingCount, setTotalTrainingCount] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
     const [activeFilter, setActiveFilter] = useState<FilterType>("all");
     const [searchQuery, setSearchQuery] = useState("");
@@ -99,13 +98,6 @@ export default function TrainingsPage() {
     const [todaySchedule, setTodaySchedule] = useState<any[]>([]);
     const [userRole, setUserRole] = useState<string | null>(null);
     const [activePreset, setActivePreset] = useState<DatePresetType>("custom");
-    const [summaryStats, setSummaryStats] = useState({
-        total: 0,
-        completed: 0,
-        completionRate: 0,
-        thisMonthCount: 0,
-        thisMonthCompleted: 0
-    });
     const scrollRef = useRef<HTMLDivElement>(null);
 
     const scroll = (direction: "left" | "right") => {
@@ -123,16 +115,55 @@ export default function TrainingsPage() {
         setIsLoading(true);
         const supabase = createClient();
         try {
-            const [athletes, records, { data: { user } }] = await Promise.all([
+            const [athletes, { data: { user } }] = await Promise.all([
                 fetchAthletes(),
-                fetchTrainingRecords(),
                 supabase.auth.getUser()
             ]);
             setAllAthletes(athletes);
-            if (selectedPlayers.size === 0 && !searchQuery) {
-                setSelectedPlayers(new Set(athletes));
+
+            try {
+                const isFromDetail = sessionStorage.getItem("gla_training_keep_alive") === "true";
+                if (isFromDetail) {
+                    const stored = sessionStorage.getItem("gla_training_filter");
+                    if (stored) {
+                        const parsed = JSON.parse(stored);
+                        if (parsed.activeFilter) setActiveFilter(parsed.activeFilter);
+                        if (parsed.searchQuery !== undefined) setSearchQuery(parsed.searchQuery);
+                        if (parsed.startDate !== undefined) setStartDate(parsed.startDate);
+                        if (parsed.endDate !== undefined) setEndDate(parsed.endDate);
+                        if (parsed.activePreset) setActivePreset(parsed.activePreset);
+                        if (parsed.selectAll !== undefined) setSelectAll(parsed.selectAll);
+
+                        if (parsed.selectAll) {
+                            setSelectedPlayers(new Set(athletes));
+                        } else if (parsed.selectedPlayers) {
+                            setSelectedPlayers(new Set(parsed.selectedPlayers));
+                        } else {
+                            setSelectedPlayers(new Set(athletes));
+                        }
+                    } else {
+                        if (selectedPlayers.size === 0 && !searchQuery) {
+                            setSelectedPlayers(new Set(athletes));
+                        }
+                    }
+                    setTimeout(() => {
+                        sessionStorage.removeItem("gla_training_keep_alive");
+                    }, 100);
+                } else {
+                    sessionStorage.removeItem("gla_training_filter");
+                    sessionStorage.removeItem("gla_training_scroll");
+                    if (selectedPlayers.size === 0 && !searchQuery) {
+                        setSelectedPlayers(new Set(athletes));
+                    }
+                }
+            } catch (e) {
+                console.warn("Failed to restore training filter", e);
+                if (selectedPlayers.size === 0 && !searchQuery) {
+                    setSelectedPlayers(new Set(athletes));
+                }
             }
-            setTrainings(records);
+
+            // setTrainings(records); - Removed for server-side pagination
 
             let role = "athlete";
             if (user) {
@@ -249,70 +280,9 @@ export default function TrainingsPage() {
                     };
                 });
 
-                const completedFromRecords = records.filter(t => 
-                    t.completion_logs?.some(log => {
-                        try {
-                            let timestamp = log;
-                            if (log.startsWith('{')) {
-                                timestamp = JSON.parse(log).timestamp;
-                            }
-                            const logDate = new Date(timestamp);
-                            return logDate >= startOfDay && logDate <= endOfDay;
-                        } catch {
-                            return false;
-                        }
-                    })
-                ).map(t => ({
-                    id: t.id,
-                    playerName: t.playerName,
-                    title: t.title,
-                    time: "오늘 완료됨",
-                    type: t.type,
-                    status: "completed",
-                    isSchedule: false
-                }));
+                const completedFromRecords: any[] = [];
                 setTodaySchedule([...formattedSchedules, ...completedFromRecords]);
             }
-
-            // --- Calculate Summary Stats ---
-            const currentMonth = new Date().toISOString().slice(0, 7);
-            const { data: profile } = await supabase.from("users").select("id, role, assigned_athletes").eq("id", user?.id).single();
-            
-            let relevantTrainings = records;
-            if (role === 'athlete' && user) {
-                relevantTrainings = records.filter(r => r.user_id === user.id);
-            } else if (role === 'coach' && profile?.assigned_athletes) {
-                const assignedNames = profile.assigned_athletes.split(',').map((n: string) => n.trim());
-                relevantTrainings = records.filter(r => assignedNames.includes(r.playerName));
-            }
-            
-            const isTrainingCompleted = (r: any) => {
-                if (r.title?.includes("[복습]")) {
-                    const reviewSetting = (r.template_settings || []).find((s: any) => s.type === "review_scorecard");
-                    if (reviewSetting) {
-                        const completed = reviewSetting.completedHoles?.length || 0;
-                        const total = (r.total_count === 7 && completed > 7) ? completed : Math.max(r.total_count || 1, 1);
-                        return completed > 0 && completed >= total;
-                    }
-                }
-                return r.completion_logs && r.completion_logs.length > 0;
-            };
-
-            const completedCount = relevantTrainings.filter(isTrainingCompleted).length;
-            const thisMonth = relevantTrainings.filter(r => r.date.startsWith(currentMonth)).length;
-            const thisMonthCompleted = relevantTrainings.filter(r => 
-                r.date.startsWith(currentMonth) && isTrainingCompleted(r)
-            ).length;
-            const rate = relevantTrainings.length > 0 ? (completedCount / relevantTrainings.length) * 100 : 0;
-
-            setSummaryStats({
-                total: relevantTrainings.length,
-                completed: completedCount,
-                completionRate: Math.round(rate),
-                thisMonthCount: thisMonth,
-                thisMonthCompleted: thisMonthCompleted
-            });
-
         } catch (error) {
             console.error("Failed to load data:", error);
         } finally {
@@ -323,6 +293,117 @@ export default function TrainingsPage() {
     useEffect(() => {
         loadInitialData();
     }, []);
+
+    // New useEffect for Server-side Pagination
+    useEffect(() => {
+        if (isLoading) return; // Wait until initial setup is done
+
+        const fetchFilteredTrainings = async () => {
+            const supabase = createClient();
+            let query = supabase
+                .from("records")
+                .select(`
+                    id, type, category, title, content, media_urls, created_at, training_start, training_end, completion_logs, template_settings, total_count, user_id,
+                    users!records_user_id_fkey(name),
+                    coach:users!records_coach_id_fkey(name)
+                `, { count: 'exact' })
+                .eq("type", "training");
+
+            if (activeFilter !== "all") {
+                query = query.eq("category", activeFilter);
+            }
+            if (startDate) {
+                query = query.gte("created_at", startDate);
+            }
+            if (endDate) {
+                query = query.lte("created_at", endDate + " 23:59:59");
+            }
+            if (!selectAll && selectedPlayers.size > 0) {
+                const { data: usersData } = await supabase.from("users").select("id").in("name", Array.from(selectedPlayers));
+                const userIds = usersData?.map(u => u.id) || [];
+                if (userIds.length > 0) {
+                    query = query.in("user_id", userIds);
+                } else {
+                    query = query.eq("user_id", "00000000-0000-0000-0000-000000000000"); // return nothing
+                }
+            }
+
+            query = query.order("inserted_at", { ascending: false }).limit(displayLimit);
+
+            const { data: trainingsData, error: trainingsError, count } = await query;
+            if (trainingsError || !trainingsData) return;
+
+            setTotalTrainingCount(count || 0);
+
+            const mappedData = trainingsData.map((r: any) => {
+                let mappedType = r.category;
+                if (!["basic", "preview", "review", "lesson_review", "swing_pose"].includes(r.category)) {
+                    if (r.title?.includes("[예습]")) mappedType = "preview";
+                    else if (r.title?.includes("[복습]")) mappedType = "review";
+                    else mappedType = "basic";
+                }
+                return {
+                    id: r.id,
+                    type: mappedType,
+                    title: r.title,
+                    content: r.content,
+                    media_urls: r.media_urls,
+                    created_at: r.created_at,
+                    date: r.created_at.split("T")[0],
+                    training_start: r.training_start,
+                    training_end: r.training_end,
+                    completion_logs: r.completion_logs,
+                    template_settings: r.template_settings,
+                    total_count: r.total_count,
+                    playerName: r.users?.name || "알 수 없음",
+                    coachName: r.coach?.name || "알 수 없음",
+                    user_id: r.user_id
+                };
+            });
+
+            setTrainings(mappedData);
+        };
+
+        fetchFilteredTrainings();
+    }, [isLoading, activeFilter, startDate, endDate, selectAll, selectedPlayers, displayLimit]);
+
+    // Scroll state management
+    useEffect(() => {
+        if (typeof window !== "undefined" && !isLoading) {
+            const savedScroll = sessionStorage.getItem("gla_training_scroll");
+            if (savedScroll) {
+                setTimeout(() => {
+                    window.scrollTo({ top: parseInt(savedScroll, 10), behavior: 'instant' });
+                }, 100);
+                sessionStorage.removeItem("gla_training_scroll");
+            }
+
+            const handleScroll = () => {
+                sessionStorage.setItem("gla_training_scroll", window.scrollY.toString());
+            };
+            window.addEventListener("scroll", handleScroll);
+            return () => window.removeEventListener("scroll", handleScroll);
+        }
+    }, [isLoading]);
+
+    // Save filter state to sessionStorage whenever it changes
+    useEffect(() => {
+        if (allAthletes.length === 0) return;
+
+        try {
+            sessionStorage.setItem("gla_training_filter", JSON.stringify({
+                activeFilter,
+                searchQuery,
+                selectAll,
+                selectedPlayers: Array.from(selectedPlayers),
+                startDate,
+                endDate,
+                activePreset
+            }));
+        } catch (e) {
+            console.warn("Failed to save training filter", e);
+        }
+    }, [activeFilter, searchQuery, selectAll, selectedPlayers, startDate, endDate, activePreset, allAthletes]);
 
     // Toggle individual player
     const togglePlayer = (name: string) => {
@@ -379,21 +460,6 @@ export default function TrainingsPage() {
         return Array.from(new Set([...selectedArr, ...queryMatches]));
     }, [searchQuery, selectedPlayers, selectAll, allAthletes]);
 
-    // Final filtered trainings
-    const filteredTrainings = useMemo(() => {
-        return trainings.filter((t) => {
-            const typeMatch = activeFilter === "all" || t.type === activeFilter;
-            const playerMatch = selectedPlayers.has(t.playerName);
-            const afterStart = !startDate || t.date >= startDate;
-            const beforeEnd = !endDate || t.date <= endDate;
-            return typeMatch && playerMatch && afterStart && beforeEnd;
-        });
-    }, [trainings, activeFilter, selectedPlayers, startDate, endDate]);
-
-    const displayedTrainings = useMemo(() => {
-        return filteredTrainings.slice(0, displayLimit);
-    }, [filteredTrainings, displayLimit]);
-
     const filteredSchedule = useMemo(() => {
         return todaySchedule.filter(s => {
             const typeMatch = activeFilter === "all" || s.type === activeFilter;
@@ -407,9 +473,7 @@ export default function TrainingsPage() {
             <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
                     <Dumbbell size={24} className="text-brand-navy dark:text-brand-navy-light shrink-0" />
-                    <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-                        Training
-                    </h1>
+                    <PageTitle>Training</PageTitle>
                 </div>
                 {(userRole === 'coach' || userRole === 'admin') && (
                     <Link
@@ -422,197 +486,12 @@ export default function TrainingsPage() {
                 )}
             </div>
 
-            {/* ── Analytical Summary ── */}
-            {!isLoading && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-10">
-                    <div className="bg-transparent border border-zinc-200 dark:border-zinc-800 p-5 rounded-[2rem] flex flex-col justify-between min-h-[120px] relative overflow-hidden group hover:border-emerald-500 transition-all">
-                        <div className="flex items-center gap-2 text-zinc-400 mb-2">
-                            <TrendingUp size={16} />
-                            <span className="text-[10px] font-black uppercase tracking-widest">{userRole === 'athlete' ? "훈련 완료율" : "전체 완료율"}</span>
-                        </div>
-                        <div className="flex flex-col items-end">
-                            <div className="flex items-baseline gap-1">
-                                <p className="text-3xl font-black text-emerald-500 tracking-tighter italic">{summaryStats.completionRate}%</p>
-                            </div>
-                        </div>
-                        <div className="absolute right-[-10px] bottom-[-10px] opacity-[0.03] group-hover:opacity-[0.05] transition-opacity text-emerald-500">
-                            <TrendingUp size={80} />
-                        </div>
-                    </div>
-
-                    <div className="bg-transparent border border-zinc-200 dark:border-zinc-800 p-5 rounded-[2rem] flex flex-col justify-between min-h-[120px] relative overflow-hidden group hover:border-brand-navy transition-all">
-                        <div className="flex items-center gap-2 text-zinc-400 mb-2">
-                            <ClipboardList size={16} />
-                            <span className="text-[10px] font-black uppercase tracking-widest">이달의 배정 건수</span>
-                        </div>
-                        <div className="flex flex-col items-end">
-                            <div className="flex items-baseline gap-1">
-                                <p className="text-3xl font-black text-zinc-900 dark:text-zinc-50 tracking-tighter italic">{summaryStats.thisMonthCount}</p>
-                                <span className="text-xs font-bold text-zinc-400">건</span>
-                            </div>
-                        </div>
-                        <div className="absolute right-[-10px] bottom-[-10px] opacity-[0.03] group-hover:opacity-[0.05] transition-opacity">
-                            <ClipboardList size={80} />
-                        </div>
-                    </div>
-
-                    <div className="hidden md:flex bg-transparent border border-zinc-200 dark:border-zinc-800 p-5 rounded-[2rem] flex-col justify-between min-h-[120px] relative overflow-hidden group transition-all col-span-1 hover:border-brand-red">
-                        <div className="flex items-center gap-2 text-zinc-400 mb-2">
-                            <CheckCircle2 size={16} />
-                            <span className="text-[10px] font-black uppercase tracking-widest">이달의 완료 건수</span>
-                        </div>
-                        <div className="flex flex-col items-end">
-                            <div className="flex items-baseline gap-1">
-                                <p className="text-3xl font-black text-zinc-900 dark:text-zinc-50 tracking-tighter italic">{summaryStats.thisMonthCompleted}</p>
-                                <span className="text-xs font-bold text-zinc-400">건</span>
-                            </div>
-                        </div>
-                        <div className="absolute right-[-10px] bottom-[-10px] opacity-[0.03] group-hover:opacity-[0.05] transition-opacity text-brand-red">
-                            <CheckCircle2 size={80} />
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* ── Filter Buttons ── */}
-            <div className="flex flex-nowrap gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
-                {filterButtons.map((btn) => {
-                    const isActive = activeFilter === btn.key;
-                    return (
-                        <button
-                            key={btn.key}
-                            onClick={() => setActiveFilter(btn.key)}
-                            className={`whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all duration-200
-                                ${isActive
-                                    ? "bg-brand-navy text-white shadow-md border border-brand-navy"
-                                    : "bg-transparent dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 hover:bg-brand-navy-light dark:hover:bg-brand-navy-dark hover:text-brand-navy dark:hover:text-white"
-                                }`}
-                        >
-                            {btn.label}
-                        </button>
-                    );
-                })}
-            </div>
-
-            {/* ── Today's Scheduled/Completed Trainings ── */}
-            <div className="mb-8">
-                <div className="flex items-center justify-between mb-3 px-1">
-                    <h2 className="text-sm font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-2">
-                        <Calendar size={16} className="text-brand-navy dark:text-brand-navy-light" />
-                        {userRole === 'athlete' ? "오늘 예약된 훈련" : "오늘 완료된 훈련"}
-                    </h2>
-                    {userRole !== 'athlete' && <span className="text-[10px] text-zinc-400 font-medium">실시간 훈련 완료 현황</span>}
-                    {userRole === 'athlete' && <span className="text-[10px] text-zinc-400 font-medium">클릭 시 자동 입력 작성</span>}
-                </div>
-
-                <div className="relative group/scroll">
-                    {/* Desktop Navigation Arrows */}
-                    {filteredSchedule.length > 0 && (
-                        <>
-                            <button
-                                onClick={() => scroll("left")}
-                                className="absolute left-[-20px] top-[calc(50%-8px)] -translate-y-1/2 z-10 w-10 h-10 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full shadow-lg flex items-center justify-center text-zinc-600 dark:text-zinc-400 hover:text-brand-navy dark:hover:text-brand-navy-light transition-all opacity-0 group-hover/scroll:opacity-100 hidden md:flex"
-                            >
-                                <ChevronLeft size={20} />
-                            </button>
-                            <button
-                                onClick={() => scroll("right")}
-                                className="absolute right-[-20px] top-[calc(50%-8px)] -translate-y-1/2 z-10 w-10 h-10 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-full shadow-lg flex items-center justify-center text-zinc-600 dark:text-zinc-400 hover:text-brand-navy dark:hover:text-brand-navy-light transition-all opacity-0 group-hover/scroll:opacity-100 hidden md:flex"
-                            >
-                                <ChevronRight size={20} />
-                            </button>
-                        </>
-                    )}
-
-                    <div
-                        ref={scrollRef}
-                        className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-1 px-1"
-                    >
-                        {filteredSchedule.length > 0 ? (
-                            filteredSchedule.map((s) => {
-                                const isCompleted = s.status === "completed";
-                                const canCreate = (userRole === 'coach' || userRole === 'admin') && !isCompleted;
-                                const isPeriodRecord = s.isSchedule && s.time.startsWith('~');
-                                const href = (s.isSchedule && !isPeriodRecord && canCreate)
-                                    ? `/training/create?player=${encodeURIComponent(s.playerName)}&start=${s.time.split('~')[0]}&end=${s.time.split('~')[1]}&type=${s.type}`
-                                    : (s.isSchedule ? "#" : `/training/${s.id}`);
-
-                                return (
-                                    <div
-                                        key={s.id}
-                                        className={cn(
-                                            "flex-shrink-0 w-40 border p-3.5 rounded-2xl shadow-sm transition-all active:scale-95 cursor-pointer group",
-                                            isCompleted
-                                                ? "bg-zinc-100 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700 opacity-60"
-                                                : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50 hover:shadow-md",
-                                            !canCreate && !isCompleted && "opacity-80"
-                                        )}
-                                    >
-                                        <Link href={href} className={cn(!canCreate && !isCompleted && !s.isSchedule ? "" : "block w-full h-full")}>
-                                            <div className="flex items-center justify-between mb-2">
-                                                <div className="flex flex-wrap items-center gap-1">
-                                                    {s.title?.includes("[기본기]") && (
-                                                        <span className="text-[11px] font-black text-brand-red">
-                                                            기본기
-                                                        </span>
-                                                    )}
-                                                    {s.title?.includes("[예습]") && (
-                                                        <span className="text-[11px] font-black text-brand-navy">
-                                                            예습
-                                                        </span>
-                                                    )}
-                                                    {s.title?.includes("[복습]") && (
-                                                        <span className="text-[11px] font-black text-zinc-500">
-                                                            복습
-                                                        </span>
-                                                    )}
-                                                    {(s.title?.includes("[기본기]") || s.title?.includes("[예습]") || s.title?.includes("[복습]")) && (
-                                                        <span className="text-zinc-300">|</span>
-                                                    )}
-                                                    <span className={cn(
-                                                        "text-[10px] font-bold uppercase px-1.5 py-0.5 rounded-md",
-                                                        isCompleted 
-                                                            ? "text-zinc-400 bg-zinc-200 dark:bg-zinc-700" 
-                                                            : "text-brand-navy dark:text-brand-navy-light bg-brand-navy/5 dark:bg-brand-navy/20"
-                                                    )}>
-                                                        {isCompleted ? "completed" : s.type}
-                                                    </span>
-                                                </div>
-                                                {s.isSchedule && canCreate && !isCompleted && <Plus size={14} className="text-zinc-300 group-hover:text-brand-navy transition-colors" />}
-                                            </div>
-                                            <div className={cn(
-                                                "text-sm font-bold mb-1",
-                                                isCompleted ? "text-zinc-400" : "text-zinc-900 dark:text-zinc-50"
-                                            )}>
-                                                {s.playerName}
-                                            </div>
-                                            <div className={cn(
-                                                "text-[11px] font-medium",
-                                                isCompleted ? "text-emerald-500/60" : (s.isSchedule ? "text-zinc-400" : "text-emerald-500")
-                                            )}>
-                                                {s.time}
-                                            </div>
-                                        </Link>
-                                    </div>
-                                );
-                            })
-                        ) : (
-                            <div className="w-full py-6 flex flex-col items-center justify-center">
-                                <p className="text-[11px] text-zinc-400 font-medium">
-                                    {userRole === 'athlete' ? "오늘 예정된 훈련 일정이 없습니다." : "오늘 훈련을 완료한 선수가 없습니다."}
-                                </p>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 mb-6">
                 {/* Date Range: 훈련일자 */}
                 <div className="flex items-center gap-2">
-                    <label className="w-24 shrink-0 text-center text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                    <LabelText className="w-24 shrink-0 text-center">
                         훈련 일자
-                    </label>
+                    </LabelText>
                     <div className="flex items-center gap-1 flex-1 min-w-0">
                         <DatePickerInput
 
@@ -641,53 +520,57 @@ export default function TrainingsPage() {
                 </div>
 
                 {/* Player Search & Select All */}
-                <div className="flex items-center gap-2 mt-3">
-                    <label className="w-24 shrink-0 text-center text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                        선수 검색
-                    </label>
-                    <div className="relative flex-1">
-                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                        <input
-                            type="text"
-                            placeholder="선수 검색..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && searchQuery.trim()) {
-                                    const match = allAthletes.find((p) =>
-                                        p.toLowerCase().includes(searchQuery.toLowerCase())
-                                    );
-                                    if (match) {
-                                        togglePlayer(match);
-                                        // searchQuery is cleared inside togglePlayer
-                                    }
-                                }
-                            }}
-                            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all"
-                        />
-                    </div>
-                </div>
+                {(userRole === 'coach' || userRole === 'admin') && (
+                    <>
+                        <div className="flex items-center gap-2 mt-3">
+                            <LabelText className="w-24 shrink-0 text-center">
+                                선수 검색
+                            </LabelText>
+                            <div className="relative flex-1">
+                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                                <input
+                                    type="text"
+                                    placeholder="선수 검색..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && searchQuery.trim()) {
+                                            const match = allAthletes.find((p) =>
+                                                p.toLowerCase().includes(searchQuery.toLowerCase())
+                                            );
+                                            if (match) {
+                                                togglePlayer(match);
+                                                // searchQuery is cleared inside togglePlayer
+                                            }
+                                        }
+                                    }}
+                                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all"
+                                />
+                            </div>
+                        </div>
 
-                {/* Player Chips */}
-                {visiblePlayersArr.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-3 max-h-32 overflow-y-auto pr-1 custom-scrollbar">
-                        {visiblePlayersArr.map((name) => {
-                            const isSelected = selectedPlayers.has(name);
-                            return (
-                                <button
-                                    key={name}
-                                    onClick={() => togglePlayer(name)}
-                                    className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-200 shrink-0
-                                        ${isSelected
-                                            ? "bg-brand-navy/10 text-brand-navy border-brand-navy dark:bg-brand-navy/30 dark:text-white"
-                                            : "bg-white dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-brand-navy"
-                                        }`}
-                                >
-                                    {name}
-                                </button>
-                            );
-                        })}
-                    </div>
+                        {/* Player Chips */}
+                        {visiblePlayersArr.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-3 max-h-32 overflow-y-auto pr-1 custom-scrollbar" style={{ paddingLeft: '104px' }}>
+                                {visiblePlayersArr.map((name) => {
+                                    const isSelected = selectedPlayers.has(name);
+                                    return (
+                                        <button
+                                            key={name}
+                                            onClick={() => togglePlayer(name)}
+                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-200 shrink-0
+                                                ${isSelected
+                                                    ? "bg-brand-navy/10 text-brand-navy border-brand-navy dark:bg-brand-navy/30 dark:text-white"
+                                                    : "bg-white dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-brand-navy"
+                                                }`}
+                                        >
+                                            {name}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
 
@@ -697,16 +580,14 @@ export default function TrainingsPage() {
                     <div className="w-8 h-8 border-4 border-brand-navy border-t-transparent rounded-full animate-spin mb-4" />
                     <p className="text-zinc-500 text-sm">훈련 기록을 불러오는 중...</p>
                 </div>
-            ) : filteredTrainings.length > 0 ? (
+            ) : trainings.length > 0 ? (
                 <>
                     <div className="space-y-4 mb-4">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                                <h2 className="text-lg font-semibold text-zinc-800 dark:text-zinc-200">
-                                    조회 결과
-                                </h2>
+                                <SectionTitle>조회 결과</SectionTitle>
                                 <span className="text-xs text-zinc-400">
-                                    ({filteredTrainings.length}건)
+                                    ({totalTrainingCount}건)
                                 </span>
                             </div>
 
@@ -720,17 +601,17 @@ export default function TrainingsPage() {
                             />
                         </div>
                     </div>
-                    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
-                        {displayedTrainings.length > 0 ? (
+                    <div className="mt-2">
+                        {trainings.length > 0 ? (
                             <>
-                                <TrainingTable trainings={displayedTrainings} totalCount={filteredTrainings.length} onUpdate={loadInitialData} />
-                                {filteredTrainings.length > displayLimit && (
+                                <TrainingTable trainings={trainings} totalCount={totalTrainingCount} onUpdate={loadInitialData} basePath="/training" />
+                                {totalTrainingCount > trainings.length && (
                                     <div className="mt-6 flex justify-center">
                                         <button
                                             onClick={() => setDisplayLimit(prev => prev + 20)}
                                             className="px-6 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-sm font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all active:scale-95"
                                         >
-                                            더 보기 ({filteredTrainings.length - displayLimit}건 남음)
+                                            더 보기 ({totalTrainingCount - trainings.length}건 남음)
                                         </button>
                                     </div>
                                 )}

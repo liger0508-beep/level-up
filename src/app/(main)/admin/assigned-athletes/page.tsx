@@ -411,25 +411,41 @@ export default function AssignedAthletesPage() {
                 {/* Coach Assignment Stats */}
                 <div className="space-y-4">
                     <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 px-1">코치별 담당 인원 현황</h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                    <div className="flex flex-col gap-3">
                         {coachStats.length > 0 ? (
-                            coachStats.map(stat => (
-                                <div key={stat.name} className="p-4 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm flex flex-col items-center text-center">
-                                    <div className="w-10 h-10 rounded-full bg-brand-navy/10 flex items-center justify-center mb-2">
-                                        <UserCheck size={20} className="text-brand-navy dark:text-brand-navy-light" />
+                            coachStats.map(stat => {
+                                const athleteChunks: string[][] = [];
+                                const chunkSize = 5;
+                                for (let i = 0; i < stat.athleteNames.length; i += chunkSize) {
+                                    athleteChunks.push(stat.athleteNames.slice(i, i + chunkSize));
+                                }
+
+                                return (
+                                    <div key={stat.name} className="flex items-center justify-between p-5 px-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-sm">
+                                        <div className="flex flex-col min-w-0 pr-4 flex-1">
+                                            <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-1.5">
+                                                {stat.name} <span className="text-xs font-medium text-zinc-400">({stat.branch})</span>
+                                            </p>
+                                            <div className="flex flex-col min-h-[3.75rem] justify-start gap-0.5">
+                                                {athleteChunks.length > 0 ? (
+                                                    athleteChunks.map((chunk, idx) => (
+                                                        <p key={idx} className="text-xs text-zinc-500 dark:text-zinc-400 leading-normal">
+                                                            {chunk.join(', ')}
+                                                        </p>
+                                                    ))
+                                                ) : (
+                                                    <p className="text-xs text-zinc-300 dark:text-zinc-600">담당 선수가 없습니다.</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="text-lg font-black text-zinc-900 dark:text-zinc-50 shrink-0 self-center pl-4">
+                                            {stat.count}명
+                                        </div>
                                     </div>
-                                    <p className="text-sm font-black text-zinc-900 dark:text-zinc-100">{stat.name}</p>
-                                    <p className="text-[11px] text-zinc-400 mb-1">{stat.branch}</p>
-                                    <p className="text-lg font-black text-brand-navy dark:text-brand-navy-light">{stat.count}명</p>
-                                    {stat.athleteNames.length > 0 && (
-                                        <p className="text-[10px] text-zinc-500 mt-1 break-all line-clamp-2">
-                                            {stat.athleteNames.join(', ')}
-                                        </p>
-                                    )}
-                                </div>
-                            ))
+                                );
+                            })
                         ) : (
-                            <div className="col-span-full p-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-center text-zinc-400 text-sm">
+                            <div className="p-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-center text-zinc-400 text-sm">
                                 배정 내역이 없습니다.
                             </div>
                         )}

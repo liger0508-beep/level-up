@@ -20,36 +20,49 @@ import {
   TrendingUp,
   Target,
   User,
-  Users
+  Users,
+  Settings,
+  X,
+  Bell,
+  BarChart3,
+  Lightbulb,
+  Award,
+  Video,
+  FileText
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getStoredEvents } from "@/lib/schedule-sync";
 import { getPolls, Vote, VOTE_TYPE_COLORS, VOTE_TYPE_LABELS } from "@/lib/vote-sync";
+import { getNotices, Notice, getPlainText } from "@/lib/notice-sync";
 import { format, isSameDay, formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
 import { createClient } from "@/lib/supabase/client";
 
+import { PageTitle, SectionTitle, LabelText } from "@/components/ui/Typography";
+
 /* ──────── Master Shortcut Library ──────── */
 const ALL_SHORTCUTS = [
-  { id: "analysis", title: "분석", icon: Activity, color: "bg-orange-500", href: "/analysis" },
-  { id: "lessons", title: "레슨", icon: BookOpen, color: "bg-blue-500", href: "/lessons" },
-  { id: "training", title: "훈련", icon: Dumbbell, color: "bg-emerald-500", href: "/training" },
-  { id: "challenges", title: "챌린지", icon: Trophy, color: "bg-rose-500", href: "/training/challenges" },
-  { id: "scores", title: "스코어", icon: Flag, color: "bg-sky-500", href: "/scores" },
-  { id: "schedule", title: "스케쥴", icon: Calendar, color: "bg-cyan-600", href: "/schedule" },
-  { id: "consultations", title: "상담", icon: MessageSquare, color: "bg-amber-500", href: "/consultations" },
-  { id: "training-journal", title: "훈련일지", icon: PenTool, color: "bg-indigo-500", href: "/admin/training-journal" },
-  { id: "community", title: "공지사항", icon: PenTool, color: "bg-blue-600", href: "/community" },
-  { id: "tournament", title: "대회", icon: Trophy, color: "bg-emerald-600", href: "/admin/tournament-schedule" },
+  { id: "training", title: "훈련", icon: Dumbbell, color: "bg-emerald-50 border-transparent text-emerald-500 dark:bg-emerald-500/10 dark:border-transparent dark:text-emerald-400", href: "/training" },
+  { id: "lessons", title: "레슨", icon: BookOpen, color: "bg-blue-50 border-transparent text-blue-500 dark:bg-blue-500/10 dark:border-transparent dark:text-blue-400", href: "/lessons" },
+  { id: "challenges", title: "챌린지", icon: Trophy, color: "bg-rose-50 border-transparent text-rose-500 dark:bg-rose-500/10 dark:border-transparent dark:text-rose-400", href: "/training/challenges" },
+  { id: "tournament-schedule", title: "대회 스케쥴", icon: Calendar, color: "bg-teal-50 border-transparent text-teal-500 dark:bg-teal-500/10 dark:border-transparent dark:text-teal-400", href: "/admin/tournament-schedule" },
+  { id: "tournament-results", title: "대회 결과", icon: Award, color: "bg-amber-50 border-transparent text-amber-500 dark:bg-amber-500/10 dark:border-transparent dark:text-amber-400", href: "/admin/tournament-results" },
+  { id: "schedule", title: "스케쥴", icon: Calendar, color: "bg-cyan-50 border-transparent text-cyan-500 dark:bg-cyan-500/10 dark:border-transparent dark:text-cyan-400", href: "/schedule" },
+  { id: "scores", title: "스코어", icon: Flag, color: "bg-sky-50 border-transparent text-sky-500 dark:bg-sky-500/10 dark:border-transparent dark:text-sky-400", href: "/scores" },
+  { id: "community", title: "공지사항", icon: Bell, color: "bg-indigo-50 border-transparent text-indigo-500 dark:bg-indigo-500/10 dark:border-transparent dark:text-indigo-400", href: "/community" },
+  { id: "polls", title: "투표", icon: BarChart3, color: "bg-violet-50 border-transparent text-violet-500 dark:bg-violet-500/10 dark:border-transparent dark:text-violet-400", href: "/admin/polls" },
+  { id: "consultations", title: "상담", icon: MessageSquare, color: "bg-amber-50 border-transparent text-amber-500 dark:bg-amber-500/10 dark:border-transparent dark:text-amber-400", href: "/consultations" },
+  { id: "training-plan", title: "훈련계획", icon: Target, color: "bg-orange-50 border-transparent text-orange-500 dark:bg-orange-500/10 dark:border-transparent dark:text-orange-400", href: "/admin/training-plan" },
+  { id: "training-journal", title: "훈련일지", icon: PenTool, color: "bg-fuchsia-50 border-transparent text-fuchsia-500 dark:bg-fuchsia-500/10 dark:border-transparent dark:text-fuchsia-400", href: "/admin/training-journal" },
+  { id: "todos", title: "할일", icon: ClipboardList, color: "bg-zinc-50 border-transparent text-zinc-500 dark:bg-zinc-500/10 dark:border-transparent dark:text-zinc-400", href: "/operations/todos" },
 ];
 
-const typeConfigs: Record<string, { label: string; gradient: string }> = {
-  lesson: { label: "LESSON", gradient: "from-blue-400 to-blue-600" },
-  training: { label: "TRAINING", gradient: "from-emerald-400 to-emerald-600" },
-  analysis: { label: "ANALYSIS", gradient: "from-orange-400 to-orange-600" },
-  consultation: { label: "CONSULT", gradient: "from-pink-400 to-pink-600" },
-  score: { label: "SCORE", gradient: "from-sky-400 to-sky-600" },
-  etc: { label: "ETC", gradient: "from-zinc-400 to-zinc-600" },
+const typeConfigs: Record<string, { label: string; gradient: string; icon: any; koLabel: string }> = {
+  lesson: { label: "LESSON", gradient: "from-blue-400 to-blue-600", icon: BookOpen, koLabel: "레슨" },
+  training: { label: "TRAINING", gradient: "from-emerald-400 to-emerald-600", icon: Dumbbell, koLabel: "훈련" },
+  consultation: { label: "CONSULT", gradient: "from-pink-400 to-pink-600", icon: MessageSquare, koLabel: "상담" },
+  score: { label: "SCORE", gradient: "from-sky-400 to-sky-600", icon: Flag, koLabel: "스코어" },
+  etc: { label: "ETC", gradient: "from-zinc-400 to-zinc-600", icon: FileText, koLabel: "기타" },
 };
 
 const categoryLabels: Record<string, string> = {
@@ -59,62 +72,55 @@ const categoryLabels: Record<string, string> = {
   putting: "Putting",
   physical: "Physical",
   mental: "Mental",
-  etc: "Etc"
+  etc: "Etc",
+  basic: "기본기",
+  preview: "예습",
+  review: "복습"
 };
 
 function FeedCard({ item }: { item: any }) {
   const config = typeConfigs[item.type] || typeConfigs.etc;
+  const Icon = config.icon;
   const timeAgo = formatDistanceToNow(new Date(item.created_at), { addSuffix: true, locale: ko });
+  const dateStr = format(new Date(item.created_at), "yy.MM.dd");
   const playerName = item.users?.name || "선수";
   const authorName = item.coach?.name || "관리자";
-  
+
   const categoryDisplay = categoryLabels[item.category] || item.category;
-  
+
   // Parse title for tags like [예습], [기본기], [복습]
   const tagMatch = item.title?.match(/^\[(.+?)\]/);
   const tag = tagMatch ? tagMatch[1] : null;
   const displayTitle = tag ? item.title.replace(`[${tag}]`, "").trim() : item.title;
 
+  const finalTitle = categoryDisplay && displayTitle && displayTitle !== playerName
+    ? `[${categoryDisplay}] ${displayTitle}`
+    : (displayTitle || "기록");
+
   return (
     <Link
-      href={`/${item.type === 'score' ? 'scores' : item.type === 'consultation' ? 'consultations' : item.type === 'training' ? 'training' : item.type === 'analysis' ? 'analysis' : item.type + 's'}/${item.id}`}
-      className="relative bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-2xl overflow-hidden hover:shadow-md transition-all flex flex-col items-center justify-center h-28 sm:h-32 shrink-0 w-[80vw] max-w-[260px] p-4 text-center group"
+      href={`/${item.type === 'score' ? 'scores' : item.type === 'consultation' ? 'consultations' : item.type === 'training' ? 'training' : item.type + 's'}/${item.id}`}
+      className="block bg-white dark:bg-zinc-900 rounded-[2rem] border border-zinc-100 dark:border-zinc-800 py-4 px-5 shadow-sm hover:border-brand-navy/30 hover:shadow-md transition-all group shrink-0 w-[70vw] sm:w-[260px] max-w-[280px] h-32 flex flex-col justify-between"
     >
-      {/* Category Ribbon */}
-      <div className="absolute top-0 left-0 w-14 h-14 z-10 overflow-hidden pointer-events-none">
-        <div 
-          className={cn(
-            "absolute top-0 left-0 w-full h-full bg-gradient-to-br",
-            config.gradient
-          )}
-          style={{ clipPath: 'polygon(0 0, 100% 0, 0 100%)' }}
-        />
-        <span className="absolute top-[12px] left-[-12px] -rotate-45 text-[8px] font-black text-white/90 uppercase tracking-tighter w-full text-center drop-shadow-sm">
-          {config.label}
-        </span>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 shrink-0">
+            <Icon size={16} />
+          </div>
+          <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300">
+            {config.koLabel}
+            {item.type === 'lesson' && categoryDisplay && ` | ${categoryDisplay}`}
+          </span>
+        </div>
       </div>
 
-      <div className="flex flex-col items-center justify-center gap-1 w-full mt-2">
-        {/* Line 1: Player Name */}
-        <h4 className="text-[14px] font-black text-zinc-900 dark:text-zinc-100 leading-tight">
+      <div className="flex items-center justify-between mt-auto">
+        <span className="text-[11px] font-bold text-zinc-400 shrink-0">
+          {dateStr} <span className="opacity-40 font-normal mx-0.5">|</span> {authorName}
+        </span>
+        <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 truncate mr-2">
           {playerName}
-        </h4>
-        {/* Line 2: Category | Title */}
-        <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-tighter truncate max-w-full">
-          {categoryDisplay ? (
-            <span className="text-zinc-500 dark:text-zinc-400">{categoryDisplay}</span>
-          ) : (
-            tag ? `${tag} | ` : ""
-          )}
-          {categoryDisplay && displayTitle && displayTitle !== playerName ? ` | ${displayTitle}` : (categoryDisplay ? "" : displayTitle || "기록")}
-        </p>
-      </div>
-      <div className="absolute bottom-3 right-4">
-        <p className="text-[9px] font-semibold text-zinc-400/80">
-          <span className="text-zinc-500 dark:text-zinc-300">{authorName}</span>
-          <span className="mx-1.5 opacity-50">|</span>
-          {timeAgo}
-        </p>
+        </span>
       </div>
     </Link>
   );
@@ -125,21 +131,49 @@ interface UserProfile {
   name: string;
   role: string;
   assigned_athletes?: string;
+  branch?: string;
 }
 
 interface SummaryStats {
   avgScore: number;
-  completionRate: number;
+  completionRate: number | string;
 }
 
 export default function Home() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedShortcutIds, setSelectedShortcutIds] = useState<string[]>(['lessons', 'training', 'challenges', 'schedule', 'scores', 'community', 'consultations']);
+  const [isShortcutModalOpen, setIsShortcutModalOpen] = useState(false);
+  const [activeBannerIndex, setActiveBannerIndex] = useState(0);
+  const [isPollSheetOpen, setIsPollSheetOpen] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('user_shortcuts');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        const validIds = parsed.filter((id: string) => ALL_SHORTCUTS.some(s => s.id === id));
+        if (validIds.length > 0) {
+          setSelectedShortcutIds(validIds);
+        }
+      } catch (e) { }
+    }
+    setIsLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (isLoaded && selectedShortcutIds.length > 0) {
+      localStorage.setItem('user_shortcuts', JSON.stringify(selectedShortcutIds));
+    }
+  }, [selectedShortcutIds, isLoaded]);
   const [stats, setStats] = useState<SummaryStats>({ avgScore: 0, completionRate: 0 });
   const [todayTimeline, setTodayTimeline] = useState<any[]>([]);
   const [recentUpdates, setRecentUpdates] = useState<any[]>([]);
   const [pendingPolls, setPendingPolls] = useState<Vote[]>([]);
+  const [recentNotice, setRecentNotice] = useState<Notice | null>(null);
+  const bannerScrollRef = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function initialize() {
@@ -149,56 +183,126 @@ export default function Home() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        const { data: profile } = await supabase.from("users").select("id, name, role, assigned_athletes").eq("id", user.id).single();
+        const { data: profile } = await supabase.from("users").select("id, name, role, assigned_athletes, branch").eq("id", user.id).single();
         if (!profile) return;
-        
+
         setCurrentUser(profile);
 
-        let targetAthleteIds: string[] = [];
+        let targetAthleteIds: string[] = []; // For training completion rate
+        let scoreTargetAthleteIds: string[] = []; // For average score
+
         if (profile.role === "athlete") {
           targetAthleteIds = [user.id];
+          scoreTargetAthleteIds = [user.id];
         } else if (profile.role === "admin") {
           // Super Admin: Fetch ALL athlete IDs
           const { data: allAthletes } = await supabase.from("users").select("id").eq("role", "athlete");
-          if (allAthletes) targetAthleteIds = allAthletes.map(a => a.id);
+          if (allAthletes) {
+            targetAthleteIds = allAthletes.map(a => a.id);
+            scoreTargetAthleteIds = allAthletes.map(a => a.id);
+          }
         } else if (profile.role === "coach") {
-          // Coach: Find assigned athletes
+          // Coach: Find assigned athletes (for training)
           if (profile.assigned_athletes) {
             const names = profile.assigned_athletes.split(',').map((s: string) => s.trim());
             const { data: athletes } = await supabase.from("users").select("id").in("name", names).eq("role", "athlete");
             if (athletes) targetAthleteIds = athletes.map(a => a.id);
           }
+          // Coach: Find branch athletes (for scores)
+          if (profile.branch) {
+            if (profile.branch === "총괄" || profile.branch === "오피스") {
+              const { data: allBranchAthletes } = await supabase.from("users").select("id").eq("role", "athlete");
+              if (allBranchAthletes) {
+                scoreTargetAthleteIds = allBranchAthletes.map(a => a.id);
+              }
+            } else {
+              const { data: branchAthletes } = await supabase.from("users").select("id").eq("branch", profile.branch).eq("role", "athlete");
+              if (branchAthletes) {
+                scoreTargetAthleteIds = branchAthletes.map(a => a.id);
+              }
+            }
+          }
+          if (scoreTargetAthleteIds.length === 0) {
+            scoreTargetAthleteIds = [...targetAthleteIds];
+          }
         }
 
         // 1. Calculate Average Score
-        if (targetAthleteIds.length > 0) {
+        const todayStr = format(new Date(), "yyyy-MM-dd");
+        const now = new Date();
+        const startOfMonth = format(new Date(now.getFullYear(), now.getMonth(), 1), "yyyy-MM-dd");
+        const endOfMonth = format(new Date(now.getFullYear(), now.getMonth() + 1, 0), "yyyy-MM-dd");
+
+        if (scoreTargetAthleteIds.length > 0) {
           const { data: scoreData } = await supabase
             .from("scorecards")
             .select("total_score")
-            .in("athlete_id", targetAthleteIds)
-            .order("round_date", { ascending: false })
-            .limit(10);
-          
+            .in("athlete_id", scoreTargetAthleteIds)
+            .eq("hole_count", 18)
+            .gte("round_date", startOfMonth)
+            .lte("round_date", endOfMonth);
+
           if (scoreData && scoreData.length > 0) {
             const avg = scoreData.reduce((s, x) => s + x.total_score, 0) / scoreData.length;
-            setStats(prev => ({ ...prev, avgScore: Math.round(avg) }));
-          }
-
-          // 2. Calculate Training Completion Rate
-          const { data: trainingTodos } = await supabase
-            .from("todos")
-            .select("is_completed")
-            .in("user_id", targetAthleteIds)
-            .eq("type", "training");
-          
-          if (trainingTodos && trainingTodos.length > 0) {
-            const completed = trainingTodos.filter(t => t.is_completed).length;
-            const rate = (completed / trainingTodos.length) * 100;
-            setStats(prev => ({ ...prev, completionRate: Math.round(rate) }));
+            setStats(prev => ({ ...prev, avgScore: avg }));
           }
         }
 
-        const todayStr = format(new Date(), "yyyy-MM-dd");
+        if (targetAthleteIds.length > 0) {
+          // 2. Calculate Today's Training Completion Rate (Average of today's active training progress)
+          const { data: activeTrainings } = await supabase
+            .from("records")
+            .select("total_count, completion_logs, template_settings")
+            .in("user_id", targetAthleteIds)
+            .eq("type", "training")
+            .lte("training_start", todayStr)
+            .gte("training_end", todayStr);
+
+          if (activeTrainings && activeTrainings.length > 0) {
+            let totalProgress = 0;
+            activeTrainings.forEach(train => {
+              let parsedLogs: string[] = [];
+              if (Array.isArray(train.completion_logs)) {
+                parsedLogs = train.completion_logs;
+              } else if (typeof train.completion_logs === 'string') {
+                try {
+                  const parsed = JSON.parse(train.completion_logs);
+                  parsedLogs = Array.isArray(parsed) ? parsed : [];
+                } catch {
+                  parsedLogs = [train.completion_logs as string];
+                }
+              }
+
+              let progressPercent = 0;
+              let reviewSetting = null;
+
+              if (Array.isArray(train.template_settings)) {
+                reviewSetting = train.template_settings.find((s: any) => s.type === "review_scorecard");
+              } else if (typeof train.template_settings === 'string') {
+                try {
+                  const parsedTs = JSON.parse(train.template_settings);
+                  if (Array.isArray(parsedTs)) {
+                    reviewSetting = parsedTs.find((s: any) => s.type === "review_scorecard");
+                  }
+                } catch (e) { }
+              }
+
+              if (reviewSetting) {
+                const completedCount = reviewSetting.completedHoles?.length || 0;
+                progressPercent = Math.min(100, Math.round((completedCount / (train.total_count || 1)) * 100));
+              } else {
+                progressPercent = Math.min(100, Math.round((parsedLogs.length / (train.total_count || 1)) * 100));
+              }
+
+              totalProgress += progressPercent;
+            });
+            const rate = totalProgress / activeTrainings.length;
+            setStats(prev => ({ ...prev, completionRate: Math.round(rate) }));
+          } else {
+            setStats(prev => ({ ...prev, completionRate: "-" }));
+          }
+        }
+
         const startOfToday = new Date();
         startOfToday.setHours(0, 0, 0, 0);
         const endOfToday = new Date();
@@ -234,24 +338,44 @@ export default function Home() {
           .select("id, title, start_date, end_date")
           .lte("start_date", todayStr)
           .gte("end_date", todayStr);
-        
+
         const { data: pollResponses } = await supabase
           .from("poll_responses")
-          .select("poll_id")
+          .select("poll_id, vote_date")
           .eq("user_id", user.id);
 
-        const allPolls = await getPolls();
+        const allPolls = await getPolls(10);
         const ongoingUnvoted = allPolls.filter(p => {
           const isOngoing = p.status === "ongoing" && todayStr >= p.startDate && todayStr <= p.endDate;
-          const hasNotVoted = !pollResponses?.some(pr => pr.poll_id === p.id);
+
+          let hasNotVoted = true;
+          if (p.isRecurring) {
+            const now = new Date();
+            const effectiveDate = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+            const yyyy = effectiveDate.getFullYear();
+            const mm = String(effectiveDate.getMonth() + 1).padStart(2, '0');
+            const dd = String(effectiveDate.getDate()).padStart(2, '0');
+            const voteDateStr = `${yyyy}-${mm}-${dd}`;
+
+            const votedToday = pollResponses?.some(pr => pr.poll_id === p.id && pr.vote_date === voteDateStr);
+            hasNotVoted = !votedToday;
+          } else {
+            hasNotVoted = !pollResponses?.some(pr => pr.poll_id === p.id);
+          }
+
           return isOngoing && hasNotVoted;
         });
         setPendingPolls(ongoingUnvoted);
+        const allNotices = await getNotices(5);
+        if (allNotices.length > 0) {
+          setRecentNotice(allNotices.sort((a, b) => b.date.localeCompare(a.date))[0]);
+        }
 
-        const schedules = await getStoredEvents();
+
+        const schedules = await getStoredEvents(todayStr, todayStr);
         const todaySchedules = schedules.filter(e => isSameDay(new Date(e.start), new Date()));
         const { data: todos } = await supabase.from("todos").select("*").eq("user_id", user.id).eq("due_date", todayStr);
-        
+
         const autoItems = [];
         if (profile.role === "athlete") {
           // 1. Mandatory Daily Journal
@@ -297,9 +421,9 @@ export default function Home() {
           ...autoItems,
           ...todaySchedules.map(s => {
             // Check if there's a matching record today
-            const isCompletedByRecord = todayRecords?.some(r => 
-                r.type === s.type && 
-                (r.title === s.title || s.title?.includes(r.title || "") || r.title?.includes(s.title || ""))
+            const isCompletedByRecord = todayRecords?.some(r =>
+              r.type === s.type &&
+              (r.title === s.title || s.title?.includes(r.title || "") || r.title?.includes(s.title || ""))
             );
             return {
               id: s.id,
@@ -320,8 +444,8 @@ export default function Home() {
           ...(todayRecords || []).filter(r => {
             const isJournal = r.type === 'journal';
             const isUsedInTraining = false;
-            const matchesSchedule = todaySchedules.some(s => 
-              r.type === s.type && 
+            const matchesSchedule = todaySchedules.some(s =>
+              r.type === s.type &&
               (r.title === s.title || s.title?.includes(r.title || "") || r.title?.includes(s.title || ""))
             );
             return !isJournal && !isUsedInTraining && !matchesSchedule;
@@ -346,8 +470,8 @@ export default function Home() {
         const { data: updates } = await supabase
           .from("records")
           .select(`id, type, title, created_at, category, users!records_user_id_fkey(name), coach:users!records_coach_id_fkey(name)`)
-          .in("type", ["lesson", "analysis", "training"])
-          .order("created_at", { ascending: false })
+          .in("type", ["lesson", "training"])
+          .order("inserted_at", { ascending: false })
           .limit(5);
         setRecentUpdates(updates || []);
 
@@ -360,11 +484,25 @@ export default function Home() {
     initialize();
   }, []);
 
+  // Auto-show poll bottom sheet on mobile when pending polls exist
+  useEffect(() => {
+    if (!isLoading && pendingPolls.length > 0) {
+      const hiddenDate = localStorage.getItem('poll_sheet_hidden_date');
+      const now = new Date();
+      const effectiveDate = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+      const todayStr = `${effectiveDate.getFullYear()}-${String(effectiveDate.getMonth() + 1).padStart(2, '0')}-${String(effectiveDate.getDate()).padStart(2, '0')}`;
+      if (hiddenDate !== todayStr) {
+        const timer = setTimeout(() => setIsPollSheetOpen(true), 600);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [isLoading, pendingPolls]);
+
   const handleToggleItem = async (item: any) => {
     const supabase = createClient();
     const isCurrentlyCompleted = item.completed;
     const todayStr = format(new Date(), "yyyy-MM-dd");
-    
+
     try {
       if (item.type === 'todo') {
         const { error } = await supabase
@@ -385,13 +523,13 @@ export default function Home() {
           .select("id, completion_logs")
           .eq("id", item.id.replace('training-auto-', ''))
           .single();
-        
+
         if (record) {
           let logs = [];
           if (record.completion_logs) {
             logs = Array.isArray(record.completion_logs) ? record.completion_logs : [record.completion_logs];
           }
-          
+
           if (!isCurrentlyCompleted) {
             // Add today's log
             logs.push(JSON.stringify({ timestamp: new Date().toISOString(), type: 'quick-complete' }));
@@ -418,296 +556,216 @@ export default function Home() {
         }
         return;
       }
-      
+
       setTodayTimeline(prev => prev.map(i => i.id === item.id ? { ...i, completed: !isCurrentlyCompleted } : i));
     } catch (err) {
       console.error("Toggle failed:", err);
     }
   };
 
-  const typeLabels: Record<string, string> = { lesson: "레슨", training: "훈련", analysis: "분석", consultation: "상담", todo: "할일", schedule: "일정", journal: "일지", poll: "투표", score: "스코어" };
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-10 h-10 border-4 border-brand-navy border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
+  const typeLabels: Record<string, string> = { lesson: "레슨", training: "훈련", consultation: "상담", todo: "할일", schedule: "일정", journal: "일지", poll: "투표", score: "스코어" };
 
   const isCoach = currentUser?.role === "coach";
   const isAdmin = currentUser?.role === "admin";
+  const isLessonWriter = currentUser?.role === "coach" || currentUser?.role === "admin" || currentUser?.branch === "총괄" || currentUser?.branch === "오피스";
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-12">
+    <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
       {/* ─── Hero / Dashboard Section ─── */}
       <section className="bg-white dark:bg-zinc-900 border-2 border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] p-5 sm:p-8 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-8">
           <div>
             <div className="flex items-center gap-2 mb-2">
               <div className="w-2 h-8 bg-brand-red rounded-full" />
-              <h1 className="text-xl font-black text-zinc-900 dark:text-zinc-50 tracking-tight">반갑습니다, {currentUser?.name}님!</h1>
+              <PageTitle>
+                반갑습니다{currentUser?.name ? `, ${currentUser.name}님!` : '!'}
+              </PageTitle>
             </div>
-            
-            <div className="flex flex-wrap gap-3 mt-6">
-              <Link href="/scores/create" className="bg-brand-navy text-white px-5 py-2.5 rounded-2xl text-sm font-bold flex items-center gap-2 hover:bg-brand-navy-dark transition-all shadow-lg shadow-brand-navy/10">
+
+            <div className="grid grid-cols-2 gap-3 mt-6">
+              <Link href="/scores/create" className="w-full justify-center bg-brand-navy text-white px-5 py-2.5 rounded-2xl text-sm font-bold flex items-center gap-2 hover:bg-brand-navy-dark transition-all shadow-lg shadow-brand-navy/10 whitespace-nowrap">
                 <Plus size={18} strokeWidth={3} /> 스코어 입력
               </Link>
-              <Link href="/schedule" className="bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 px-5 py-2.5 rounded-2xl text-sm font-bold flex items-center gap-2 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all">
-                <Calendar size={18} /> 일정 확인
-              </Link>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 sm:gap-4">
-            <div className="bg-zinc-50 dark:bg-zinc-800/50 p-3 sm:p-5 rounded-3xl border border-zinc-100 dark:border-zinc-800 min-w-0">
-              <div className="flex items-center gap-2 mb-2 text-zinc-400">
-                <TrendingUp size={16} />
-                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest truncate">{isAdmin ? "전체 선수 평균" : isCoach ? "담당 선수 평균" : "평균 타수"}</span>
-              </div>
-              <p className="text-2xl sm:text-3xl font-black text-zinc-900 dark:text-zinc-100 italic">{stats.avgScore || "--"}</p>
-              <div className="mt-1 flex items-center gap-1 text-[10px] text-emerald-500 font-bold">
-                <ArrowUpRight size={12} />
-                <span>{isAdmin ? "플랫폼 전체" : "최근 10라운드"}</span>
-              </div>
-            </div>
-            <div className="bg-zinc-50 dark:bg-zinc-800/50 p-3 sm:p-5 rounded-3xl border border-zinc-100 dark:border-zinc-800 min-w-0">
-              <div className="flex items-center gap-2 mb-2 text-zinc-400">
-                <Target size={16} />
-                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest truncate">{isAdmin ? "전체 훈련 완료율" : isCoach ? "담당 선수 훈련" : "훈련 완료율"}</span>
-              </div>
-              <p className="text-2xl sm:text-3xl font-black text-zinc-900 dark:text-zinc-100 italic">{stats.completionRate}%</p>
-              <div className="mt-1 flex items-center gap-1 text-[10px] text-emerald-500 font-bold">
-                <ArrowUpRight size={12} />
-                <span>{isAdmin ? "전체 달성률" : "목표 달성 중"}</span>
-              </div>
+              {isLessonWriter ? (
+                <Link href="/lessons/create" className="w-full justify-center bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 px-5 py-2.5 rounded-2xl text-sm font-bold flex items-center gap-2 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all whitespace-nowrap">
+                  <PenTool size={18} /> 레슨 작성
+                </Link>
+              ) : (
+                <Link href="/admin/training-plan/create" className="w-full justify-center bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 px-5 py-2.5 rounded-2xl text-sm font-bold flex items-center gap-2 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-all whitespace-nowrap">
+                  <Target size={18} /> 훈련 계획
+                </Link>
+              )}
             </div>
           </div>
         </div>
       </section>
 
-      {/* ─── Pending Polls Box ─── */}
-      {pendingPolls.length > 0 && (
-        <section className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
-          <div className="flex items-center justify-between px-2">
-            <h2 className="text-sm font-black text-rose-500 uppercase tracking-widest flex items-center gap-2">
-              <MessageSquare size={14} className="fill-rose-500/20" />
-              참여가 필요한 투표
-            </h2>
-            <span className="text-[10px] font-bold text-zinc-400">{pendingPolls.length}건 진행 중</span>
-          </div>
-          
-          <div className="grid grid-cols-1 gap-4">
-            {pendingPolls.map(poll => {
-              // Calculate top 3 options for the card
-              const sortedOptions = [...poll.options].sort((a, b) => b.votes - a.votes).slice(0, 3);
-              const totalVoters = Math.max(poll.totalParticipants, 1);
-
-              return (
-                <Link 
-                  key={poll.id} 
-                  href={`/admin/polls/${poll.id}`}
-                  className="block bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2.5rem] p-8 hover:shadow-lg transition-all group"
-                >
-                  <div className="space-y-5">
-                    <div className="flex items-center gap-2">
-                      <span className={cn(
-                        "text-[10px] font-bold px-2 py-0.5 rounded-md uppercase",
-                        VOTE_TYPE_COLORS[poll.type].bg,
-                        VOTE_TYPE_COLORS[poll.type].text
-                      )}>
-                        {VOTE_TYPE_LABELS[poll.type]}
-                      </span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-zinc-100 dark:bg-zinc-800 text-zinc-500">
-                        {poll.branch}
-                      </span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                        진행 중
-                      </span>
-                    </div>
-
-                    <h3 className="text-2xl font-black text-zinc-900 dark:text-zinc-100 group-hover:text-brand-navy transition-colors">
-                      {poll.title} <span className="text-zinc-400 font-medium ml-1">({poll.totalParticipants}명)</span>
-                    </h3>
-
-                    {/* Options Preview */}
-                    <div className="space-y-4">
-                      {sortedOptions.map((opt, i) => {
-                        const percentage = Math.round((opt.votes / totalVoters) * 100);
-                        return (
-                          <div key={opt.id} className="space-y-2">
-                            <div className="flex justify-between items-center text-xs">
-                              <span className="font-bold text-zinc-600 dark:text-zinc-300 flex items-center gap-2">
-                                <span className={cn(
-                                  "w-5 h-5 rounded-full flex items-center justify-center text-[10px] text-white font-black",
-                                  i === 0 ? "bg-indigo-400" : i === 1 ? "bg-slate-400" : "bg-orange-300"
-                                )}>{i + 1}</span>
-                                <span className="truncate max-w-[250px]">{opt.text}</span>
-                              </span>
-                              <span className="font-black text-zinc-900 dark:text-zinc-100">{opt.votes}표 ({percentage}%)</span>
-                            </div>
-                            <div className="h-2 w-full bg-zinc-100 dark:bg-zinc-800 rounded-full overflow-hidden">
-                              <div
-                                className={cn(
-                                  "h-full rounded-full transition-all duration-1000",
-                                  i === 0 ? "bg-indigo-400" : i === 1 ? "bg-slate-400" : "bg-orange-300"
-                                )}
-                                style={{ width: `${percentage}%` }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <div className="flex items-center justify-end gap-5 text-[11px] text-zinc-400 pt-4 border-t border-zinc-50 dark:border-zinc-800/50 mt-4 font-bold">
-                      <div className="flex items-center gap-1.5">
-                        <Calendar size={12} />
-                        <span>{poll.startDate.replace(/-/g, ".")} ~ {poll.endDate.replace(/-/g, ".")}</span>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <User size={12} />
-                        <span>{poll.author}</span>
-                      </div>
-                    </div>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
       {/* ─── Shortcuts ─── */}
-      <section className="bg-zinc-50 dark:bg-zinc-900/50 rounded-[2.5rem] p-6 border border-zinc-100 dark:border-zinc-800">
+      <section className="bg-white dark:bg-zinc-900/50 rounded-[2.5rem] p-6 border border-zinc-100 dark:border-zinc-800">
         <div className="grid grid-cols-4 sm:grid-cols-8 gap-4">
-          {ALL_SHORTCUTS.slice(0, 8).map(s => {
+          {selectedShortcutIds.slice(0, 7).map(id => {
+            const s = ALL_SHORTCUTS.find(x => x.id === id);
+            if (!s) return null;
             const Icon = s.icon;
             return (
               <Link key={s.id} href={s.href} className="flex flex-col items-center gap-2 group">
-                <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-lg group-hover:scale-110 transition-all", s.color)}>
+                <div className={cn("w-12 h-12 rounded-2xl flex items-center justify-center border-2 transition-all group-hover:scale-110", s.color)}>
                   <Icon size={20} />
                 </div>
                 <span className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400">{s.title}</span>
               </Link>
             );
           })}
+
+          <button onClick={() => setIsShortcutModalOpen(true)} className="flex flex-col items-center gap-2 group">
+            <div className="w-12 h-12 rounded-2xl flex items-center justify-center bg-zinc-200 dark:bg-zinc-800 text-zinc-500 shadow-sm group-hover:scale-110 transition-all">
+              <Settings size={20} />
+            </div>
+            <span className="text-[10px] font-bold text-zinc-600 dark:text-zinc-400">관리</span>
+          </button>
         </div>
       </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-3 space-y-6">
-          <div className="flex items-center justify-between px-2">
-            <h2 className="text-2xl font-black text-zinc-900 dark:text-zinc-50 tracking-tight flex items-center gap-2 uppercase">
-              To-Do list
-            </h2>
-            <Link href="/operations/todos" className="text-xs font-bold text-zinc-400 hover:text-brand-navy transition-colors">전체보기</Link>
-          </div>
-
-          <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-800 p-8 shadow-sm space-y-8 relative">
-            {todayTimeline.length > 0 ? (
-              todayTimeline.map((item, idx) => {
-                const getItemHref = (item: any) => {
-                  if (item.type === 'todo') {
-                    if (item.title && item.title.includes(':::ID:::')) {
-                      return `/course-management/${item.title.split(':::ID:::')[1].trim()}`;
-                    }
-                    return '/operations/todos';
-                  }
-                  if (item.type === 'schedule') return '/schedule';
-                  if (item.type === 'journal') return '/admin/training-journal/create';
-                  
-                  if (item.type === 'score') {
-                    const rawId = item.id.replace('score-', '');
-                    return `/scores/${rawId}`;
-                  }
-                  if (item.type === 'poll') {
-                    const rawId = item.id.replace('poll-auto-', '');
-                    return `/admin/polls/${rawId}`;
-                  }
-                  if (item.type === 'training') {
-                    const rawId = item.id.replace('training-auto-', '').replace('record-', '');
-                    return `/training/${rawId}`;
-                  }
-                  
-                  const rawId = String(item.id).replace('record-', '');
-                  if (item.type === 'analysis') return `/analysis/${rawId}`;
-                  if (item.type === 'consultation') return `/consultations/${rawId}`;
-                  if (item.type === 'lesson') return `/lessons/${rawId}`;
-                  
-                  return '#';
-                };
-                
-                return (
-                <div key={item.id} className="relative flex items-start gap-6 group">
-                  {idx !== todayTimeline.length - 1 && (
-                    <div className="absolute left-[11px] top-8 bottom-[-32px] w-[2px] bg-zinc-100 dark:bg-zinc-800" />
-                  )}
-                  <button 
-                    onClick={() => handleToggleItem(item)}
-                    className={cn(
-                      "relative z-10 w-6 h-6 rounded-full border-4 border-white dark:border-zinc-900 shadow-sm flex items-center justify-center transition-all",
-                      item.completed 
-                        ? "bg-zinc-300 dark:bg-zinc-600 scale-100" 
-                        : cn(
-                            "scale-110",
-                            item.type === 'schedule' ? "bg-blue-500 shadow-blue-500/20" :
-                            item.type === 'journal' ? "bg-indigo-500 shadow-indigo-500/20" :
-                            item.type === 'training' ? "bg-emerald-500 shadow-emerald-500/20" :
-                            item.type === 'poll' ? "bg-rose-500 shadow-rose-500/20" :
-                            item.type === 'score' ? "bg-sky-500 shadow-sky-500/20" :
-                            "bg-orange-500 shadow-orange-500/20"
-                          ),
-                      (item.type === 'todo' || item.type === 'schedule') ? "cursor-pointer" : "cursor-default"
-                    )}
-                    title={item.type === 'todo' || item.type === 'schedule' ? "완료 체크" : "자동 연동 항목"}
-                  >
-                    {item.completed && <CheckCircle2 size={12} className="text-white" />}
-                    {!item.completed && <div className="w-1.5 h-1.5 rounded-full bg-white/80 animate-pulse" />}
-                  </button>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[11px] font-black text-zinc-400 uppercase tracking-widest">{item.time}</span>
-                      <span className={cn(
-                        "px-2 py-0.5 rounded-full text-[9px] font-black uppercase transition-colors",
-                        item.completed ? "bg-zinc-100 text-zinc-400 dark:bg-zinc-800" :
-                        item.type === 'schedule' ? "bg-blue-50 text-blue-600" : 
-                        item.type === 'journal' ? "bg-indigo-50 text-indigo-600" :
-                        item.type === 'training' ? "bg-emerald-50 text-emerald-600" :
-                        item.type === 'poll' ? "bg-rose-50 text-rose-600" :
-                        item.type === 'score' ? "bg-sky-50 text-sky-600" :
-                        "bg-orange-50 text-orange-600"
-                      )}>
-                        {typeLabels[item.type]}
-                      </span>
-                    </div>
-                    <Link href={getItemHref(item)}>
-                      <h4 className={cn(
-                        "text-lg font-bold transition-all hover:text-brand-navy dark:hover:text-brand-navy-light inline-block cursor-pointer",
-                        item.completed ? "text-zinc-400 line-through" : "text-zinc-900 dark:text-zinc-100"
-                      )}>
-                        {item.title ? item.title.split(':::ID:::')[0] : ''}
-                      </h4>
-                    </Link>
-                  </div>
+      {/* ─── Highlights Banner ─── */}
+      {(pendingPolls.length > 0 || recentNotice) && (
+        <section className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-[2rem] p-6 shadow-sm overflow-hidden relative">
+          <div
+            ref={bannerScrollRef}
+            className="flex overflow-x-auto snap-x snap-mandatory gap-8 pb-3 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+            onScroll={(e) => {
+              const scrollLeft = e.currentTarget.scrollLeft;
+              const width = e.currentTarget.clientWidth;
+              const index = Math.round(scrollLeft / width);
+              setActiveBannerIndex(index);
+            }}
+          >
+            {pendingPolls.length > 0 && (
+              <Link href={`/admin/polls/${pendingPolls[0].id}`} className="w-full min-w-full snap-center shrink-0 flex justify-between items-center group">
+                <div className="space-y-2 max-w-[75%] pr-4">
+                  <h3 className="text-lg font-black text-zinc-900 dark:text-zinc-50 tracking-tight line-clamp-1 group-hover:text-brand-navy transition-colors">
+                    {getPlainText(pendingPolls[0].title)}
+                  </h3>
+                  <p className="text-[13px] font-bold text-zinc-500 leading-relaxed line-clamp-2">
+                    {getPlainText(pendingPolls[0].description) || "새로운 투표가 진행 중입니다. 소중한 의견을 내주세요."}
+                  </p>
                 </div>
-              )})
-            ) : (
-              <div className="py-10 text-center flex flex-col items-center">
-                <Clock className="text-zinc-100 dark:text-zinc-800 mb-4" size={48} />
-                <p className="text-zinc-400 font-bold">오늘 예정된 일정이 없습니다.</p>
-              </div>
+                <div className="w-14 h-14 flex items-center justify-center bg-blue-50 dark:bg-blue-900/20 text-blue-500 rounded-2xl shrink-0 group-hover:scale-110 transition-transform">
+                  <BarChart3 size={28} />
+                </div>
+              </Link>
+            )}
+
+            {recentNotice && (
+              <Link href={`/community/${recentNotice.id}`} className="w-full min-w-full snap-center shrink-0 flex justify-between items-center group">
+                <div className="space-y-2 max-w-[75%] pr-4">
+                  <h3 className="text-lg font-black text-zinc-900 dark:text-zinc-50 tracking-tight line-clamp-1 group-hover:text-emerald-600 transition-colors">
+                    {getPlainText(recentNotice.title)}
+                  </h3>
+                </div>
+                <div className="w-14 h-14 flex items-center justify-center bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500 rounded-2xl shrink-0 group-hover:scale-110 transition-transform">
+                  <Bell size={28} />
+                </div>
+              </Link>
             )}
           </div>
+
+          {/* Dots Indicator */}
+          {(pendingPolls.length > 0 && recentNotice) && (
+            <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 cursor-pointer">
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  bannerScrollRef.current?.scrollTo({ left: 0, behavior: 'smooth' });
+                  setActiveBannerIndex(0);
+                }}
+                className={cn("w-1.5 h-1.5 rounded-full transition-colors", activeBannerIndex === 0 ? "bg-zinc-400 dark:bg-zinc-500" : "bg-zinc-200 dark:bg-zinc-800")}
+              />
+              <button
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (bannerScrollRef.current) {
+                    bannerScrollRef.current.scrollTo({ left: bannerScrollRef.current.clientWidth, behavior: 'smooth' });
+                    setActiveBannerIndex(1);
+                  }
+                }}
+                className={cn("w-1.5 h-1.5 rounded-full transition-colors", activeBannerIndex === 1 ? "bg-zinc-400 dark:bg-zinc-500" : "bg-zinc-200 dark:bg-zinc-800")}
+              />
+            </div>
+          )}
+        </section>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-3 space-y-4">
+          <Link href="/operations/todos" className="block bg-white dark:bg-zinc-900 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-800 py-4 px-6 shadow-sm hover:border-brand-navy/30 hover:shadow-md transition-all group">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 shrink-0">
+                <ClipboardList size={16} />
+              </div>
+              <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300">할일</span>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 pl-[40px]">오늘 완료해야할 일</span>
+              <span className="text-[20px] sm:text-[26px] font-black text-zinc-900 dark:text-zinc-50 group-hover:text-brand-navy transition-colors">
+                {isLoading ? (
+                  <div className="w-5 h-5 border-2 border-brand-navy border-t-transparent rounded-full animate-spin inline-block ml-2" />
+                ) : (
+                  `${todayTimeline.filter(t => !t.completed).length}건`
+                )}
+              </span>
+            </div>
+          </Link>
+
+          <Link href="/training" className="block bg-white dark:bg-zinc-900 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-800 py-4 px-6 shadow-sm hover:border-brand-navy/30 hover:shadow-md transition-all group">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 shrink-0">
+                <Dumbbell size={16} />
+              </div>
+              <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300">훈련</span>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 pl-[40px]">오늘까지의 훈련 완료율</span>
+              <span className="text-[20px] sm:text-[26px] font-black text-zinc-900 dark:text-zinc-50 group-hover:text-brand-navy transition-colors">
+                {isLoading ? (
+                  <div className="w-5 h-5 border-2 border-brand-navy border-t-transparent rounded-full animate-spin inline-block ml-2" />
+                ) : (
+                  stats.completionRate === "-" ? "-" : `${stats.completionRate}%`
+                )}
+              </span>
+            </div>
+          </Link>
+
+          <Link href="/scores" className="block bg-white dark:bg-zinc-900 rounded-[2.5rem] border border-zinc-100 dark:border-zinc-800 py-4 px-6 shadow-sm hover:border-brand-navy/30 hover:shadow-md transition-all group">
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-8 h-8 rounded-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 shrink-0">
+                <Flag size={16} />
+              </div>
+              <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300">스코어</span>
+            </div>
+            <div className="flex items-baseline justify-between">
+              <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 pl-[40px]">{new Date().getMonth() + 1}월 평균 스코어</span>
+              <span className="text-[20px] sm:text-[26px] font-black text-zinc-900 dark:text-zinc-50 group-hover:text-brand-navy transition-colors">
+                {isLoading ? (
+                  <div className="w-5 h-5 border-2 border-brand-navy border-t-transparent rounded-full animate-spin inline-block ml-2" />
+                ) : (
+                  `${stats.avgScore ? stats.avgScore.toFixed(1) : "--"}타`
+                )}
+              </span>
+            </div>
+          </Link>
         </div>
       </div>
 
       <section className="space-y-6">
         <div className="flex items-center justify-between px-2">
-          <h2 className="text-sm font-black text-zinc-400 uppercase tracking-widest">최근 업데이트</h2>
+          <SectionTitle>최근 업데이트</SectionTitle>
         </div>
         <div className="flex gap-4 overflow-x-auto pb-6 scrollbar-hide px-2 -mx-2">
-          {recentUpdates.length > 0 ? (
+          {isLoading ? (
+            <div className="w-full py-10 flex items-center justify-center">
+              <div className="w-6 h-6 border-2 border-brand-navy border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : recentUpdates.length > 0 ? (
             recentUpdates.map(u => (
               <FeedCard key={u.id} item={u} />
             ))
@@ -716,6 +774,142 @@ export default function Home() {
           )}
         </div>
       </section>
+      {/* ─── Shortcut Management Modal ─── */}
+      {isShortcutModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-zinc-900 rounded-[2rem] w-full max-w-md p-6">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-xl font-black">메뉴 관리 (최대 7개)</h3>
+              <button onClick={() => setIsShortcutModalOpen(false)} className="text-zinc-400 hover:text-zinc-900 transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              {ALL_SHORTCUTS.map(s => {
+                const Icon = s.icon;
+                const isSelected = selectedShortcutIds.includes(s.id);
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => {
+                      if (isSelected) {
+                        setSelectedShortcutIds(prev => prev.filter(id => id !== s.id));
+                      } else {
+                        if (selectedShortcutIds.length >= 7) {
+                          alert("최대 7개까지만 선택할 수 있습니다.");
+                          return;
+                        }
+                        setSelectedShortcutIds(prev => [...prev, s.id]);
+                      }
+                    }}
+                    className={cn(
+                      "flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all bg-transparent",
+                      isSelected ? "border-transparent" : "border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                    )}
+                  >
+                    <div className="relative">
+                      {isSelected && (
+                        <div className="absolute -top-2 -left-2 w-5 h-5 bg-zinc-500 text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-sm z-10">
+                          {selectedShortcutIds.indexOf(s.id) + 1}
+                        </div>
+                      )}
+                      <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center border-2 transition-opacity", s.color, isSelected ? "opacity-100" : "opacity-50")}>
+                        <Icon size={16} />
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold">{s.title}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => setIsShortcutModalOpen(false)}
+              className="w-full py-4 bg-brand-navy text-white font-black rounded-xl hover:bg-brand-navy-light transition-colors"
+            >
+              확인
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Poll Bottom Sheet (Mobile) ─── */}
+      {isPollSheetOpen && pendingPolls.length > 0 && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/40 z-50 sm:hidden animate-fade-in"
+            onClick={() => setIsPollSheetOpen(false)}
+          />
+          {/* Sheet */}
+          <div className="fixed bottom-0 left-0 right-0 z-50 sm:hidden animate-slide-up">
+            <div className="bg-white dark:bg-zinc-900 rounded-t-[2rem] shadow-2xl border-t border-zinc-200 dark:border-zinc-700 px-6 pt-4 pb-8" style={{ minHeight: '33vh' }}>
+              {/* Handle bar */}
+              <div className="flex justify-center mb-4">
+                <div className="w-10 h-1 bg-zinc-300 dark:bg-zinc-600 rounded-full" />
+              </div>
+
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 rounded-xl bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center text-violet-500">
+                  <BarChart3 size={16} />
+                </div>
+                <span className="text-xs font-bold text-violet-500 uppercase tracking-wider">참여하지 않은 투표 ({pendingPolls.length}건)</span>
+              </div>
+
+              <div className="space-y-3 max-h-[25vh] overflow-y-auto">
+                {pendingPolls.slice(0, 2).map((poll, index) => (
+                  <Link
+                    key={poll.id}
+                    href={`/admin/polls/${poll.id}`}
+                    onClick={() => setIsPollSheetOpen(false)}
+                    className={cn(
+                      "block rounded-2xl p-4 active:scale-[0.98] transition-all border",
+                      index === 0
+                        ? "bg-violet-50/50 dark:bg-violet-900/10 border-violet-100/50 dark:border-violet-800/20"
+                        : "bg-blue-50/50 dark:bg-blue-900/10 border-blue-100/50 dark:border-blue-800/20"
+                    )}
+                  >
+                    <h4 className="text-sm font-black text-zinc-900 dark:text-zinc-50 line-clamp-1 mb-1">
+                      {getPlainText(poll.title)}
+                    </h4>
+                    <p className="text-xs text-zinc-500 line-clamp-2 mb-2">
+                      {getPlainText(poll.description) || "투표에 참여해주세요."}
+                    </p>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-zinc-400">
+                        ~ {poll.endDate}
+                      </span>
+                      <span className="text-xs font-bold text-brand-navy dark:text-blue-400 flex items-center gap-1">
+                        투표하기 <ArrowUpRight size={12} />
+                      </span>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+
+              <div className="flex items-center justify-between mt-4">
+                <button
+                  onClick={() => {
+                    setIsPollSheetOpen(false);
+                    const now = new Date();
+                    const effectiveDate = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+                    const dateStr = `${effectiveDate.getFullYear()}-${String(effectiveDate.getMonth() + 1).padStart(2, '0')}-${String(effectiveDate.getDate()).padStart(2, '0')}`;
+                    localStorage.setItem('poll_sheet_hidden_date', dateStr);
+                  }}
+                  className="py-3 px-4 text-sm font-bold text-zinc-500 hover:text-zinc-700 transition-colors"
+                >
+                  오늘은 그만보기
+                </button>
+                <button
+                  onClick={() => setIsPollSheetOpen(false)}
+                  className="py-3 px-4 text-sm font-bold text-zinc-400 hover:text-zinc-600 transition-colors"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

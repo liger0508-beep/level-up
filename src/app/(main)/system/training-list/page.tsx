@@ -1,13 +1,16 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { Plus, Image as ImageIcon, Trash2, Edit2, Search, X, Dumbbell, Upload } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { fetchTrainingTemplates, saveTrainingTemplate, deleteTrainingTemplate, TrainingTemplate } from "@/lib/training-template-sync";
 import { uploadFile } from "@/lib/storage-sync";
 
 // ── Category visual config ──
 const categoryStyle: Record<string, { gradient: string; label: string }> = {
+    distance: { gradient: "from-emerald-400 to-teal-600", label: "거리" },
+    situation: { gradient: "from-orange-400 to-amber-600", label: "상황" },
     shot: { gradient: "from-emerald-400 to-teal-600", label: "SHOT" },
     pitch: { gradient: "from-teal-400 to-emerald-600", label: "PITCH" },
     bunker: { gradient: "from-orange-400 to-amber-600", label: "BUNKER" },
@@ -18,7 +21,7 @@ const categoryStyle: Record<string, { gradient: string; label: string }> = {
 };
 
 function CategoryIcon({ categoryId }: { categoryId: string }) {
-    const style = categoryStyle[categoryId] || categoryStyle.shot;
+    const style = categoryStyle[categoryId] || { gradient: "from-zinc-400 to-slate-600", label: "기타" };
 
     return (
         <div className={`w-full h-full flex items-center justify-center bg-gradient-to-br ${style.gradient} relative overflow-hidden`}>
@@ -48,19 +51,26 @@ interface TrainingCategory {
 
 // ── Initial Mock Data ──
 const categories: TrainingCategory[] = [
-    { id: "all", name: "All" },
-    { id: "shot", name: "Shot" },
-    { id: "pitch", name: "Pitch" },
-    { id: "bunker", name: "Bunker" },
-    { id: "approach", name: "Approach" },
-    { id: "putt", name: "Putt" },
-    { id: "physical", name: "Physical" },
-    { id: "etc", name: "Etc" },
+    { id: "all", name: "전체" },
+    { id: "distance", name: "거리별" },
+    { id: "situation", name: "상황별" },
 ];
 
 // Removed initialTemplates mock data
 
 export default function TrainingListPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-zinc-400">로딩 중...</div>}>
+            <TrainingListContent />
+        </Suspense>
+    );
+}
+
+function TrainingListContent() {
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const isSelectMode = searchParams.get("mode") === "select";
+
     const [activeTab, setActiveTab] = useState<string>("all");
     const [templates, setTemplates] = useState<TrainingTemplate[]>([]);
     const [searchQuery, setSearchQuery] = useState("");
@@ -105,7 +115,7 @@ export default function TrainingListPage() {
         setEditItem(null);
         setSelectedFile(null);
         setFormData({
-            categoryId: activeTab === "all" ? "shot" : activeTab,
+            categoryId: activeTab === "all" ? "distance" : activeTab,
             title: "",
             description: "",
             purpose: "",
@@ -138,6 +148,42 @@ export default function TrainingListPage() {
                 setTemplates(templates.filter(t => t.id !== id));
             } else {
                 alert("삭제에 실패했습니다.");
+            }
+        }
+    };
+
+    const handleSelectTemplate = (template: TrainingTemplate) => {
+        if (confirm(`'${template.title}' 훈련을 배정하시겠습니까?`)) {
+            const DRAFT_KEY = "gla_training_draft";
+            try {
+                const draftStr = sessionStorage.getItem(DRAFT_KEY);
+                const draft = draftStr ? JSON.parse(draftStr) : {};
+                
+                // Initialize arrays if they don't exist
+                if (!draft.selectedTemplates) draft.selectedTemplates = [];
+                if (!draft.templateSettings) draft.templateSettings = [];
+                
+                // Check if already selected
+                if (!draft.selectedTemplates.includes(template.id)) {
+                    draft.selectedTemplates.push(template.id);
+                    draft.templateSettings.push({
+                        id: template.id,
+                        title: template.title,
+                        description: template.description || "",
+                        purpose: template.purpose || "",
+                        goal: template.goal || "",
+                        termStart: draft.termStart || "",
+                        termEnd: draft.termEnd || "",
+                        totalCount: draft.totalCount || 1
+                    });
+                    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+                }
+                
+                // Go back to training create
+                router.push(`/training/create?ts=${Date.now()}#training-content-section`);
+            } catch (e) {
+                console.error("Failed to save to draft", e);
+                alert("훈련 배정 중 오류가 발생했습니다.");
             }
         }
     };
@@ -198,20 +244,35 @@ export default function TrainingListPage() {
                             <div className="flex items-center gap-2 mb-2">
                                 <Dumbbell size={24} className="text-brand-navy dark:text-brand-navy-light shrink-0" />
                                 <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 tracking-tight">
-                                    훈련 리스트 관리
+                                    {isSelectMode ? "훈련 컨텐츠 배정" : "훈련 리스트 관리"}
                                 </h1>
                             </div>
                             <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                                훈련 작성 시 코치가 선택할 수 있는 <b>훈련 항목(이미지 및 설명)</b> 프리셋을 관리합니다.
+                                {isSelectMode 
+                                    ? "작성 중인 훈련에 배정할 컨텐츠를 선택해주세요."
+                                    : "훈련 작성 시 코치가 선택할 수 있는 훈련 항목(이미지 및 설명) 프리셋을 관리합니다."
+                                }
                             </p>
                         </div>
-                        <button
-                            onClick={handleOpenAddModal}
-                            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-navy hover:bg-brand-navy-light text-white text-sm font-bold rounded-xl transition-colors shadow-sm shrink-0 whitespace-nowrap"
-                        >
-                            <Plus size={16} />
-                            항목 추가
-                        </button>
+                        <div className="flex items-center gap-2 shrink-0">
+                            {isSelectMode && (
+                                <button
+                                    onClick={() => router.push("/training/create")}
+                                    className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 text-sm font-bold rounded-xl transition-colors shadow-sm shrink-0 whitespace-nowrap"
+                                >
+                                    뒤로 가기
+                                </button>
+                            )}
+                            {!isSelectMode && (
+                                <button
+                                    onClick={handleOpenAddModal}
+                                    className="flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-navy hover:bg-brand-navy-light text-white text-sm font-bold rounded-xl transition-colors shadow-sm shrink-0 whitespace-nowrap"
+                                >
+                                    <Plus size={16} />
+                                    항목 추가
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
 
@@ -275,19 +336,30 @@ export default function TrainingListPage() {
                             </div>
 
                             {/* Actions */}
-                            <div className="flex items-center gap-1 pr-3 sm:pr-4 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button
-                                    onClick={() => handleOpenEditModal(template)}
-                                    className="p-2 hover:bg-brand-navy/10 hover:text-brand-navy text-zinc-400 rounded-lg transition-colors"
-                                >
-                                    <Edit2 size={15} />
-                                </button>
-                                <button
-                                    onClick={() => handleDelete(template.id)}
-                                    className="p-2 hover:bg-red-50 hover:text-red-500 text-zinc-400 rounded-lg transition-colors"
-                                >
-                                    <Trash2 size={15} />
-                                </button>
+                            <div className={`flex items-center gap-1 pr-3 sm:pr-4 shrink-0 transition-opacity ${isSelectMode ? "opacity-100" : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100"}`}>
+                                {isSelectMode ? (
+                                    <button
+                                        onClick={() => handleSelectTemplate(template)}
+                                        className="px-4 py-2 bg-brand-navy hover:bg-brand-navy-light text-white text-sm font-bold rounded-lg transition-colors shadow-sm"
+                                    >
+                                        배정
+                                    </button>
+                                ) : (
+                                    <>
+                                        <button
+                                            onClick={() => handleOpenEditModal(template)}
+                                            className="p-2 hover:bg-brand-navy/10 hover:text-brand-navy text-zinc-400 rounded-lg transition-colors"
+                                        >
+                                            <Edit2 size={15} />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(template.id)}
+                                            className="p-2 hover:bg-red-50 hover:text-red-500 text-zinc-400 rounded-lg transition-colors"
+                                        >
+                                            <Trash2 size={15} />
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         </div>
                     ))}

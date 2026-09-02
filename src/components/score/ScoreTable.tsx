@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import React from "react";
 import { cn } from "@/lib/utils";
+import { Trophy, Flag, ArrowRight } from "lucide-react";
 
 export interface ScoreData {
     id: string;
@@ -16,20 +17,32 @@ export interface ScoreData {
     completedHoles?: number;
     holeCount?: number;
     isFinal?: boolean;
+    relativeScore?: number;
+    createdAt?: string;
 }
 
 interface ScoreTableProps {
     scores: ScoreData[];
+    totalCount?: number;
 }
 
-export function ScoreTable({ scores }: ScoreTableProps) {
+export function ScoreTable({ scores, totalCount }: ScoreTableProps) {
     const router = useRouter();
+    const [selectedDraftScore, setSelectedDraftScore] = React.useState<ScoreData | null>(null);
 
     const getScoreColor = (score: number, holeCount: number = 18) => {
         const par = holeCount === 9 ? 36 : 72;
         if (score === par) return "text-zinc-900 dark:text-zinc-100";
         if (score < par) return "text-red-500 font-bold";
         return "text-blue-500 font-bold";
+    };
+
+    const getIconColor = (score: number, holeCount: number = 18, isFinal: boolean = true) => {
+        if (!isFinal) return "bg-zinc-50 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400";
+        const par = holeCount === 9 ? 36 : 72;
+        if (score === par) return "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400";
+        if (score < par) return "bg-red-50 text-red-500 dark:bg-red-500/10";
+        return "bg-blue-50 text-blue-500 dark:bg-blue-500/10";
     };
 
     return (
@@ -50,50 +63,48 @@ export function ScoreTable({ scores }: ScoreTableProps) {
                                 </div>
                             )}
                         <button
-                            onClick={() => router.push(`/scores/${score.id}`)}
+                            onClick={() => {
+                                if (score.isFinal === false) {
+                                    setSelectedDraftScore(score);
+                                } else {
+                                    sessionStorage.setItem("gla_scores_keep_alive", "true");
+                                    router.push(`/scores/${score.id}`);
+                                }
+                            }}
                             className={cn(
-                                "w-full text-left bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 border-l-4 rounded-xl pl-3 pr-4 py-3.5 transition-all active:scale-[0.98] hover:shadow-md hover:-translate-y-px",
-                                score.score < 72 ? "border-l-red-500" : score.score > 72 ? "border-l-blue-500" : "border-l-zinc-400"
+                                "w-full text-left rounded-[2.5rem] border py-4 px-6 transition-all active:scale-[0.98] hover:shadow-md",
+                                score.isFinal === false 
+                                    ? "bg-zinc-100 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-800" 
+                                    : "bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 shadow-sm hover:border-brand-navy/30"
                             )}
                         >
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-1.5 min-w-0">
-                                    <div className="w-[85px] shrink-0 flex items-center justify-start pr-1">
-                                        {score.isFinal === false ? (
-                                            <div className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 whitespace-nowrap min-w-[72px] justify-center">
-                                                <span className="text-[14px] font-black text-zinc-900 dark:text-zinc-50">
-                                                    {score.score}타
-                                                </span>
-                                                <span className="text-[10px] text-zinc-400 font-bold italic tracking-tighter">
-                                                    {score.holeCount === 9 ? (
-                                                        "(9H)"
-                                                    ) : (score.completedHoles !== undefined && score.completedHoles > 0 && score.completedHoles < 18 ? (
-                                                        `(${score.completedHoles}H)`
-                                                    ) : "(18H)")}
-                                                </span>
-                                            </div>
-                                        ) : (
-                                            <span className={cn("text-[14px] font-black flex items-center gap-1 pl-2", getScoreColor(score.score, score.holeCount))}>
-                                                {score.score}타
-                                                {score.holeCount === 9 && (
-                                                    <span className="text-[10px] text-zinc-400 font-bold italic tracking-tighter">(9H)</span>
-                                                )}
-                                            </span>
-                                        )}
+                            <div className="flex items-center gap-2">
+                                <div className={cn("w-8 h-8 rounded-full flex items-center justify-center shrink-0", getIconColor(score.score, score.holeCount, score.isFinal))}>
+                                    <Flag size={16} />
+                                </div>
+                                <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 truncate">
+                                    {score.playerName}
+                                </span>
+                            </div>
+
+                            <div className="flex items-end justify-between mt-3">
+                                <span className="text-[11px] font-bold text-zinc-400 shrink-0 mb-1 pl-[40px]">
+                                    {score.date.slice(5).replace("-", ".")} <span className="opacity-40 font-normal mx-0.5">|</span> {score.courseName} <span className="ml-1 tracking-tighter">({score.holeCount === 9 ? "9H" : (score.completedHoles !== undefined && score.completedHoles > 0 && score.completedHoles < 18 ? `${score.completedHoles}H` : "18H")})</span>
+                                </span>
+                                
+                                {score.isFinal === false ? (
+                                    <div className="flex items-center gap-1 mr-2">
+                                        <span className="text-[18px] font-black text-zinc-700 dark:text-zinc-300">
+                                            {score.relativeScore !== undefined ? (score.relativeScore > 0 ? `+${score.relativeScore}` : score.relativeScore === 0 ? "E" : score.relativeScore) : `${score.score}타`}
+                                        </span>
                                     </div>
-                                    <span className="mr-4 w-[1px] h-3 bg-zinc-200 dark:bg-zinc-700 shrink-0" />
-                                    <span className="text-[14px] font-bold text-zinc-900 dark:text-zinc-100 truncate">
-                                        {score.playerName}
-                                    </span>
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0 pl-3 min-w-0">
-                                    <span className="text-[11px] text-zinc-400 font-medium truncate max-w-[80px]">
-                                        {score.courseName}
-                                    </span>
-                                    <span className="text-[12px] text-zinc-500 font-bold shrink-0">
-                                        {score.date.slice(5).replace("-", ".")}
-                                    </span>
-                                </div>
+                                ) : (
+                                    <div className="flex items-center gap-1 mr-2">
+                                        <span className={cn("text-[18px] font-black", getScoreColor(score.score, score.holeCount))}>
+                                            {score.score}타
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                         </button>
                         </React.Fragment>
@@ -124,25 +135,38 @@ export function ScoreTable({ scores }: ScoreTableProps) {
                                         <tr><td colSpan={6} className="py-1"><div className="w-full h-px bg-zinc-200 dark:bg-zinc-700/50"></div></td></tr>
                                     )}
                                 <tr
-                                    onClick={() => router.push(`/scores/${score.id}`)}
-                                    className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer group"
+                                    onClick={() => {
+                                        if (score.isFinal === false) {
+                                            setSelectedDraftScore(score);
+                                        } else {
+                                            sessionStorage.setItem("gla_scores_keep_alive", "true");
+                                            router.push(`/scores/${score.id}`);
+                                        }
+                                    }}
+                                    className={cn(
+                                        "transition-colors cursor-pointer group",
+                                        score.isFinal === false ? "bg-zinc-100 dark:bg-zinc-800/50 hover:bg-zinc-200/50 dark:hover:bg-zinc-800" : "hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                                    )}
                                 >
                                     <td className="py-4 px-4 text-center text-zinc-400 dark:text-zinc-500 text-xs">
-                                        {scores.length - idx}
+                                        {(totalCount ?? scores.length) - idx}
                                     </td>
                                     <td className="py-4 px-4 text-center">
                                         {score.isFinal === false ? (
-                                            <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 whitespace-nowrap min-w-[70px] justify-center">
-                                                <span className="text-[14px] font-black text-zinc-900 dark:text-zinc-50">
-                                                    {score.score}타
-                                                </span>
-                                                <span className="text-[10px] text-zinc-400 font-bold italic tracking-tighter">
-                                                    {score.holeCount === 9 ? (
-                                                        "(9H)"
-                                                    ) : (score.completedHoles !== undefined && score.completedHoles > 0 && score.completedHoles < 18 ? (
-                                                        `(${score.completedHoles}H)`
-                                                    ) : "(18H)")}
-                                                </span>
+                                            <div className="inline-flex flex-col items-center gap-0.5">
+
+                                                <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 whitespace-nowrap min-w-[70px] justify-center">
+                                                    <span className="text-[14px] font-black text-zinc-900 dark:text-zinc-50">
+                                                        {score.relativeScore !== undefined ? (score.relativeScore > 0 ? `+${score.relativeScore}` : score.relativeScore === 0 ? "E" : score.relativeScore) : `${score.score}타`}
+                                                    </span>
+                                                    <span className="text-[10px] text-zinc-400 font-bold italic tracking-tighter">
+                                                        {score.holeCount === 9 ? (
+                                                            "(9H)"
+                                                        ) : (score.completedHoles !== undefined && score.completedHoles > 0 && score.completedHoles < 18 ? (
+                                                            `(${score.completedHoles}H)`
+                                                        ) : "(18H)")}
+                                                    </span>
+                                                </div>
                                             </div>
                                         ) : (
                                             <span className={cn("text-[14px] font-bold", getScoreColor(score.score, score.holeCount))}>
@@ -173,6 +197,43 @@ export function ScoreTable({ scores }: ScoreTableProps) {
                     </tbody>
                 </table>
             </div>
+
+            {selectedDraftScore && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm" onClick={() => setSelectedDraftScore(null)}>
+                    <div className="bg-white dark:bg-zinc-900 rounded-[2rem] shadow-xl overflow-hidden w-full max-w-sm flex border border-zinc-200 dark:border-zinc-800 animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                        <button 
+                            onClick={() => {
+                                sessionStorage.setItem("gla_scores_keep_alive", "true");
+                                router.push(`/scores/${selectedDraftScore.id}`);
+                                setSelectedDraftScore(null);
+                            }}
+                            className="flex-1 py-5 px-6 flex flex-col items-center justify-center border-r border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group"
+                        >
+                            <span className="text-[15px] font-bold text-zinc-800 dark:text-zinc-200 text-center leading-relaxed">
+                                중간점수<br />확인하기
+                            </span>
+                            <div className="mt-6 self-end w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-sm group-hover:bg-blue-700 transition-colors">
+                                <ArrowRight size={16} strokeWidth={3} />
+                            </div>
+                        </button>
+                        <button
+                            onClick={() => {
+                                sessionStorage.setItem("gla_scores_keep_alive", "true");
+                                router.push(`/scores/create?id=${selectedDraftScore.id}`);
+                                setSelectedDraftScore(null);
+                            }}
+                            className="flex-1 py-5 px-6 flex flex-col items-center justify-center hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors group"
+                        >
+                            <span className="text-[15px] font-bold text-zinc-800 dark:text-zinc-200 text-center leading-relaxed">
+                                이어서<br />작성하기
+                            </span>
+                            <div className="mt-6 self-end w-8 h-8 rounded-full bg-red-500 text-white flex items-center justify-center shadow-sm group-hover:bg-red-600 transition-colors">
+                                <ArrowRight size={16} strokeWidth={3} />
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            )}
         </>
     );
 }

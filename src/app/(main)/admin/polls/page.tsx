@@ -28,38 +28,120 @@ import {
 import { cn } from "@/lib/utils";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { DatePresets, DatePresetType } from "@/components/ui/DatePresets";
+import { createClient } from "@/lib/supabase/client";
 
 export default function VoteListPage() {
     const router = useRouter();
     const [polls, setPolls] = useState<Vote[]>([]);
+    const [totalPollCount, setTotalPollCount] = useState(0);
+    const [recentVote, setRecentVote] = useState<Vote | null>(null);
+    const [displayLimit, setDisplayLimit] = useState(20);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
     const [activeFilter, setActiveFilter] = useState<VoteType | "all">("all");
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
     const [activePreset, setActivePreset] = useState<DatePresetType>("custom");
+    const [userRole, setUserRole] = useState<string | null>(null);
+
+    // Helper to map DB row to Vote object
+    const mapPollRow = (dbPoll: any): Vote => ({
+        id: dbPoll.id,
+        type: dbPoll.type as VoteType,
+        branch: dbPoll.branch,
+        status: dbPoll.status as VoteStatus,
+        title: dbPoll.title,
+        description: dbPoll.description,
+        options: dbPoll.options,
+        startDate: dbPoll.start_date,
+        endDate: dbPoll.end_date,
+        author: dbPoll.users?.name || "알 수 없음",
+        authorId: dbPoll.author_id,
+        isImportant: dbPoll.is_important,
+        isRecurring: dbPoll.is_recurring,
+        totalParticipants: dbPoll.total_participants,
+        createdAt: dbPoll.created_at
+    });
 
     useEffect(() => {
-        getPolls()
-            .then(data => setPolls(data))
-            .catch(err => console.error(err))
-            .finally(() => setLoading(false));
+        const loadInitial = async () => {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const { data } = await supabase.from("users").select("role").eq("id", user.id).maybeSingle();
+                if (data) setUserRole(data.role);
+            }
+
+            // Fetch recent featured vote
+            let { data: recentVoteData } = await supabase
+                .from("polls")
+                .select(`*, users!polls_author_id_fkey(name)`)
+                .eq("is_important", true)
+                .eq("status", "ongoing")
+                .order("created_at", { ascending: false })
+                .limit(1);
+
+            if (!recentVoteData || recentVoteData.length === 0) {
+                const { data: fallbackData } = await supabase
+                    .from("polls")
+                    .select(`*, users!polls_author_id_fkey(name)`)
+                    .order("created_at", { ascending: false })
+                    .limit(1);
+                recentVoteData = fallbackData;
+            }
+
+            if (recentVoteData && recentVoteData.length > 0) {
+                setRecentVote(mapPollRow(recentVoteData[0]));
+            }
+        };
+        
+        loadInitial();
     }, []);
 
-    const filteredVotes = useMemo(() => {
-        return polls.filter((v) => {
-            const matchesSearch = v.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                                 v.author.toLowerCase().includes(searchTerm.toLowerCase());
-            const matchesFilter = activeFilter === "all" || v.type === activeFilter;
-            const matchesStart = !startDate || v.startDate >= startDate;
-            const matchesEnd = !endDate || v.endDate <= endDate;
-            return matchesSearch && matchesFilter && matchesStart && matchesEnd;
-        });
-    }, [polls, searchTerm, activeFilter, startDate, endDate]);
+    // Server-side Pagination & Filtering
+    useEffect(() => {
+        const fetchFilteredPolls = async () => {
+            setLoading(true);
+            const supabase = createClient();
+            let query = supabase
+                .from("polls")
+                .select(`*, users!polls_author_id_fkey(name)`, { count: 'exact' });
 
-    const recentVote = polls.length > 0 
-        ? (polls.find(v => v.isImportant && v.status === "ongoing") || polls[0])
-        : null;
+            if (activeFilter !== "all") {
+                query = query.ilike("type", `%${activeFilter}%`);
+            }
+
+            if (searchTerm) {
+                // author search requires a different approach if using joined table, but simple title search:
+                query = query.or(`title.ilike.%${searchTerm}%`);
+            }
+
+            if (startDate) query = query.gte("start_date", startDate);
+            if (endDate) query = query.lte("end_date", endDate);
+
+            query = query
+                .order("created_at", { ascending: false })
+                .limit(displayLimit);
+
+            const { data, count, error } = await query;
+            if (error || !data) {
+                setLoading(false);
+                return;
+            }
+
+            setTotalPollCount(count || 0);
+            setPolls(data.map(mapPollRow));
+            setLoading(false);
+        };
+
+        const debounceTimer = setTimeout(() => {
+            fetchFilteredPolls();
+        }, 300);
+
+        return () => clearTimeout(debounceTimer);
+    }, [activeFilter, searchTerm, startDate, endDate, displayLimit]);
+
+    // Client side filtering is now replaced by server-side filtering
 
     // Calculate top 3 options for the featured card
     const top3Options = recentVote ? [...recentVote.options]
@@ -84,13 +166,15 @@ export default function VoteListPage() {
                         투표
                     </h1>
                 </div>
-                <button
-                    onClick={() => router.push("/admin/polls/create")}
-                    className="bg-brand-red hover:bg-brand-red-dark text-white px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
-                >
-                    <Plus size={18} />
-                    작성
-                </button>
+                {(userRole === 'admin' || userRole === 'coach') && (
+                    <button
+                        onClick={() => router.push("/admin/polls/create")}
+                        className="bg-brand-red hover:bg-brand-red-dark text-white px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
+                    >
+                        <Plus size={18} />
+                        작성
+                    </button>
+                )}
             </div>
 
             {/* ── Type Filters ── */}
@@ -138,16 +222,23 @@ export default function VoteListPage() {
                     >
                         <div className="flex-1 w-full space-y-3">
                             <div className="flex items-center gap-2">
-                                <span className={cn(
-                                    "text-[10px] font-bold px-2 py-0.5 rounded-sm uppercase flex items-center gap-1",
-                                    VOTE_TYPE_COLORS[recentVote.type].bg,
-                                    VOTE_TYPE_COLORS[recentVote.type].text
-                                )}>
-                                    {VOTE_TYPE_LABELS[recentVote.type]}
-                                </span>
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-sm flex items-center gap-1 bg-zinc-100 text-zinc-500">
-                                    {recentVote.branch}
-                                </span>
+                                {recentVote.type.split(',').map(t => {
+                                    const styles = VOTE_TYPE_COLORS[t as VoteType] || VOTE_TYPE_COLORS['all'];
+                                    return (
+                                        <span key={t} className={cn(
+                                            "text-[10px] font-bold px-2 py-0.5 rounded-sm uppercase flex items-center gap-1",
+                                            styles.bg,
+                                            styles.text
+                                        )}>
+                                            {VOTE_TYPE_LABELS[t as VoteType]}
+                                        </span>
+                                    );
+                                })}
+                                {recentVote.branch.split(',').map(b => (
+                                    <span key={b} className="text-[10px] font-bold px-2 py-0.5 rounded-sm flex items-center gap-1 bg-zinc-100 text-zinc-500">
+                                        {b}
+                                    </span>
+                                ))}
                                 {recentVote.isImportant && (
                                     <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-sm">
                                         중요
@@ -179,16 +270,18 @@ export default function VoteListPage() {
                                                     )}>{i + 1}</span>
                                                     <span className="truncate max-w-[150px] sm:max-w-xs">{opt.text}</span>
                                                 </span>
-                                                <span className="font-bold text-zinc-800 dark:text-zinc-200 text-[11px]">{opt.votes}표 ({percentage}%)</span>
                                             </div>
-                                            <div className="h-1.5 w-full bg-zinc-100 dark:bg-zinc-800/80 rounded-full overflow-hidden">
+                                            <div className="relative h-5 w-full bg-zinc-100 dark:bg-zinc-800/80 rounded-full overflow-hidden flex items-center">
                                                 <div
                                                     className={cn(
-                                                        "h-full rounded-full transition-all duration-1000",
+                                                        "absolute left-0 top-0 h-full rounded-full transition-all duration-1000",
                                                         i === 0 ? "bg-indigo-300" : i === 1 ? "bg-slate-300" : "bg-orange-200"
                                                     )}
                                                     style={{ width: `${percentage}%` }}
                                                 />
+                                                <span className="absolute right-3 z-10 font-bold text-zinc-700 dark:text-zinc-200 text-[10px]">
+                                                    {opt.votes}표 ({percentage}%)
+                                                </span>
                                             </div>
                                         </div>
                                     );
@@ -263,7 +356,7 @@ export default function VoteListPage() {
                             조회 결과
                         </h2>
                         <span className="text-xs text-zinc-400 font-medium">
-                            ({filteredVotes.length}건)
+                            ({totalPollCount}건)
                         </span>
                     </div>
 
@@ -278,29 +371,37 @@ export default function VoteListPage() {
                 </div>
 
                 <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
-                    {filteredVotes.length > 0 ? (
+                    {polls.length > 0 ? (
                         <>
                             {/* ── Mobile Card Grid ── */}
                             <div className="flex flex-col gap-2 md:hidden">
-                                {filteredVotes.map((v) => {
-                                    const styles = VOTE_TYPE_COLORS[v.type];
+                                {polls.map((v) => {
+                                    const primaryType = v.type.split(',')[0] as VoteType;
+                                    const cardStyles = VOTE_TYPE_COLORS[primaryType] || VOTE_TYPE_COLORS['all'];
                                     return (
                                         <button
                                             key={v.id}
                                             onClick={() => router.push(`/admin/polls/${v.id}`)}
                                             className={cn(
                                                 "w-full text-left bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 border-l-4 rounded-xl px-4 py-3.5 hover:shadow-sm active:scale-[0.99] transition-all",
-                                                styles.border
+                                                cardStyles.border
                                             )}
                                         >
                                             <div className="flex items-center justify-between mb-2">
                                                 <div className="flex items-center gap-2">
-                                                    <span className={cn("shrink-0 inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide", styles.bg, styles.text)}>
-                                                        {VOTE_TYPE_LABELS[v.type]}
-                                                    </span>
-                                                    <span className="shrink-0 inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide bg-zinc-100 text-zinc-500">
-                                                        {v.branch}
-                                                    </span>
+                                                    {v.type.split(',').map(t => {
+                                                        const styles = VOTE_TYPE_COLORS[t as VoteType] || VOTE_TYPE_COLORS['all'];
+                                                        return (
+                                                            <span key={t} className={cn("shrink-0 inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide", styles.bg, styles.text)}>
+                                                                {VOTE_TYPE_LABELS[t as VoteType]}
+                                                            </span>
+                                                        );
+                                                    })}
+                                                    {v.branch.split(',').map(b => (
+                                                        <span key={b} className="shrink-0 inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide bg-zinc-100 text-zinc-500">
+                                                            {b}
+                                                        </span>
+                                                    ))}
                                                     {v.isImportant && (
                                                         <span className="text-[10px] font-bold text-red-500 border border-red-200 px-1.5 py-0.5 rounded bg-red-50">중요</span>
                                                     )}
@@ -342,8 +443,7 @@ export default function VoteListPage() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                                        {filteredVotes.map((v, idx) => {
-                                            const styles = VOTE_TYPE_COLORS[v.type];
+                                        {polls.map((v, idx) => {
                                             return (
                                                 <tr
                                                     key={v.id}
@@ -351,17 +451,28 @@ export default function VoteListPage() {
                                                     className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer"
                                                 >
                                                     <td className="py-3.5 px-4 text-center text-zinc-500 dark:text-zinc-500 whitespace-nowrap">
-                                                        {filteredVotes.length - idx}
+                                                        {totalPollCount - idx}
                                                     </td>
                                                     <td className="py-3.5 px-4 text-center">
-                                                        <span className={cn("inline-flex items-center justify-center w-16 px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide", styles.bg, styles.text)}>
-                                                            {VOTE_TYPE_LABELS[v.type]}
-                                                        </span>
+                                                        <div className="flex items-center justify-center gap-1 flex-wrap">
+                                                            {v.type.split(',').map(t => {
+                                                                const styles = VOTE_TYPE_COLORS[t as VoteType] || VOTE_TYPE_COLORS['all'];
+                                                                return (
+                                                                    <span key={t} className={cn("inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide", styles.bg, styles.text)}>
+                                                                        {VOTE_TYPE_LABELS[t as VoteType]}
+                                                                    </span>
+                                                                );
+                                                            })}
+                                                        </div>
                                                     </td>
                                                     <td className="py-3.5 px-4 text-center">
-                                                        <span className="inline-flex items-center justify-center w-16 px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                                                            {v.branch}
-                                                        </span>
+                                                        <div className="flex items-center justify-center gap-1 flex-wrap">
+                                                            {v.branch.split(',').map(b => (
+                                                                <span key={b} className="inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                                                                    {b}
+                                                                </span>
+                                                            ))}
+                                                        </div>
                                                     </td>
                                                     <td className="py-3.5 px-4 text-center">
                                                         <div className="flex items-center justify-center gap-2">
@@ -393,6 +504,17 @@ export default function VoteListPage() {
                                     </tbody>
                                 </table>
                             </div>
+                            
+                            {totalPollCount > polls.length && (
+                                <div className="mt-8 flex justify-center">
+                                    <button
+                                        onClick={() => setDisplayLimit(prev => prev + 20)}
+                                        className="px-8 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all active:scale-95 shadow-sm"
+                                    >
+                                        더 보기 ({totalPollCount - polls.length}건 남음)
+                                    </button>
+                                </div>
+                            )}
                         </>
                     ) : (
                         <div className="flex flex-col items-center justify-center py-20 text-zinc-400">

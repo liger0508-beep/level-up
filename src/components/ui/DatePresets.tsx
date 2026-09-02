@@ -15,19 +15,19 @@ interface DatePresetsProps {
 export function DatePresets({ onPresetChange, activePreset, className }: DatePresetsProps) {
     const applyPreset = (preset: "monthly" | "weekly" | "today") => {
         const now = new Date();
+        const end = format(now, "yyyy-MM-dd");
         let start = "";
-        let end = "";
 
         if (preset === "monthly") {
-            start = format(startOfMonth(now), "yyyy-MM-dd");
-            end = format(endOfMonth(now), "yyyy-MM-dd");
+            const past = new Date(now);
+            past.setDate(now.getDate() - 30);
+            start = format(past, "yyyy-MM-dd");
         } else if (preset === "weekly") {
-            start = format(startOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd");
-            end = format(endOfWeek(now, { weekStartsOn: 1 }), "yyyy-MM-dd");
+            const past = new Date(now);
+            past.setDate(now.getDate() - 7);
+            start = format(past, "yyyy-MM-dd");
         } else {
-            const todayStr = format(now, "yyyy-MM-dd");
-            start = todayStr;
-            end = todayStr;
+            start = end;
         }
         onPresetChange(start, end, preset);
     };
@@ -45,7 +45,6 @@ export function DatePresets({ onPresetChange, activePreset, className }: DatePre
             <div className="flex items-center bg-white dark:bg-zinc-900 p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm">
                 <button onClick={() => applyPreset("monthly")} className={btnClass("monthly")}>월간</button>
                 <button onClick={() => applyPreset("weekly")} className={btnClass("weekly")}>주간</button>
-                <button onClick={() => applyPreset("today")} className={btnClass("today")}>오늘</button>
             </div>
         </div>
     );

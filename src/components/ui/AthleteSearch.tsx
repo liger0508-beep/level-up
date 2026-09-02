@@ -11,6 +11,7 @@ interface AthleteSearchProps {
     selectedNames: string[];
     placeholder?: string;
     className?: string;
+    inputClassName?: string;
     showChips?: boolean;
     multi?: boolean;
 }
@@ -32,6 +33,7 @@ export function AthleteSearch({
     selectedNames = [],
     placeholder = "선수 이름을 입력하세요...",
     className = "",
+    inputClassName = "",
     showChips = true,
     multi = true,
 }: AthleteSearchProps) {
@@ -58,12 +60,39 @@ export function AthleteSearch({
     const suggestions = useMemo(() => {
         if (!query.trim()) return [];
         const normalizedQuery = query.toLowerCase();
-        const chosungQuery = getChosung(normalizedQuery);
-        
+
         return allAthletes.filter(a => {
             const normalizedA = a.toLowerCase();
-            const chosungA = getChosung(normalizedA);
-            return normalizedA.includes(normalizedQuery) || chosungA.includes(chosungQuery);
+            if (normalizedA.includes(normalizedQuery)) return true;
+
+            const cho = ["ㄱ", "ㄲ", "ㄴ", "ㄷ", "ㄸ", "ㄹ", "ㅁ", "ㅂ", "ㅃ", "ㅅ", "ㅆ", "ㅇ", "ㅈ", "ㅉ", "ㅊ", "ㅋ", "ㅌ", "ㅍ", "ㅎ"];
+            const getCho = (char: string) => {
+                const code = char.charCodeAt(0) - 44032;
+                if (code > -1 && code < 11172) return cho[Math.floor(code / 588)];
+                return char;
+            };
+
+            for (let i = 0; i <= normalizedA.length - normalizedQuery.length; i++) {
+                let match = true;
+                for (let j = 0; j < normalizedQuery.length; j++) {
+                    const qChar = normalizedQuery[j];
+                    const tChar = normalizedA[i + j];
+
+                    if (/[ㄱ-ㅎ]/.test(qChar)) {
+                        if (getCho(tChar) !== qChar) {
+                            match = false;
+                            break;
+                        }
+                    } else {
+                        if (qChar !== tChar) {
+                            match = false;
+                            break;
+                        }
+                    }
+                }
+                if (match) return true;
+            }
+            return false;
         });
     }, [allAthletes, query]);
 
@@ -72,37 +101,44 @@ export function AthleteSearch({
             if (!selectedNames.includes(name)) {
                 onSelect(name);
             }
+            setQuery("");
         } else {
             onSelect(name);
+            if (!showChips) {
+                setQuery(name);
+            } else {
+                setQuery("");
+            }
         }
-        setQuery("");
         setIsOpen(false);
     };
 
+    // If external selectedNames changes (e.g. initial load or parent state change) and showChips is false, update query
+    useEffect(() => {
+        if (!multi && !showChips && selectedNames.length > 0) {
+            setQuery(selectedNames[0]);
+        }
+    }, [selectedNames, multi, showChips]);
+
     const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === "Enter" && suggestions.length > 0) {
+        if (e.key === "Enter") {
             e.preventDefault();
-            handleSelect(suggestions[0]);
+            const trimmedQuery = query.trim();
+            if (!trimmedQuery) return;
+
+            // Try to find an exact match first
+            const exactMatch = allAthletes.find(a => a.toLowerCase() === trimmedQuery.toLowerCase());
+            if (exactMatch) {
+                handleSelect(exactMatch);
+            } else if (suggestions.length > 0) {
+                // If no exact match, use the first suggestion
+                handleSelect(suggestions[0]);
+            }
         }
     };
 
     return (
         <div className={cn("relative w-full", className)} ref={dropdownRef}>
-            {/* Selected Chips (Optional) */}
-            {showChips && selectedNames.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-2">
-                    {selectedNames.map((name) => (
-                        <span key={name} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 text-xs font-medium border border-blue-200 dark:border-blue-800">
-                            {name}
-                            <button type="button" onClick={() => onRemove?.(name)}
-                                className="hover:text-blue-600 dark:hover:text-blue-100 transition-colors">
-                                <X size={12} />
-                            </button>
-                        </span>
-                    ))}
-                </div>
-            )}
-
             {/* Input Area */}
             <div className="relative group">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-blue-500 transition-colors" size={16} />
@@ -118,9 +154,27 @@ export function AthleteSearch({
                     }}
                     onKeyDown={handleKeyDown}
                     placeholder={placeholder}
-                    className="w-full pl-9 pr-4 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 transition-all font-medium"
+                    className={cn(
+                        "w-full pl-9 pr-4 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-500 transition-all font-medium",
+                        inputClassName
+                    )}
                 />
             </div>
+
+            {/* Selected Chips (Optional) */}
+            {showChips && selectedNames.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                    {selectedNames.map((name) => (
+                        <span key={name} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 text-xs font-medium border border-blue-200 dark:border-blue-800">
+                            {name}
+                            <button type="button" onClick={() => onRemove?.(name)}
+                                className="hover:text-blue-600 dark:hover:text-blue-100 transition-colors">
+                                <X size={12} />
+                            </button>
+                        </span>
+                    ))}
+                </div>
+            )}
 
             {/* Dropdown suggestions */}
             {isOpen && query.trim() !== "" && (

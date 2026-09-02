@@ -3,13 +3,16 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
-import { BookOpen, ChevronLeft, ChevronRight, MoreVertical, Calendar, Download, AlertCircle, MessageSquare, Send, Flag, MapPin, User, CheckCircle2, Edit2, Trash2, Paperclip, X } from "lucide-react";
+import { Edit2, Trash2, ChevronLeft, ChevronRight, MoreVertical, CheckCircle2, User, Flag, MessageSquare, Send, Calendar, Clock, BookOpen, FileText, MapPin, Paperclip, X, Upload, Video } from "lucide-react";
+import { FileUploadButton } from "@/components/ui/FileUploadButton";
+import { PageTitle, SectionTitle, BodyText, Caption, Badge } from "@/components/ui/Typography";
 import Image from "next/image";
 
 import { createClient } from "@/lib/supabase/client";
 import { fetchLessonTemplates, LessonTemplate } from "@/lib/lesson-template-sync";
 import { parseMediaUrls, fetchComments, saveComment, updateComment, deleteComment, AnalysisComment } from "@/lib/analysis-sync";
 import { cn } from "@/lib/utils";
+import { CustomVideoPlayer } from "@/components/ui/CustomVideoPlayer";
 
 export default function LessonDetailPage() {
     const router = useRouter();
@@ -23,13 +26,24 @@ export default function LessonDetailPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [comments, setComments] = useState<AnalysisComment[]>([]);
     const [dbTemplates, setDbTemplates] = useState<LessonTemplate[]>([]);
-    const [currentUser, setCurrentUser] = useState<{ id: string; name: string } | null>(null);
+    const [currentUser, setCurrentUser] = useState<{ id: string; name: string; role?: string } | null>(null);
+    const [directorComment, setDirectorComment] = useState("");
+    const [isEditingDirectorComment, setIsEditingDirectorComment] = useState(false);
+    const [directorCommentInput, setDirectorCommentInput] = useState("");
+
+    const [isCorrectionFormOpen, setIsCorrectionFormOpen] = useState(false);
+    const [correctionContent, setCorrectionContent] = useState("");
+    const [correctionFiles, setCorrectionFiles] = useState<File[]>([]);
+    const [isSubmittingCorrection, setIsSubmittingCorrection] = useState(false);
 
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [editingCommentText, setEditingCommentText] = useState("");
     const [isUpdatingComment, setIsUpdatingComment] = useState(false);
 
     useEffect(() => {
+        // 모바일 크롬 등에서 이전 페이지의 스크롤 위치가 유지되는 현상 방지
+        window.scrollTo({ top: 0, left: 0, behavior: "instant" as any });
+
         function handleClickOutside(event: MouseEvent) {
             if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
                 setIsMenuOpen(false);
@@ -64,65 +78,144 @@ export default function LessonDetailPage() {
             if (!id) return;
             setIsLoading(true);
             const supabase = createClient();
-            
-            try {
-                const { data: { user } } = await supabase.auth.getUser();
-                if (user) {
-                    setCurrentUser({ id: user.id, name: user.user_metadata?.name || 'User' });
-                }
 
-                // 1. Fetch lesson record
-                const { data, error } = await supabase
+            try {
+                // 1. Kick off all independent queries in parallel
+                const userPromise = supabase.auth.getUser();
+                const recordPromise = supabase
                     .from("records")
                     .select(`
                         id,
+                        user_id,
                         type,
                         category,
                         title,
                         content,
                         media_urls,
+                        is_corrected,
+                        correction_content,
+                        correction_media,
                         created_at,
-                        user:users!records_user_id_fkey(name),
-                        coach:users!records_coach_id_fkey(name)
+                        coach_id,
+                        connected_lesson_id,
+                        user:users!records_user_id_fkey(id, name),
+                        coach:users!records_coach_id_fkey(id, name)
                     `)
                     .eq("id", id)
                     .single();
-                
-                if (error) throw error;
 
-                // 2. Fetch comments and templates in parallel
-                const [commentsData, templatesData] = await Promise.all([
-                    fetchComments(id as string),
-                    fetchLessonTemplates()
+                const commentsPromise = fetchComments(id as string);
+                const templatesPromise = fetchLessonTemplates();
+
+                const [userRes, recordRes, commentsData, templatesData] = await Promise.all([
+                    userPromise,
+                    recordPromise,
+                    commentsPromise,
+                    templatesPromise
                 ]);
+
+                // Load user profile non-blocking
+                if (userRes.data?.user) {
+                    supabase.from("users").select("role, name").eq("id", userRes.data.user.id).single().then(({ data: profile }) => {
+                        if (profile) {
+                            setCurrentUser({ id: userRes.data.user.id, name: profile.name || 'User', role: profile.role });
+                        }
+                    });
+                }
+
+                if (recordRes.error) throw recordRes.error;
+                const data = recordRes.data;
 
                 setComments(commentsData);
                 setDbTemplates(templatesData);
 
-                // 3. Parse media_urls
+                // 3. Parse media_urls and split content
                 const allMedia = parseMediaUrls(data.media_urls);
-                const mediaFiles = allMedia.filter(url => url.startsWith('http')).map(url => ({
+                const beforeMediaFiles = allMedia.filter(url => url.startsWith('http')).map(url => ({
                     type: url.match(/\.(mp4|mov|webm)$/i) ? 'video' : 'image',
                     url
                 }));
+                const afterMediaFiles = allMedia.filter(url => url.startsWith('after:http')).map(url => {
+                    const actualUrl = url.replace('after:', '');
+                    return {
+                        type: actualUrl.match(/\.(mp4|mov|webm)$/i) ? 'video' : 'image',
+                        url: actualUrl
+                    };
+                });
                 const templateIds = allMedia
                     .filter(url => url.startsWith('template:'))
                     .map(url => url.replace('template:', ''));
 
                 const templates = templatesData.filter(t => templateIds.includes(t.id));
 
+                let rawContent = data.content || "";
+                let parsedDirectorComment = "";
+                const dIndex = rawContent.indexOf("[감독 코멘트]");
+                if (dIndex !== -1) {
+                    parsedDirectorComment = rawContent.substring(dIndex + 8).trim();
+                    rawContent = rawContent.substring(0, dIndex).trim();
+                }
+
+                setDirectorComment(parsedDirectorComment);
+                setDirectorCommentInput(parsedDirectorComment);
+
+                let beforeContent = rawContent;
+                let afterContent = "";
+                const afterSplitIndex = beforeContent.indexOf("[교정 후]");
+                if (afterSplitIndex !== -1) {
+                    afterContent = beforeContent.substring(afterSplitIndex + 7).trim();
+                    beforeContent = beforeContent.substring(0, afterSplitIndex).trim();
+                }
+
+                let parentGoalContent = "";
+                let isConnectedLesson = false;
+                let isParentCoreLesson = false;
+
+                if (data.connected_lesson_id) {
+                    const [parentLessonRes, childCountRes] = await Promise.all([
+                        supabase.from("records").select("content").eq("id", data.connected_lesson_id).single(),
+                        supabase.from("records").select("id", { count: "exact", head: true }).eq("connected_lesson_id", data.connected_lesson_id)
+                    ]);
+
+                    if (parentLessonRes.data && parentLessonRes.data.content) {
+                        let gContent = parentLessonRes.data.content;
+                        const gDIndex = gContent.indexOf("[감독 코멘트]");
+                        if (gDIndex !== -1) gContent = gContent.substring(0, gDIndex).trim();
+                        const gAfterIndex = gContent.indexOf("[교정 후]");
+                        if (gAfterIndex !== -1) gContent = gContent.substring(0, gAfterIndex).trim();
+                        parentGoalContent = gContent;
+                        isConnectedLesson = true;
+                    }
+
+                    if (childCountRes.count && childCountRes.count >= 2) {
+                        isParentCoreLesson = true;
+                    }
+                }
+
                 setLesson({
                     id: data.id,
+                    coach_id: data.coach_id,
                     writer: (data.coach as any)?.[0]?.name || (data.coach as any)?.name || "Unknown",
                     player: (data.user as any)?.[0]?.name || (data.user as any)?.name || "Unknown",
                     type: data.category,
                     typeLabel: data.category?.toUpperCase(),
-                    date: data.created_at?.split('T')[0],
-                    time: data.created_at?.split('T')[1]?.slice(0, 5),
+                    date: ((data.created_at) ? new Date(data.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }) : ""),
+                    time: ((data.created_at) ? new Date(data.created_at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' }) : "09:00"),
                     title: data.title || "제목 없음",
-                    content: data.content || "",
+                    content: beforeContent,
+                    afterContent: afterContent,
+                    parentGoalContent,
                     selectedImages: templates.map(t => ({ url: t.imageUrl, title: t.title })),
-                    media: mediaFiles,
+                    media: beforeMediaFiles,
+                    afterMedia: afterMediaFiles,
+                    isConnectedLesson,
+                    isParentCoreLesson,
+                    is_corrected: data.is_corrected,
+                    correction_content: data.correction_content,
+                    correction_media: (data.correction_media || []).map((url: string) => ({
+                        type: url.match(/\.(mp4|mov|webm)$/i) ? 'video' : 'image',
+                        url
+                    })),
                 });
             } catch (err) {
                 console.error("Failed to fetch lesson detail:", err);
@@ -134,6 +227,75 @@ export default function LessonDetailPage() {
         fetchData();
     }, [id]);
 
+    const handleSaveDirectorComment = async () => {
+        try {
+            const { updateLessonRecord } = await import("@/lib/lesson-sync");
+
+            let newContent = lesson.content;
+            if (lesson.afterContent) {
+                newContent += `\n\n[교정 후]\n${lesson.afterContent}`;
+            }
+            if (directorCommentInput.trim()) {
+                newContent += `\n\n[감독 코멘트]\n${directorCommentInput.trim()}`;
+            }
+
+            await updateLessonRecord(id as string, {
+                content: newContent
+            });
+
+            if (directorCommentInput.trim() && !directorComment && lesson.coach_id && lesson.coach_id !== currentUser?.id) {
+                const supabase = createClient();
+                const todayStr = new Date().toISOString().split('T')[0];
+                await supabase.from("todos").insert({
+                    user_id: lesson.coach_id,
+                    assigner_id: currentUser?.id,
+                    title: `[${lesson.player}] 감독 코멘트 확인`,
+                    content: `[${lesson.typeLabel}] 레슨에 감독 코멘트가 작성되었습니다.\n\n코멘트 내용: ${directorCommentInput.trim()}`,
+                    due_date: todayStr,
+                    is_completed: false,
+                    priority: "high"
+                });
+            }
+
+            setDirectorComment(directorCommentInput.trim());
+            setIsEditingDirectorComment(false);
+        } catch (e) {
+            alert("저장에 실패했습니다.");
+        }
+    };
+
+    const handleCorrectionSubmit = async () => {
+        if (!correctionContent.trim() && correctionFiles.length === 0) return;
+        setIsSubmittingCorrection(true);
+        try {
+            const { updateLessonRecord } = await import("@/lib/lesson-sync");
+            let uploadedUrls: string[] = [];
+            if (correctionFiles.length > 0) {
+                const { uploadFiles } = await import("@/lib/storage-sync");
+                uploadedUrls = await uploadFiles(correctionFiles, 'records');
+            }
+            await updateLessonRecord(id as string, {
+                is_corrected: true,
+                correction_content: correctionContent,
+                correction_media: uploadedUrls
+            });
+            setLesson((prev: any) => ({
+                ...prev,
+                is_corrected: true,
+                correction_content: correctionContent,
+                correction_media: uploadedUrls.map((url: string) => ({
+                    type: url.match(/\.(mp4|mov|webm)$/i) ? 'video' : 'image',
+                    url
+                }))
+            }));
+            setIsCorrectionFormOpen(false);
+        } catch (e) {
+            alert("저장에 실패했습니다.");
+        } finally {
+            setIsSubmittingCorrection(false);
+        }
+    };
+
     const [newComment, setNewComment] = useState("");
     const [isSubmittingComment, setIsSubmittingComment] = useState(false);
     const [commentFile, setCommentFile] = useState<File | null>(null);
@@ -141,6 +303,7 @@ export default function LessonDetailPage() {
     const commentFileRef = useRef<HTMLInputElement>(null);
     const carouselRef = useRef<HTMLDivElement>(null);
     const contentCarouselRef = useRef<HTMLDivElement>(null);
+    const afterCarouselRef = useRef<HTMLDivElement>(null);
 
     const handleCommentFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0] ?? null;
@@ -163,6 +326,16 @@ export default function LessonDetailPage() {
         if (carouselRef.current) {
             const scrollAmount = carouselRef.current.clientWidth;
             carouselRef.current.scrollBy({
+                left: direction === "left" ? -scrollAmount : scrollAmount,
+                behavior: "smooth"
+            });
+        }
+    };
+
+    const scrollAfterCarousel = (direction: "left" | "right") => {
+        if (afterCarouselRef.current) {
+            const scrollAmount = afterCarouselRef.current.clientWidth;
+            afterCarouselRef.current.scrollBy({
                 left: direction === "left" ? -scrollAmount : scrollAmount,
                 behavior: "smooth"
             });
@@ -267,9 +440,7 @@ export default function LessonDetailPage() {
                         </button>
                         <div className="flex items-center gap-2">
                             <BookOpen size={18} className="text-brand-navy dark:text-brand-navy-light shrink-0" />
-                            <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
-                                레슨 상세
-                            </h1>
+                            <PageTitle className="text-lg">레슨 상세</PageTitle>
                         </div>
                     </div>
                     <div className="relative" ref={menuRef}>
@@ -308,19 +479,19 @@ export default function LessonDetailPage() {
                 <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-4">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold px-3 py-1 rounded-full bg-brand-navy dark:bg-brand-navy-light text-white uppercase tracking-wider">
+                            <Badge variant="zinc" className="bg-zinc-800 text-white dark:bg-zinc-700">
                                 {lesson.typeLabel}
-                            </span>
-                             <span className="text-sm font-medium text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5">
+                            </Badge>
+                            <Caption className="flex items-center gap-1.5">
                                 <Calendar size={14} />
                                 {lesson.date} {lesson.time}
-                            </span>
+                            </Caption>
                         </div>
                     </div>
 
-                    <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-zinc-50 truncate" title={derivedTitle}>
+                    <SectionTitle>
                         {derivedTitle}
-                    </h2>
+                    </SectionTitle>
 
                     <div className="flex items-center gap-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
                         <div className="flex items-center gap-2 flex-1">
@@ -328,8 +499,8 @@ export default function LessonDetailPage() {
                                 <User size={16} />
                             </div>
                             <div>
-                                <p className="text-[10px] text-zinc-500">담당 코치</p>
-                                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{lesson.writer}</p>
+                                <p className="text-[10px] text-zinc-500">작성자</p>
+                                <p className="font-semibold text-zinc-900 dark:text-zinc-100">{lesson.writer}</p>
                             </div>
                         </div>
                         <div className="w-px h-8 bg-zinc-200 dark:bg-zinc-800"></div>
@@ -345,119 +516,199 @@ export default function LessonDetailPage() {
                     </div>
                 </section>
 
-                {/* ── 3. Hero Media Gallery (Swipeable, Unified Images & Videos) ── */}
-                {lesson.media && lesson.media.length > 0 && (
-                    <section className="bg-transparent relative group">
-                        <div
-                            ref={carouselRef}
-                            className="flex overflow-x-auto snap-x snap-mandatory gap-4 pb-2 scrollbar-hide"
-                        >
-                            {lesson.media.map((item: any, idx: number) => (
-                                <div key={idx} className="shrink-0 w-full aspect-[4/5] sm:aspect-[4/3] snap-center rounded-3xl overflow-hidden shadow-sm relative border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
-                                    {item.type === "video" ? (
-                                        <video
-                                            src={item.url}
-                                            controls
-                                            playsInline
-                                            className="w-full h-full object-contain"
-                                        />
-                                    ) : (
-                                        <img
-                                            src={item.url}
-                                            alt={`Lesson Media ${idx + 1}`}
-                                            className="w-full h-full object-contain"
-                                        />
-                                    )}
-                                    {lesson.media.length > 1 && (
-                                        <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-sm text-white text-xs font-semibold px-3 py-1.5 rounded-full z-10 pointer-events-none">
-                                            {idx + 1} / {lesson.media.length}
-                                        </div>
-                                    )}
-                                </div>
-                            ))}
+
+
+                {/* ── 2.5 감독 코멘트 ── */}
+                {directorComment && (
+                    <div className="space-y-4 pt-2">
+                        <div className="flex items-center justify-between px-1">
+                            <SectionTitle>
+                                <FileText size={20} className="text-brand-navy" /> 감독 코멘트
+                            </SectionTitle>
+                            {currentUser?.role && ["admin", "manager"].includes(currentUser.role) && (
+                                <button
+                                    onClick={() => {
+                                        setDirectorCommentInput(directorComment);
+                                        setIsEditingDirectorComment(true);
+                                        setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 100);
+                                    }}
+                                    className="text-xs font-bold text-zinc-500 hover:text-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 rounded-lg transition-colors"
+                                >
+                                    수정
+                                </button>
+                            )}
                         </div>
-                        {/* Navigation Arrows (Desktop) */}
-                        {lesson.media.length > 1 && (
-                            <>
-                                <button
-                                    onClick={() => scrollCarousel("left")}
-                                    className="hidden sm:flex absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 dark:bg-black/60 backdrop-blur-sm hover:bg-white dark:hover:bg-black text-zinc-800 dark:text-zinc-200 rounded-full items-center justify-center shadow-lg transition-all opacity-0 group-hover:opacity-100 z-10"
-                                >
-                                    <ChevronLeft size={24} />
-                                </button>
-                                <button
-                                    onClick={() => scrollCarousel("right")}
-                                    className="hidden sm:flex absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 dark:bg-black/60 backdrop-blur-sm hover:bg-white dark:hover:bg-black text-zinc-800 dark:text-zinc-200 rounded-full items-center justify-center shadow-lg transition-all opacity-0 group-hover:opacity-100 z-10"
-                                >
-                                    <ChevronRight size={24} />
-                                </button>
-                            </>
-                        )}
-                    </section>
+
+                        <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm">
+                            <BodyText className="whitespace-pre-line">
+                                {directorComment}
+                            </BodyText>
+                        </section>
+                    </div>
                 )}
 
-                {/* ── 4. Content ── */}
-                <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-4">
-                    <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100 border-b border-zinc-100 dark:border-zinc-800/50 pb-3">
-                        레슨 내용
-                    </h3>
-                    <div className="flex flex-col sm:flex-row gap-5">
-                        {lesson.selectedImages && lesson.selectedImages.length > 0 && (
-                            <div className="shrink-0 w-full sm:w-1/3 aspect-[4/3] sm:aspect-square rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 relative group/content">
+                {/* ── 2.2 부모 목표 내용 (Parent Goal / Connected Lesson) ── */}
+                {lesson.parentGoalContent && (
+                    <div className="space-y-4 pt-2">
+                        <SectionTitle className="px-1">
+                            <Flag size={20} className="text-brand-red" /> {lesson.isParentCoreLesson ? "핵심 레슨" : (lesson.isConnectedLesson ? "연결 레슨 내용" : "목표")}
+                        </SectionTitle>
+                        <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm">
+                            <BodyText className="whitespace-pre-line">
+                                {lesson.parentGoalContent}
+                            </BodyText>
+                        </section>
+                    </div>
+                )}
+
+                {/* ── 3. 교정전 (Before) ── */}
+                {(lesson.media?.length > 0 || lesson.selectedImages?.length > 0) && (
+                    <div className="space-y-4">
+                        <SectionTitle className="px-1">
+                            <CheckCircle2 size={20} className="text-zinc-400" /> 교정전
+                        </SectionTitle>
+
+                        {/* Before Media Gallery */}
+                        {lesson.media && lesson.media.length > 0 && (
+                            <section className="bg-transparent relative group">
                                 <div
-                                    ref={contentCarouselRef}
-                                    className="flex overflow-x-auto snap-x snap-mandatory h-full scrollbar-hide"
+                                    ref={carouselRef}
+                                    className="flex overflow-x-auto snap-x snap-mandatory gap-4 pb-2 scrollbar-hide"
                                 >
-                                    {lesson.selectedImages.map((img: { url: string; title: string }, idx: number) => (
-                                        <div key={idx} className="shrink-0 w-full h-full snap-center relative">
-                                            <img
-                                                src={img.url}
-                                                alt={img.title}
-                                                className="w-full h-full object-cover"
-                                            />
-                                            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-8">
-                                                <p className="text-white text-xs font-bold truncate">
-                                                    {img.title}
-                                                </p>
-                                            </div>
+                                    {lesson.media.map((item: any, idx: number) => (
+                                        <div key={idx} className="shrink-0 w-full aspect-[2/3] sm:aspect-[4/3] snap-center rounded-3xl overflow-hidden shadow-sm relative border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 py-4 sm:py-8 px-2 sm:px-4 flex items-center justify-center">
+                                            {item.type === "video" ? (
+                                                <CustomVideoPlayer src={item.url} className="w-full h-full" />
+                                            ) : (
+                                                <img src={item.url} alt={`Before Media ${idx + 1}`} className="w-full h-full object-contain rounded-2xl" />
+                                            )}
+                                            {lesson.media.length > 1 && (
+                                                <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-sm text-white text-xs font-semibold px-3 py-1.5 rounded-full z-10 pointer-events-none">
+                                                    {idx + 1} / {lesson.media.length}
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
-                                {lesson.selectedImages.length > 1 && (
+                                {lesson.media.length > 1 && (
                                     <>
-                                        <div className="absolute top-2 right-2 bg-black/50 backdrop-blur-sm text-white text-[10px] px-2 py-0.5 rounded-full z-10">
-                                            {lesson.selectedImages.length} images
-                                        </div>
-                                        <button
-                                            onClick={() => scrollContentCarousel("left")}
-                                            className="absolute left-1 top-1/2 -translate-y-1/2 w-6 h-6 bg-white/80 dark:bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover/content:opacity-100 transition-opacity"
-                                        >
-                                            <ChevronLeft size={14} />
+                                        <button onClick={() => scrollCarousel("left")} className="hidden sm:flex absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 dark:bg-black/60 backdrop-blur-sm hover:bg-white dark:hover:bg-black text-zinc-800 dark:text-zinc-200 rounded-full items-center justify-center shadow-lg transition-all opacity-0 group-hover:opacity-100 z-10">
+                                            <ChevronLeft size={24} />
                                         </button>
-                                        <button
-                                            onClick={() => scrollContentCarousel("right")}
-                                            className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 bg-white/80 dark:bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover/content:opacity-100 transition-opacity"
-                                        >
-                                            <ChevronRight size={14} />
+                                        <button onClick={() => scrollCarousel("right")} className="hidden sm:flex absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 dark:bg-black/60 backdrop-blur-sm hover:bg-white dark:hover:bg-black text-zinc-800 dark:text-zinc-200 rounded-full items-center justify-center shadow-lg transition-all opacity-0 group-hover:opacity-100 z-10">
+                                            <ChevronRight size={24} />
                                         </button>
                                     </>
                                 )}
-                            </div>
+                            </section>
                         )}
-                        <div className="flex-1 prose prose-sm sm:prose-base prose-zinc dark:prose-invert max-w-none text-zinc-700 dark:text-zinc-300 whitespace-pre-line leading-relaxed">
-                            {lesson.content}
-                        </div>
+
+                        {/* Before Templates (Swing Errors) */}
+                        {lesson.selectedImages && lesson.selectedImages.length > 0 && (
+                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-4">
+                                <h4 className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300 pb-2 border-b border-zinc-100 dark:border-zinc-800">스윙 오류</h4>
+                                <div className="w-full sm:max-w-sm mx-auto aspect-[4/3] rounded-2xl overflow-hidden border border-zinc-200 dark:border-zinc-800 relative group/content">
+                                    <div ref={contentCarouselRef} className="flex overflow-x-auto snap-x snap-mandatory h-full scrollbar-hide">
+                                        {lesson.selectedImages.map((img: { url: string; title: string }, idx: number) => (
+                                            <div key={idx} className="shrink-0 w-full h-full snap-center relative">
+                                                <img src={img.url} alt={img.title} className="w-full h-full object-cover" />
+                                                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-8">
+                                                    <p className="text-white text-xs font-bold truncate">{img.title}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    {lesson.selectedImages.length > 1 && (
+                                        <>
+                                            <div className="absolute top-2 right-2 bg-black/50 backdrop-blur-sm text-white text-[10px] px-2 py-0.5 rounded-full z-10">{lesson.selectedImages.length} images</div>
+                                            <button onClick={() => scrollContentCarousel("left")} className="absolute left-1 top-1/2 -translate-y-1/2 w-6 h-6 bg-white/80 dark:bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover/content:opacity-100 transition-opacity"><ChevronLeft size={14} /></button>
+                                            <button onClick={() => scrollContentCarousel("right")} className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 bg-white/80 dark:bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover/content:opacity-100 transition-opacity"><ChevronRight size={14} /></button>
+                                        </>
+                                    )}
+                                </div>
+                            </section>
+                        )}
                     </div>
-                </section>
+                )}
+
+                {/* ── 4. 교정후 (After) ── */}
+                {lesson.afterMedia?.length > 0 && (
+                    <div className="space-y-4 pt-4">
+                        <SectionTitle className="px-1">
+                            <CheckCircle2 size={20} className="text-brand-navy dark:text-brand-navy-light" /> 교정후
+                        </SectionTitle>
+
+                        {/* After Media Gallery */}
+                        {lesson.afterMedia && lesson.afterMedia.length > 0 && (
+                            <section className="bg-transparent relative group">
+                                <div
+                                    ref={afterCarouselRef}
+                                    className="flex overflow-x-auto snap-x snap-mandatory gap-4 pb-2 scrollbar-hide"
+                                >
+                                    {lesson.afterMedia.map((item: any, idx: number) => (
+                                        <div key={idx} className="shrink-0 w-full aspect-[2/3] sm:aspect-[4/3] snap-center rounded-3xl overflow-hidden shadow-sm relative border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 py-4 sm:py-8 px-2 sm:px-4 flex items-center justify-center">
+                                            {item.type === "video" ? (
+                                                <CustomVideoPlayer src={item.url} className="w-full h-full" />
+                                            ) : (
+                                                <img src={item.url} alt={`After Media ${idx + 1}`} className="w-full h-full object-contain rounded-2xl" />
+                                            )}
+                                            {lesson.afterMedia.length > 1 && (
+                                                <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-sm text-white text-xs font-semibold px-3 py-1.5 rounded-full z-10 pointer-events-none">
+                                                    {idx + 1} / {lesson.afterMedia.length}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                                {lesson.afterMedia.length > 1 && (
+                                    <>
+                                        <button onClick={() => scrollAfterCarousel("left")} className="hidden sm:flex absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 dark:bg-black/60 backdrop-blur-sm hover:bg-white dark:hover:bg-black text-zinc-800 dark:text-zinc-200 rounded-full items-center justify-center shadow-lg transition-all opacity-0 group-hover:opacity-100 z-10">
+                                            <ChevronLeft size={24} />
+                                        </button>
+                                        <button onClick={() => scrollAfterCarousel("right")} className="hidden sm:flex absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 dark:bg-black/60 backdrop-blur-sm hover:bg-white dark:hover:bg-black text-zinc-800 dark:text-zinc-200 rounded-full items-center justify-center shadow-lg transition-all opacity-0 group-hover:opacity-100 z-10">
+                                            <ChevronRight size={24} />
+                                        </button>
+                                    </>
+                                )}
+                            </section>
+                        )}
+
+                        {/* After Content */}
+                        {lesson.afterContent && (
+                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-6">
+                                <div className="space-y-3">
+                                    <h4 className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300 pb-2 border-b border-zinc-100 dark:border-zinc-800">레슨 내용</h4>
+                                    <BodyText className="whitespace-pre-line">
+                                        {lesson.afterContent}
+                                    </BodyText>
+                                </div>
+                            </section>
+                        )}
+                    </div>
+                )}
+
+                {/* ── 5. 레슨 내용 ── */}
+                {lesson.content && (
+                    <div className="space-y-4">
+                        <SectionTitle className="px-1">
+                            <FileText size={20} className="text-emerald-500" /> 레슨 내용
+                        </SectionTitle>
+                        <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm">
+                            <BodyText className="whitespace-pre-line">
+                                {lesson.content}
+                            </BodyText>
+                        </section>
+                    </div>
+                )}
 
                 {/* ── 5. Related Score Context ── */}
                 {lesson.relatedScore && (
                     <section className="bg-gradient-to-br from-brand-navy/5 to-transparent dark:from-brand-navy/10 dark:to-transparent border border-brand-navy/20 dark:border-brand-navy/30 p-5 rounded-3xl shadow-sm relative overflow-hidden">
                         <div className="absolute top-0 right-0 -mt-4 -mr-4 w-24 h-24 bg-brand-navy/5 dark:bg-brand-navy-light/5 rounded-full blur-2xl"></div>
-                        <h3 className="text-sm font-bold text-brand-navy dark:text-brand-navy-light flex items-center gap-2 mb-4">
+                        <SectionTitle className="text-sm text-brand-navy dark:text-brand-navy-light mb-4">
                             <Flag size={16} />
                             레슨 전 라운딩 요약
-                        </h3>
+                        </SectionTitle>
                         <Link href={`/scores/${lesson.relatedScore.id}`} className="block block space-y-3">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-baseline gap-2">
@@ -485,6 +736,8 @@ export default function LessonDetailPage() {
                         </Link>
                     </section>
                 )}
+
+
 
                 {/* ── 6. Comments Section ── */}
                 <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden mb-8">
@@ -564,15 +817,7 @@ export default function LessonDetailPage() {
                             </div>
                         )}
                         <div className="flex items-center justify-between">
-                            <button
-                                type="button"
-                                disabled={isSubmittingComment}
-                                onClick={() => commentFileRef.current?.click()}
-                                className="flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-brand-navy transition-colors disabled:opacity-50"
-                            >
-                                <Paperclip size={14} /> 파일 첨부
-                            </button>
-                            <input ref={commentFileRef} type="file" accept="image/*,video/*" className="hidden" onChange={handleCommentFileChange} />
+                            <FileUploadButton iconOnly icon={<Paperclip size={18} />} accept="image/*,video/*" onChange={handleCommentFileChange} disabled={isSubmittingComment} />
                             <button
                                 onClick={handleCommentSubmit}
                                 disabled={(!newComment.trim() && !commentFile) || isSubmittingComment}
@@ -588,6 +833,53 @@ export default function LessonDetailPage() {
                         </div>
                     </div>
                 </section>
+
+                {/* ── 7. 감독 코멘트 작성 폼 (Bottom Accordion) ── */}
+                {currentUser?.role && ["admin", "manager"].includes(currentUser.role) && (
+                    <div className="mt-8 space-y-4">
+                        {!isEditingDirectorComment ? (
+                            <div className="flex justify-end">
+                                <button
+                                    onClick={() => {
+                                        setDirectorCommentInput(directorComment);
+                                        setIsEditingDirectorComment(true);
+                                        setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 50);
+                                    }}
+                                    className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all bg-brand-navy text-white hover:bg-brand-navy/90 active:scale-95 whitespace-nowrap"
+                                >
+                                    {directorComment ? "감독 코멘트 수정" : "감독 코멘트 작성"}
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="bg-white dark:bg-zinc-900 border border-brand-navy/30 dark:border-brand-navy/30 p-4 sm:p-6 rounded-3xl shadow-md space-y-4 animate-in slide-in-from-bottom-4 duration-300">
+                                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                                    <FileText size={20} className="text-brand-navy" /> {directorComment ? "감독 코멘트 수정" : "감독 코멘트 작성"}
+                                </h3>
+                                <textarea
+                                    value={directorCommentInput}
+                                    onChange={(e) => setDirectorCommentInput(e.target.value)}
+                                    rows={4}
+                                    className="w-full p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-brand-navy/30 text-sm"
+                                    placeholder="감독 코멘트를 입력하세요..."
+                                />
+                                <div className="flex justify-end gap-2">
+                                    <button
+                                        onClick={() => setIsEditingDirectorComment(false)}
+                                        className="px-4 py-2 bg-zinc-100 text-zinc-600 rounded-xl text-sm font-bold hover:bg-zinc-200 transition-colors"
+                                    >
+                                        취소
+                                    </button>
+                                    <button
+                                        onClick={handleSaveDirectorComment}
+                                        className="px-4 py-2 bg-brand-navy text-white rounded-xl text-sm font-bold hover:bg-brand-navy/90 transition-colors"
+                                    >
+                                        저장
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
             </main>
         </div>
     );
