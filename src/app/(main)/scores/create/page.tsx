@@ -1169,6 +1169,8 @@ function ScoreCreateContent() {
 
 
             // 8.5 복습 훈련(Review Training) 배정 (미배정 상태일 경우 재저장 시 자동 배정)
+            // (사용자 요청으로 스코어 작성 시 복습/예습 훈련 자동 생성 기능 제거됨)
+            /*
             try {
                 const todayStr = formatLocalDate(new Date());
                 const endDt = new Date();
@@ -1233,6 +1235,7 @@ function ScoreCreateContent() {
             } catch (err) {
                 console.error("복습 훈련 생성 중 오류:", err);
             }
+            */
 
             // 9. 로컬 임시 저장 데이터 삭제 (이제 더이상 사용되지 않지만 안전을 위해)
             localStorage.removeItem("gla_scorecard_draft");

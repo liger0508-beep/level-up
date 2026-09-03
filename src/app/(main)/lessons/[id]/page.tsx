@@ -13,6 +13,9 @@ import { fetchLessonTemplates, LessonTemplate } from "@/lib/lesson-template-sync
 import { parseMediaUrls, fetchComments, saveComment, updateComment, deleteComment, AnalysisComment } from "@/lib/analysis-sync";
 import { cn } from "@/lib/utils";
 import { CustomVideoPlayer } from "@/components/ui/CustomVideoPlayer";
+import dynamic from 'next/dynamic';
+
+const PDFViewer = dynamic(() => import("@/components/ui/PDFViewer"), { ssr: false });
 
 export default function LessonDetailPage() {
     const router = useRouter();
@@ -115,10 +118,11 @@ export default function LessonDetailPage() {
                 ]);
 
                 // Load user profile non-blocking
-                if (userRes.data?.user) {
-                    supabase.from("users").select("role, name").eq("id", userRes.data.user.id).single().then(({ data: profile }) => {
+                const user = userRes.data?.user;
+                if (user) {
+                    supabase.from("users").select("role, name").eq("id", user.id).single().then(({ data: profile }) => {
                         if (profile) {
-                            setCurrentUser({ id: userRes.data.user.id, name: profile.name || 'User', role: profile.role });
+                            setCurrentUser({ id: user.id, name: profile.name || 'User', role: profile.role });
                         }
                     });
                 }
@@ -141,6 +145,19 @@ export default function LessonDetailPage() {
                         type: actualUrl.match(/\.(mp4|mov|webm)$/i) ? 'video' : 'image',
                         url: actualUrl
                     };
+                });
+                const materialMediaFiles = allMedia.filter(url => url.startsWith('material:http')).map(url => {
+                    const actualUrl = url.replace('material:', '');
+                    const isPdf = actualUrl.match(/\.(pdf)(\?|$)/i);
+                    const isVideo = actualUrl.match(/\.(mp4|mov|webm)(\?|$)/i);
+                    const isImage = actualUrl.match(/\.(jpg|jpeg|png|gif|webp|heic)(\?|$)/i);
+                    
+                    let type = 'document';
+                    if (isPdf) type = 'pdf';
+                    else if (isVideo) type = 'video';
+                    else if (isImage) type = 'image';
+                    
+                    return { type, url: actualUrl, name: decodeURIComponent(actualUrl.split('/').pop()?.split('?')[0] || '첨부 파일') };
                 });
                 const templateIds = allMedia
                     .filter(url => url.startsWith('template:'))
@@ -208,6 +225,7 @@ export default function LessonDetailPage() {
                     selectedImages: templates.map(t => ({ url: t.imageUrl, title: t.title })),
                     media: beforeMediaFiles,
                     afterMedia: afterMediaFiles,
+                    materialMedia: materialMediaFiles,
                     isConnectedLesson,
                     isParentCoreLesson,
                     is_corrected: data.is_corrected,
@@ -304,6 +322,7 @@ export default function LessonDetailPage() {
     const carouselRef = useRef<HTMLDivElement>(null);
     const contentCarouselRef = useRef<HTMLDivElement>(null);
     const afterCarouselRef = useRef<HTMLDivElement>(null);
+    const materialCarouselRef = useRef<HTMLDivElement>(null);
 
     const handleCommentFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0] ?? null;
@@ -336,6 +355,16 @@ export default function LessonDetailPage() {
         if (afterCarouselRef.current) {
             const scrollAmount = afterCarouselRef.current.clientWidth;
             afterCarouselRef.current.scrollBy({
+                left: direction === "left" ? -scrollAmount : scrollAmount,
+                behavior: "smooth"
+            });
+        }
+    };
+
+    const scrollMaterialCarousel = (direction: "left" | "right") => {
+        if (materialCarouselRef.current) {
+            const scrollAmount = materialCarouselRef.current.clientWidth;
+            materialCarouselRef.current.scrollBy({
                 left: direction === "left" ? -scrollAmount : scrollAmount,
                 behavior: "smooth"
             });
@@ -697,6 +726,63 @@ export default function LessonDetailPage() {
                             <BodyText className="whitespace-pre-line">
                                 {lesson.content}
                             </BodyText>
+                        </section>
+                    </div>
+                )}
+
+                {/* ── 6. 레슨 자료 ── */}
+                {lesson.materialMedia?.length > 0 && (
+                    <div className="space-y-4 pt-4">
+                        <SectionTitle className="px-1">
+                            <FileText size={20} className="text-zinc-500" /> 레슨 자료
+                        </SectionTitle>
+                        <section className="bg-transparent relative group">
+                            <div
+                                ref={materialCarouselRef}
+                                className="flex overflow-x-auto snap-x snap-mandatory gap-4 pb-2 scrollbar-hide"
+                            >
+                                {lesson.materialMedia.map((item: any, idx: number) => (
+                                    <div key={`material-${idx}`} className="shrink-0 w-full aspect-[4/3] snap-center rounded-3xl overflow-hidden shadow-sm relative border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 py-4 sm:py-8 px-2 sm:px-4 flex items-center justify-center">
+                                        {item.type === 'pdf' ? (
+                                            <PDFViewer file={item.url} className="w-full h-full max-w-full" />
+                                        ) : item.type === 'video' ? (
+                                            <CustomVideoPlayer src={item.url} className="w-full h-full" hideCustomControls />
+                                        ) : item.type === 'image' ? (
+                                            <img src={item.url} alt="레슨 자료" className="w-full h-full object-contain rounded-2xl" />
+                                        ) : (
+                                            <div className="flex flex-col items-center justify-center text-zinc-500 p-4">
+                                                <FileText size={48} className="mb-2 opacity-50 text-brand-navy" />
+                                                <span className="text-sm font-medium text-center truncate w-full px-4">{item.name}</span>
+                                                <span className="text-[11px] opacity-70">문서 파일</span>
+                                            </div>
+                                        )}
+                                        {lesson.materialMedia.length > 1 && (
+                                            <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-sm text-white text-xs font-semibold px-3 py-1.5 rounded-full z-10 pointer-events-none">
+                                                {idx + 1} / {lesson.materialMedia.length}
+                                            </div>
+                                        )}
+                                        <a
+                                            href={item.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="absolute top-3 left-3 w-7 h-7 flex items-center justify-center bg-black/60 hover:bg-brand-navy text-white rounded-full transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 z-30"
+                                            title="새 창에서 열기 / 다운로드"
+                                        >
+                                            <Upload size={14} className="rotate-180" />
+                                        </a>
+                                    </div>
+                                ))}
+                            </div>
+                            {lesson.materialMedia.length > 1 && (
+                                <>
+                                    <button onClick={() => scrollMaterialCarousel("left")} className="hidden sm:flex absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 dark:bg-black/60 backdrop-blur-sm hover:bg-white dark:hover:bg-black text-zinc-800 dark:text-zinc-200 rounded-full items-center justify-center shadow-lg transition-all opacity-0 group-hover:opacity-100 z-10">
+                                        <ChevronLeft size={24} />
+                                    </button>
+                                    <button onClick={() => scrollMaterialCarousel("right")} className="hidden sm:flex absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/80 dark:bg-black/60 backdrop-blur-sm hover:bg-white dark:hover:bg-black text-zinc-800 dark:text-zinc-200 rounded-full items-center justify-center shadow-lg transition-all opacity-0 group-hover:opacity-100 z-10">
+                                        <ChevronRight size={24} />
+                                    </button>
+                                </>
+                            )}
                         </section>
                     </div>
                 )}

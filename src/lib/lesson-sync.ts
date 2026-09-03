@@ -149,9 +149,48 @@ export async function fetchAllLessonsByPlayer(playerName: string, category?: str
 
         const { data, error } = await query;
 
-        if (error) return [];
+        if (error || !data) return [];
 
-        return (data || []).map((r: any) => ({
+        let finalData = [...data];
+
+        // Fetch missing parents if any
+        const parentIdsToFetch = new Set<string>();
+        finalData.forEach((item: any) => {
+            if (item.connected_lesson_id) {
+                const parentExists = finalData.some((l: any) => l.id === item.connected_lesson_id);
+                if (!parentExists) {
+                    parentIdsToFetch.add(item.connected_lesson_id);
+                }
+            }
+        });
+
+        if (parentIdsToFetch.size > 0) {
+            const { data: parentData } = await supabase
+                .from("records")
+                .select(`
+                    id,
+                    type,
+                    category,
+                    title,
+                    content,
+                    media_urls,
+                    is_corrected,
+                    correction_content,
+                    correction_media,
+                    created_at,
+                    coach_id,
+                    connected_lesson_id,
+                    users!records_user_id_fkey(name),
+                    coach:users!records_coach_id_fkey(name)
+                `)
+                .in("id", Array.from(parentIdsToFetch));
+
+            if (parentData) {
+                finalData = [...finalData, ...parentData];
+            }
+        }
+
+        return finalData.map((r: any) => ({
             id: r.id,
             type: r.type,
             category: r.category as LessonType,

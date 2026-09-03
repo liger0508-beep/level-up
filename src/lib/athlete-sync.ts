@@ -7,7 +7,8 @@ export async function fetchAthletes(): Promise<string[]> {
         const supabase = createClient();
         const { data, error } = await supabase
             .from("users")
-            .select("name");
+            .select("name")
+            .eq("role", "athlete");
 
         if (error) {
             console.warn("Using fallback mock data as Supabase fetch failed:", error);

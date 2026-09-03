@@ -64,6 +64,11 @@ export default function EditLessonPage() {
     const [existingAfterMediaUrls, setExistingAfterMediaUrls] = useState<string[]>([]);
     const afterFileInputRef = useRef<HTMLInputElement>(null);
 
+    // Material
+    const [materialFiles, setMaterialFiles] = useState<File[]>([]);
+    const [existingMaterialUrls, setExistingMaterialUrls] = useState<string[]>([]);
+    const materialFileInputRef = useRef<HTMLInputElement>(null);
+
     // Recent History
     const [recentLessons, setRecentLessons] = useState<LessonRecord[]>([]);
     const [recentScorecard, setRecentScorecard] = useState<any | null>(null);
@@ -137,14 +142,16 @@ export default function EditLessonPage() {
                 setAfterLessonContent(""); // Not used anymore in UI
 
                 const allMedia = parseMediaUrls(data.media_urls);
-                const fileUrls = allMedia.filter(url => !url.startsWith('template:') && !url.startsWith('after:'));
+                const fileUrls = allMedia.filter(url => !url.startsWith('template:') && !url.startsWith('after:') && !url.startsWith('material:'));
                 const afterUrls = allMedia.filter(url => url.startsWith('after:')).map(url => url.replace('after:', ''));
+                const materialUrls = allMedia.filter(url => url.startsWith('material:')).map(url => url.replace('material:', ''));
                 const templateIds = allMedia
                     .filter(url => url.startsWith('template:'))
                     .map(url => url.replace('template:', ''));
 
                 setExistingMediaUrls(fileUrls);
                 setExistingAfterMediaUrls(afterUrls);
+                setExistingMaterialUrls(materialUrls);
 
 
                 if (draftData?.selectedImages) {
@@ -227,6 +234,21 @@ export default function EditLessonPage() {
         setExistingAfterMediaUrls(prev => prev.filter((_, i) => i !== index));
     };
 
+    const handleMaterialFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) {
+            const filesArray = Array.from(e.target.files);
+            setMaterialFiles(prev => [...prev, ...filesArray]);
+        }
+    };
+
+    const removeMaterialFile = (index: number) => {
+        setMaterialFiles(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const removeExistingMaterial = (index: number) => {
+        setExistingMaterialUrls(prev => prev.filter((_, i) => i !== index));
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedPlayer || !selectedPart || !lessonDate || isSubmitting) return;
@@ -243,12 +265,18 @@ export default function EditLessonPage() {
                 newAfterMediaUrls = await uploadFiles(afterAttachedFiles, 'records');
             }
 
+            let newMaterialUrls: string[] = [];
+            if (materialFiles.length > 0) {
+                newMaterialUrls = await uploadFiles(materialFiles, 'records');
+            }
+
             // Format templates
             const templateUrls = selectedImages.map(tid => `template:${tid}`);
             const afterFormattedUrls = [...existingAfterMediaUrls, ...newAfterMediaUrls].map(url => `after:${url}`);
+            const materialFormattedUrls = [...existingMaterialUrls, ...newMaterialUrls].map(url => `material:${url}`);
 
             // Combine all media
-            const allMedia = [...existingMediaUrls, ...newMediaUrls, ...templateUrls, ...afterFormattedUrls];
+            const allMedia = [...existingMediaUrls, ...newMediaUrls, ...templateUrls, ...afterFormattedUrls, ...materialFormattedUrls];
 
 
 
@@ -547,6 +575,97 @@ export default function EditLessonPage() {
                                         className="hidden"
                                         onChange={handleAfterFileChange}
                                         accept="image/*,video/*"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    {/* ── 레슨 자료 ── */}
+                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-2xl shadow-sm space-y-6">
+                        <SectionTitle className="mb-6">
+                            <FileText size={20} className="text-zinc-500" /> 레슨 자료
+                        </SectionTitle>
+
+                        <div className="space-y-2">
+                            <div className="flex flex-col gap-3">
+                                {(existingMaterialUrls.length > 0 || materialFiles.length > 0) && (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+                                        {existingMaterialUrls.map((url, idx) => {
+                                            const actualUrl = url.split('?')[0];
+                                            const isPdf = actualUrl.toLowerCase().endsWith('.pdf');
+                                            const isVideo = /\.(mp4|webm|ogg|mov|MOV|MP4)$/i.test(actualUrl);
+                                            const isImage = /\.(jpg|jpeg|png|gif|webp|heic)$/i.test(actualUrl);
+                                            const name = decodeURIComponent(actualUrl.split('/').pop() || '첨부 파일');
+                                            return (
+                                                <div key={`existing-material-${idx}`} className="relative group rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 w-full aspect-video flex items-center justify-center">
+                                                    {isVideo ? (
+                                                        <CustomVideoPlayer src={url} className="w-full h-full bg-black" hideCustomControls />
+                                                    ) : isImage ? (
+                                                        <img src={url} alt="레슨 자료" className="w-full h-full object-contain bg-black" />
+                                                    ) : (
+                                                        <div className="flex flex-col items-center justify-center text-zinc-500 p-4">
+                                                            <FileText size={48} className="mb-2 opacity-50 text-brand-navy" />
+                                                            <span className="text-sm font-medium text-center truncate w-full px-4">{name}</span>
+                                                            <span className="text-[11px] opacity-70">{isPdf ? 'PDF 문서' : '문서 파일'}</span>
+                                                        </div>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeExistingMaterial(idx)}
+                                                        className="absolute top-2 right-2 p-2 bg-black/60 hover:bg-red-500 text-white rounded-lg transition-colors opacity-100 z-20"
+                                                    >
+                                                        <X size={16} />
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+                                        {materialFiles.map((file, idx) => {
+                                            const url = URL.createObjectURL(file);
+                                            const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+                                            const isVideo = file.type.startsWith('video/');
+                                            const isImage = file.type.startsWith('image/');
+
+                                            return (
+                                                <div key={`material-${idx}`} className="relative group rounded-xl overflow-hidden border-2 border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 w-full aspect-video flex items-center justify-center">
+                                                    {isVideo ? (
+                                                        <CustomVideoPlayer src={url} className="w-full h-full bg-black" hideCustomControls />
+                                                    ) : isImage ? (
+                                                        <img src={url} alt="레슨 자료" className="w-full h-full object-contain bg-black" />
+                                                    ) : (
+                                                        <div className="flex flex-col items-center justify-center text-zinc-500 p-4">
+                                                            <FileText size={48} className="mb-2 opacity-50 text-brand-navy" />
+                                                            <span className="text-sm font-medium text-center truncate w-full px-4">{file.name}</span>
+                                                            <span className="text-[11px] opacity-70">{isPdf ? 'PDF 문서' : '문서 파일'}</span>
+                                                        </div>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeMaterialFile(idx)}
+                                                        className="absolute top-2 right-2 p-2 bg-black/60 hover:bg-red-500 text-white rounded-lg transition-colors opacity-100 z-20"
+                                                    >
+                                                        <X size={16} />
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                                <div className="flex items-center gap-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => materialFileInputRef.current?.click()}
+                                        className="flex items-center gap-2 px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                                    >
+                                        <Upload size={16} className="text-zinc-500" /> 파일 추가
+                                    </button>
+                                    <input
+                                        type="file"
+                                        ref={materialFileInputRef}
+                                        multiple
+                                        className="hidden"
+                                        onChange={handleMaterialFileChange}
+                                        accept="*/*"
                                     />
                                 </div>
                             </div>

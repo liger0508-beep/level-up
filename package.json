@@ -25,6 +25,7 @@
     "react": "19.2.3",
     "react-big-calendar": "^1.19.4",
     "react-dom": "19.2.3",
+    "react-pdf": "^10.5.0",
     "react-quill-new": "^3.8.3",
     "react-zoom-pan-pinch": "^4.0.3",
     "recharts": "^3.8.1",

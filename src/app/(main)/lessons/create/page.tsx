@@ -340,12 +340,13 @@ function CreateLessonContent() {
 
     useEffect(() => {
         if (lastSelectedPlayer) {
-            fetchRecentLessonsByPlayer(lastSelectedPlayer, selectedPart).then(recent => {
-                setRecentLessons(recent.slice(0, 3));
-            });
-            fetchAllLessonsByPlayer(lastSelectedPlayer, undefined, 10).then(setAllLessons);
-            fetchLatestScoreByPlayer(lastSelectedPlayer).then(setRecentScore);
-            fetchJournalsByAthlete(lastSelectedPlayer, 10).then(journals => {
+            Promise.all([
+                fetchRecentLessonsByPlayer(lastSelectedPlayer, selectedPart === "all" ? undefined : selectedPart),
+                fetchLatestScoreByPlayer(lastSelectedPlayer),
+                fetchJournalsByAthlete(lastSelectedPlayer)
+            ]).then(([lessons, scorecard, journals]) => {
+                setRecentLessons(lessons);
+                setRecentScore(scorecard);
                 setAllJournals(journals);
                 if (journals.length > 0) {
                     setSelectedJournalId(journals[0].id);
@@ -356,13 +357,22 @@ function CreateLessonContent() {
             fetchPlansByAthlete(lastSelectedPlayer, 10).then(setAllPlans);
         } else {
             setRecentLessons([]);
-            setAllLessons([]);
             setRecentScore(null);
             setAllJournals([]);
             setSelectedJournalId(null);
             setAllPlans([]);
         }
     }, [lastSelectedPlayer, selectedPart]);
+
+    // 히스토리 모달용 레슨 기록(더 보기 클릭 시 서버에서 추가 패치)
+    useEffect(() => {
+        if (lastSelectedPlayer) {
+            // 히스토리 탭이 "all"이 아닐 때도, 트리를 구성하기 위해 전체를 가져와야 하므로 카테고리 필터를 넣지 않습니다.
+            fetchAllLessonsByPlayer(lastSelectedPlayer, undefined, historyDisplayLimit).then(setAllLessons);
+        } else {
+            setAllLessons([]);
+        }
+    }, [lastSelectedPlayer, historyDisplayLimit]);
 
 
 
@@ -428,6 +438,20 @@ function CreateLessonContent() {
         setAfterAttachedFiles(prev => prev.filter((_, i) => i !== index));
     };
 
+    const [materialFiles, setMaterialFiles] = useState<File[]>([]);
+    const materialFileInputRef = useRef<HTMLInputElement>(null);
+
+    const handleMaterialFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) {
+            const newFiles = Array.from(e.target.files);
+            setMaterialFiles(prev => [...prev, ...newFiles]);
+        }
+    };
+
+    const removeMaterialFile = (index: number) => {
+        setMaterialFiles(prev => prev.filter((_, i) => i !== index));
+    };
+
 
 
     const handleSubmit = async (e?: React.FormEvent, redirectToTraining: boolean = false) => {
@@ -452,10 +476,12 @@ function CreateLessonContent() {
             // 2. Combine with swing error IDs (templates)
             // Upload after files
             const afterUploadedUrls = afterAttachedFiles.length > 0 ? await uploadFiles(afterAttachedFiles, 'records') : [];
+            const materialUploadedUrls = materialFiles.length > 0 ? await uploadFiles(materialFiles, 'records') : [];
 
             const allMedia = [
                 ...uploadedUrls,
-                ...afterUploadedUrls.map(url => `after:${url}`)
+                ...afterUploadedUrls.map(url => `after:${url}`),
+                ...materialUploadedUrls.map(url => `material:${url}`)
             ];
 
             const scheduleId = searchParams.get("scheduleId");
@@ -875,6 +901,67 @@ function CreateLessonContent() {
                         </div>
                     </section>
 
+                    {/* ── 레슨 자료 ── */}
+                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-2xl shadow-sm space-y-6">
+                        <SectionTitle className="mb-6">
+                            <FileText size={20} className="text-zinc-500" /> 레슨 자료
+                        </SectionTitle>
+
+                        <div className="space-y-2">
+                            <div className="flex flex-col gap-3">
+                                {materialFiles.length > 0 && (
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+                                        {materialFiles.map((file, idx) => {
+                                            const url = URL.createObjectURL(file);
+                                            const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+                                            const isVideo = file.type.startsWith('video/');
+                                            const isImage = file.type.startsWith('image/');
+
+                                            return (
+                                                <div key={`material-${idx}`} className="relative group rounded-xl overflow-hidden border-2 border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 w-full aspect-video flex items-center justify-center">
+                                                    {isVideo ? (
+                                                        <CustomVideoPlayer src={url} className="w-full h-full bg-black" hideCustomControls />
+                                                    ) : isImage ? (
+                                                        <img src={url} alt="레슨 자료" className="w-full h-full object-contain bg-black" />
+                                                    ) : (
+                                                        <div className="flex flex-col items-center justify-center text-zinc-500 p-4">
+                                                            <FileText size={48} className="mb-2 opacity-50 text-brand-navy" />
+                                                            <span className="text-sm font-medium text-center truncate w-full px-4">{file.name}</span>
+                                                            <span className="text-[11px] opacity-70">{isPdf ? 'PDF 문서' : '문서 파일'}</span>
+                                                        </div>
+                                                    )}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeMaterialFile(idx)}
+                                                        className="absolute top-2 right-2 p-2 bg-black/60 hover:bg-red-500 text-white rounded-lg transition-colors opacity-100 z-20"
+                                                    >
+                                                        <X size={16} />
+                                                    </button>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                                <div className="flex items-center gap-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => materialFileInputRef.current?.click()}
+                                        className="flex items-center gap-2 px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                                    >
+                                        <Upload size={16} className="text-zinc-500" /> 파일 추가
+                                    </button>
+                                    <input
+                                        type="file"
+                                        ref={materialFileInputRef}
+                                        multiple
+                                        className="hidden"
+                                        onChange={handleMaterialFileChange}
+                                        accept="*/*"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </section>
 
                     {/* ── 레슨 내용 ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-2xl shadow-sm space-y-4">
@@ -1051,7 +1138,7 @@ function CreateLessonContent() {
                                     return false;
                                 });
 
-                                const displayedHistory = groupedLessons.slice(0, historyDisplayLimit);
+                                const displayedHistory = groupedLessons;
 
                                 const renderLessonCard = (lesson: GroupedLesson, isSub = false) => {
                                     const isConnected = connectedLessonId === lesson.id;
@@ -1155,14 +1242,14 @@ function CreateLessonContent() {
                                                 검색된 레슨 기록이 없습니다.
                                             </div>
                                         )}
-                                        {groupedLessons.length > historyDisplayLimit && (
+                                        {allLessons.length >= historyDisplayLimit && (
                                             <div className="py-4 flex justify-center">
                                                 <button
                                                     type="button"
                                                     onClick={() => setHistoryDisplayLimit(prev => prev + 10)}
                                                     className="px-6 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-sm rounded-xl text-sm font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
                                                 >
-                                                    더 보기 ({groupedLessons.length - historyDisplayLimit}개 남음) ▼
+                                                    더 보기 ▼
                                                 </button>
                                             </div>
                                         )}

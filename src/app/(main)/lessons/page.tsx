@@ -629,59 +629,7 @@ export default function LessonsPage() {
                     )}
                 </div>
 
-                {/* Player Search & Select All */}
-                {(userRole === 'coach' || userRole === 'admin') && (
-                    <>
-                        <div className="flex items-center gap-2 mt-3">
-                            <LabelText className="w-24 shrink-0 text-center">
-                                선수 검색
-                            </LabelText>
-                            <div className="relative flex-1">
-                                <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                                <input
-                                    type="text"
-                                    placeholder="선수 검색..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter' && searchQuery.trim()) {
-                                            const match = allAthletes.find((p) =>
-                                                p.toLowerCase().includes(searchQuery.toLowerCase())
-                                            );
-                                            if (match) {
-                                                togglePlayer(match);
-                                                // searchQuery is cleared inside togglePlayer
-                                            }
-                                        }
-                                    }}
-                                    className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all"
-                                />
-                            </div>
-                        </div>
 
-                        {/* Player Chips */}
-                        {visiblePlayersArr.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mt-3 max-h-32 overflow-y-auto pr-1 custom-scrollbar" style={{ paddingLeft: '104px' }}>
-                                {visiblePlayersArr.map((name) => {
-                                    const isSelected = selectedPlayers.has(name);
-                                    return (
-                                        <button
-                                            key={name}
-                                            onClick={() => togglePlayer(name)}
-                                            className={`px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-200 shrink-0
-                                                ${isSelected
-                                                    ? "bg-brand-navy/10 text-brand-navy border-brand-navy dark:bg-brand-navy/30 dark:text-white"
-                                                    : "bg-white dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:border-brand-navy"
-                                                }`}
-                                        >
-                                            {name}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </>
-                )}
             </div>
 
             {/* ── Lesson Table ── */}

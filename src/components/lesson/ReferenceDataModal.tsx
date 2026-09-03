@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
-import { Trophy, AlertTriangle, TrendingDown, TrendingUp, ChevronRight as ChevronRight2, BookOpen, Layers, X, Calendar, Activity, Flag, Zap, Target, Book, ChevronUp, ChevronDown } from "lucide-react";
+import { Trophy, AlertTriangle, TrendingDown, TrendingUp, ChevronRight as ChevronRight2, BookOpen, Layers, X, Calendar, Activity, Flag, Zap, Target, Book, ChevronUp, ChevronDown, MessageSquare } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { calculateScorecardAnalysis, HoleAnalysis } from "@/lib/score-calculations";
 import { cn } from "@/lib/utils";
@@ -367,11 +367,29 @@ export default function ReferenceDataModal({ isOpen, onClose, playerName }: { is
                     const formatScore = (val: number) => (val === 0 ? "0" : (val > 0 ? "+" : "") + val.toFixed(2));
                     const roundToOne = (num: number) => Number(Math.round(Number(num + "e1")) + "e-1").toFixed(1);
 
+                    // Extract Shot Notes
+                    const shotNotes: any[] = [];
+                    result.forEach((h: any) => {
+                        h.shots.forEach((shot: any) => {
+                            if (shot.memo && shot.memo.trim() !== '') {
+                                shotNotes.push({
+                                    hole: h.holeNumber,
+                                    shotNumber: shot.shotNumber,
+                                    attemptPos: shot.shotLabel ? shot.shotLabel.split('/')[0].trim() : "",
+                                    attemptDist: shot.attemptDistance,
+                                    landingPos: shot.landingLabel || "",
+                                    memo: shot.memo
+                                });
+                            }
+                        });
+                    });
+
                     setScoreData({
                         date: sc.round_date,
                         course: sc.course_name,
                         totalScore: sc.total_score,
                         memo: sc.memo,
+                        notes: shotNotes,
                         totalPar: result.reduce((s, h) => s + h.par, 0),
                         playContent: roundToOne(playContent),
                         scoreVsContent: (scoreVsContent > 0 ? "+" : "") + roundToOne(scoreVsContent),
@@ -589,15 +607,7 @@ export default function ReferenceDataModal({ isOpen, onClose, playerName }: { is
                                         </div>
                                     </section>
 
-                                    {/* 샷 노트 (Shot Note) */}
-                                    {scoreData.memo && (
-                                        <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60">
-                                            <SectionHeader title="라운드 샷 노트" icon={BookOpen} />
-                                            <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700/50 whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
-                                                {scoreData.memo}
-                                            </div>
-                                        </section>
-                                    )}
+
                                     {/* 2. Strong Point */}
                                     {scoreData && scoreData.strongPlan && scoreData.strongPlan.length > 0 && (
                                         <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60">
@@ -899,6 +909,61 @@ export default function ReferenceDataModal({ isOpen, onClose, playerName }: { is
                                                                     )}
                                                                 </div>
                                                             )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </section>
+                                    )}
+                                    {/* 샷 노트 (Shot Note) */}
+                                    {scoreData.memo && (
+                                        <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60 mt-6">
+                                            <SectionHeader title="라운드 샷 노트" icon={BookOpen} />
+                                            <div className="bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-700/50 whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                                                {scoreData.memo}
+                                            </div>
+                                        </section>
+                                    )}
+
+                                    {/* 개별 샷 노트 (Shot Notes) */}
+                                    {scoreData.notes && scoreData.notes.length > 0 && (
+                                        <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60 mt-6">
+                                            <SectionHeader title="샷 노트" icon={MessageSquare} />
+
+                                            <div className="space-y-4">
+                                                {scoreData.notes.map((note: any, idx: number) => {
+                                                    const unit = "m";
+                                                    return (
+                                                        <div key={idx} className="p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800/50">
+                                                            <div className="flex items-center gap-2 mb-3 border-b border-zinc-100 dark:border-zinc-800/50 pb-2">
+                                                                <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">{note.hole}번 홀</span>
+                                                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 uppercase">
+                                                                    {note.shotNumber}번째 샷
+                                                                </span>
+                                                            </div>
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="flex items-center gap-1.5 w-12 shrink-0">
+                                                                        <div className="w-1 h-3 bg-zinc-300 rounded-full" />
+                                                                        <span className="text-[10px] font-bold text-zinc-400 uppercase">시도</span>
+                                                                    </div>
+                                                                    <p className="text-xs font-black text-zinc-800 dark:text-zinc-200">
+                                                                        {note.attemptPos} {note.attemptDist ? `/ ${note.attemptDist}${unit}` : ""}
+                                                                    </p>
+                                                                </div>
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="flex items-center gap-1.5 w-12 shrink-0">
+                                                                        <div className="w-1 h-3 bg-orange-400 rounded-full" />
+                                                                        <span className="text-[10px] font-bold text-zinc-400 uppercase">결과</span>
+                                                                    </div>
+                                                                    <p className="text-xs font-black text-zinc-800 dark:text-zinc-200">
+                                                                        {note.landingPos}
+                                                                    </p>
+                                                                </div>
+                                                            </div>
+                                                            <div className="bg-white dark:bg-zinc-900 p-4 rounded-xl border border-zinc-100 dark:border-zinc-800 whitespace-pre-wrap text-[13px] text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                                                                {note.memo}
+                                                            </div>
                                                         </div>
                                                     );
                                                 })}
