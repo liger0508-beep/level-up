@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, Suspense, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft, Calendar, Save, Info, ChevronRight, Target, Flag, Crown, Search, Check } from "lucide-react";
+import { ChevronLeft, Calendar, Save, Info, ChevronRight, Target, Flag, Crown, Search, Check, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { AthleteSearch } from "@/components/ui/AthleteSearch";
@@ -21,6 +21,32 @@ interface IronShotResult {
     shotId: number; // 1-4
     proximity: number | ""; // m
 }
+interface PlayerState {
+    driverShots: ShotResult[];
+    selectedIronDistances: number[];
+    ironShots: IronShotResult[];
+    approachShots: IronShotResult[];
+    bunkerShots: any[];
+    longPuttShots: IronShotResult[];
+    middlePuttShots: IronShotResult[];
+    shortPuttShots: IronShotResult[];
+    selectedGroup: string | null;
+    selectedPart: TestType | null;
+}
+
+const getInitialPlayerState = (): PlayerState => ({
+    driverShots: Array.from({ length: 6 }, (_, i) => ({ id: i + 1, result: null })),
+    selectedIronDistances: [],
+    ironShots: [],
+    approachShots: Array.from({ length: 12 }, (_, i) => ({ distance: 0, shotId: i + 1, proximity: "" })),
+    bunkerShots: Array.from({ length: 6 }, (_, i) => ({ distance: i < 3 ? "25m 이내" : "25m 이상", shotId: i + 1, proximity: "" })),
+    longPuttShots: Array.from({ length: 4 }, (_, i) => ({ distance: 0, shotId: i + 1, proximity: "" })),
+    middlePuttShots: Array.from({ length: 8 }, (_, i) => ({ distance: 0, shotId: i + 1, proximity: "" })),
+    shortPuttShots: Array.from({ length: 6 }, (_, i) => ({ distance: 0, shotId: i + 1, proximity: "" })),
+    selectedGroup: null,
+    selectedPart: null
+});
+
 const DEFAULT_TEST_GROUPS = [
     {
         categoryId: "shot",
@@ -96,140 +122,6 @@ const getIronScore = (distance: number, prox: number): number => {
     return (IRON_START_SCORES[distance] ?? 0) + (IRON_RESULT_SCORES[safeProx] ?? 0.32);
 };
 
-const APPROACH_SCORES: Record<number, number> = {
-    0: -0.35, 1: -0.25, 2: 0, 3: 0.25, 4: 0.35, 5: 0.45,
-    6: 0.5, 7: 0.55, 8: 0.6, 9: 0.65, 10: 0.7, 11: 0.75,
-    12: 0.79, 13: 0.83, 14: 0.86, 15: 0.89, 16: 0.91,
-    17: 0.93, 18: 0.95, 19: 0.96, 20: 0.97
-};
-
-const getShortApproachScore = (prox: number): number => {
-    if (prox <= 0) return -1.1;
-    if (prox === 1) return -0.01;
-    if (prox === 2) return 0.25;
-    if (prox === 3) return 0.5;
-    if (prox === 4) return 0.6;
-    if (prox === 5) return 0.7;
-    if (prox === 6) return 0.75;
-    if (prox === 7) return 0.8;
-    if (prox === 8) return 0.85;
-    if (prox === 9) return 0.9;
-    if (prox === 10) return 0.95;
-    if (prox === 11) return 1.0;
-    if (prox === 12) return 1.04;
-    if (prox === 13) return 1.08;
-    if (prox === 14) return 1.11;
-    if (prox === 15) return 1.14;
-    if (prox === 16) return 1.16;
-    if (prox === 17) return 1.18;
-    if (prox === 18) return 1.2;
-    if (prox === 19) return 1.21;
-    if (prox <= 29) return 1.22;
-    return 1.23;
-};
-
-const getMiddleApproachScore = (prox: number): number => {
-    if (prox <= 0) return -0.34;
-    if (prox === 1) return -0.24;
-    if (prox === 2) return -0.01;
-    if (prox === 3) return 0.25;
-    if (prox === 4) return 0.35;
-    if (prox === 5) return 0.45;
-    if (prox === 6) return 0.5;
-    if (prox === 7) return 0.55;
-    if (prox === 8) return 0.6;
-    if (prox === 9) return 0.65;
-    if (prox === 10) return 0.7;
-    if (prox === 11) return 0.75;
-    if (prox === 12) return 0.79;
-    if (prox === 13) return 0.83;
-    if (prox === 14) return 0.86;
-    if (prox === 15) return 0.89;
-    if (prox === 16) return 0.91;
-    if (prox === 17) return 0.93;
-    if (prox === 18) return 0.95;
-    if (prox === 19) return 0.96;
-    if (prox <= 29) return 0.97;
-    return 0.98;
-};
-
-const getLongApproachScore = (prox: number): number => {
-    if (prox <= 0) return -0.59;
-    if (prox === 1) return -0.49;
-    if (prox === 2) return -0.24;
-    if (prox === 3) return -0.01;
-    if (prox === 4) return 0.1;
-    if (prox === 5) return 0.2;
-    if (prox === 6) return 0.25;
-    if (prox === 7) return 0.3;
-    if (prox === 8) return 0.35;
-    if (prox === 9) return 0.4;
-    if (prox === 10) return 0.45;
-    if (prox === 11) return 0.5;
-    if (prox === 12) return 0.54;
-    if (prox === 13) return 0.58;
-    if (prox === 14) return 0.61;
-    if (prox === 15) return 0.64;
-    if (prox === 16) return 0.66;
-    if (prox === 17) return 0.68;
-    if (prox === 18) return 0.7;
-    if (prox === 19) return 0.71;
-    if (prox <= 29) return 0.72;
-    return 0.73;
-};
-
-const getShortBunkerScore = (prox: number): number => {
-    if (prox <= 0) return -0.59;
-    if (prox === 1) return -0.49;
-    if (prox === 2) return -0.24;
-    if (prox === 3) return -0.01;
-    if (prox === 4) return 0.1;
-    if (prox === 5) return 0.2;
-    if (prox === 6) return 0.25;
-    if (prox === 7) return 0.3;
-    if (prox === 8) return 0.35;
-    if (prox === 9) return 0.4;
-    if (prox === 10) return 0.45;
-    if (prox === 11) return 0.5;
-    if (prox === 12) return 0.54;
-    if (prox === 13) return 0.58;
-    if (prox === 14) return 0.61;
-    if (prox === 15) return 0.64;
-    if (prox === 16) return 0.66;
-    if (prox === 17) return 0.68;
-    if (prox === 18) return 0.7;
-    if (prox === 19) return 0.71;
-    if (prox <= 29) return 0.72;
-    return 0.73;
-};
-
-const getLongBunkerScore = (prox: number): number => {
-    if (prox <= 0) return -0.64;
-    if (prox === 1) return -0.55;
-    if (prox === 2) return -0.29;
-    if (prox === 3) return -0.06;
-    if (prox === 4) return 0.05;
-    if (prox === 5) return 0.15;
-    if (prox === 6) return 0.2;
-    if (prox === 7) return 0.25;
-    if (prox === 8) return 0.3;
-    if (prox === 9) return 0.35;
-    if (prox === 10) return 0.4;
-    if (prox === 11) return 0.45;
-    if (prox === 12) return 0.49;
-    if (prox === 13) return 0.53;
-    if (prox === 14) return 0.56;
-    if (prox === 15) return 0.59;
-    if (prox === 16) return 0.61;
-    if (prox === 17) return 0.63;
-    if (prox === 18) return 0.65;
-    if (prox === 19) return 0.66;
-    if (prox <= 29) return 0.67;
-    return 0.68;
-};
-
-const PUTTING_ATTEMPT_SCORES = {};
-
 const LONG_PUTT_LABELS: Record<number, string> = {
     1: "10m",
     2: "13m",
@@ -257,12 +149,82 @@ const SHORT_PUTT_LABELS: Record<number, string> = {
     6: "3.5m"
 };
 
-const SHORT_GAME_OPTIONS = [
-    { label: "0m", val: 0 },
-    { label: "1m", val: 1 },
-    { label: "2-3m", val: 3 },
-    { label: "4m 이상", val: 6 }
-];
+const SHORT_APPROACH_OPTIONS = [{ label: "0m", val: 0 }, { label: "1m", val: 1 }, { label: "2~3m", val: 3 }, { label: "4m 이상", val: 6 }];
+const MIDDLE_APPROACH_OPTIONS = [{ label: "0m", val: 0 }, { label: "1m", val: 1 }, { label: "2~3m", val: 3 }, { label: "4m 이상", val: 6 }];
+const LONG_APPROACH_OPTIONS = [{ label: "0m", val: 0 }, { label: "1~2m", val: 2 }, { label: "3~4m", val: 4 }, { label: "5m 이상", val: 6 }];
+
+const SHORT_BUNKER_OPTIONS = [{ label: "0m", val: 0 }, { label: "1m", val: 1 }, { label: "2~3m", val: 3 }, { label: "4m 이상", val: 6 }];
+const LONG_BUNKER_OPTIONS = [{ label: "0m", val: 0 }, { label: "1~2m", val: 2 }, { label: "3~5m", val: 5 }, { label: "6m 이상", val: 7 }];
+
+const getApproachScore = (type: 'short' | 'middle' | 'long', prox: number): number => {
+    if (type === 'short') {
+        if (prox <= 0) return -0.60;
+        if (prox <= 1) return -0.15;
+        if (prox <= 3) return 0.20;
+        return 0.40;
+    } else if (type === 'middle') {
+        if (prox <= 0) return -0.70;
+        if (prox <= 1) return -0.25;
+        if (prox <= 3) return 0.20;
+        return 0.40;
+    } else if (type === 'long') {
+        if (prox <= 0) return -0.90;
+        if (prox <= 2) return -0.25;
+        if (prox <= 4) return 0.10;
+        return 0.25;
+    }
+    return 0;
+};
+
+const getBunkerScore = (type: 'short' | 'long', prox: number): number => {
+    if (type === 'short') {
+        if (prox <= 0) return -1.00;
+        if (prox <= 1) return -0.35;
+        if (prox <= 3) return 0.05;
+        return 0.25;
+    } else if (type === 'long') {
+        if (prox <= 0) return -1.05;
+        if (prox <= 2) return -0.30;
+        if (prox <= 5) return 0.05;
+        return 0.25;
+    }
+    return 0;
+};
+
+const getPuttingScore = (type: 'short' | 'middle' | 'long', distIndex: number, putts: number): number => {
+    if (type === 'short') {
+        const scores = {
+            1: { 1: -0.10, 2: 0.80, 3: 1.70, 4: 2.60 },
+            2: { 1: -0.23, 2: 0.69, 3: 1.58, 4: 2.47 },
+            3: { 1: -0.36, 2: 0.58, 3: 1.46, 4: 2.34 },
+            4: { 1: -0.49, 2: 0.47, 3: 1.34, 4: 2.21 },
+            5: { 1: -0.62, 2: 0.36, 3: 1.22, 4: 2.08 },
+            6: { 1: -0.75, 2: 0.25, 3: 1.10, 4: 1.95 }
+        };
+        return scores[distIndex as keyof typeof scores]?.[putts as 1 | 2 | 3 | 4] ?? 0;
+    } else if (type === 'middle') {
+        const scores = {
+            1: { 1: -0.60, 2: 0.20, 3: 1.00, 4: 1.80 },
+            2: { 1: -0.63, 2: 0.18, 3: 0.97, 4: 1.76 },
+            3: { 1: -0.66, 2: 0.16, 3: 0.94, 4: 1.72 },
+            4: { 1: -0.69, 2: 0.14, 3: 0.91, 4: 1.68 },
+            5: { 1: -0.72, 2: 0.12, 3: 0.88, 4: 1.64 },
+            6: { 1: -0.75, 2: 0.10, 3: 0.85, 4: 1.60 },
+            7: { 1: -0.78, 2: 0.08, 3: 0.82, 4: 1.56 },
+            8: { 1: -0.81, 2: 0.06, 3: 0.79, 4: 1.52 }
+        };
+        return scores[distIndex as keyof typeof scores]?.[putts as 1 | 2 | 3 | 4] ?? 0;
+    } else if (type === 'long') {
+        const scores = {
+            1: { 1: -0.90, 2: 0.00, 3: 0.90, 4: 1.80 },
+            2: { 1: -0.95, 2: -0.04, 3: 0.70, 4: 1.50 },
+            3: { 1: -1.00, 2: -0.08, 3: 0.50, 4: 1.20 },
+            4: { 1: -1.05, 2: -0.12, 3: 0.30, 4: 0.90 }
+        };
+        return scores[distIndex as keyof typeof scores]?.[putts as 1 | 2 | 3 | 4] ?? 0;
+    }
+    return 0;
+};
 
 const getIronButtonOptions = (dist: number) => {
     if (dist <= 80) return [
@@ -301,14 +263,38 @@ function CreateTestContent() {
         }
     };
 
-    const [selectedPlayer, setSelectedPlayer] = useState("");
-    const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+    const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
+    const [activePlayer, setActivePlayer] = useState<string>("");
+    const [playerStates, setPlayerStates] = useState<Record<string, PlayerState>>({});
+    
+    const updateActiveState = <K extends keyof PlayerState>(key: K, updater: (prev: PlayerState[K]) => PlayerState[K]) => {
+        if (!activePlayer) return;
+        setPlayerStates(prev => {
+            const state = prev[activePlayer] || getInitialPlayerState();
+            return {
+                ...prev,
+                [activePlayer]: {
+                    ...state,
+                    [key]: updater(state[key])
+                }
+            };
+        });
+    };
+
+    const activeState = playerStates[activePlayer] || getInitialPlayerState();
+    const selectedGroup = activeState.selectedGroup;
+    const selectedPart = activeState.selectedPart;
+
+    const setSelectedGroup = (group: string | null) => updateActiveState('selectedGroup', () => group);
+    const setSelectedPart = (part: TestType | null) => updateActiveState('selectedPart', () => part);
+
+    // Fallback for when no player is selected but we need a string for old components (optional, but keeping it to avoid undefined errors)
+    const selectedPlayer = activePlayer;
     const [testDate, setTestDate] = useState(() => formatLocalDate());
     const [testTime, setTestTime] = useState(() => {
         const now = new Date();
         return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     });
-    const [selectedPart, setSelectedPart] = useState<TestType | null>(null);
     const [currentCoachName, setCurrentCoachName] = useState("코치");
     const [isUploading, setIsUploading] = useState(false);
     const [isLoadingRecord, setIsLoadingRecord] = useState(false);
@@ -396,6 +382,31 @@ function CreateTestContent() {
 
     // RBAC Check and fetch coach name
     useEffect(() => {
+        const playerParam = searchParams.get("player");
+        const typeParam = searchParams.get("type");
+        const startParam = searchParams.get("start");
+
+        let initialGroup: string | null = null;
+        let initialPart: TestType | null = null;
+
+        if (typeParam) {
+            if (typeParam === 'shot') {
+                initialPart = 'driver';
+                initialGroup = '샷 종합 챌린지';
+            } else if (typeParam === 'around_green') {
+                initialPart = 'approach';
+                initialGroup = '숏게임 종합 챌린지';
+            } else if (typeParam === 'putting') {
+                initialPart = 'long_putt';
+                initialGroup = '퍼팅 종합 챌린지';
+            } else {
+                const partKey = typeParam as TestType;
+                initialPart = partKey;
+                const group = testGroups.find(g => g.parts.some(p => p.key === partKey));
+                if (group) initialGroup = group.label;
+            }
+        }
+
         const supabase = createClient();
         supabase.auth.getUser().then(async ({ data: { user } }) => {
             if (user) {
@@ -407,8 +418,17 @@ function CreateTestContent() {
 
                 if (dbUser?.name) {
                     setCurrentCoachName(dbUser.name);
-                    if (!editId && !searchParams.get("player")) {
-                        setSelectedPlayer(dbUser.name);
+                    if (!editId) {
+                        const targetPlayer = playerParam || dbUser.name;
+                        setSelectedPlayers([targetPlayer]);
+                        setActivePlayer(targetPlayer);
+                        setPlayerStates({ 
+                            [targetPlayer]: { 
+                                ...getInitialPlayerState(), 
+                                selectedGroup: initialGroup, 
+                                selectedPart: initialPart 
+                            } 
+                        });
                     }
                 }
 
@@ -421,40 +441,15 @@ function CreateTestContent() {
             }
         });
 
-        // Handle URL parameters for new test
-        if (!editId) {
-            const playerParam = searchParams.get("player");
-            const typeParam = searchParams.get("type");
-            const startParam = searchParams.get("start");
-
-            if (playerParam) setSelectedPlayer(playerParam);
-            if (typeParam) {
-                // Map short types to categories
-                if (typeParam === 'shot') {
-                    setSelectedPart('driver');
-                    setSelectedGroup('샷 종합 챌린지');
-                } else if (typeParam === 'around_green') {
-                    setSelectedPart('approach');
-                    setSelectedGroup('숏게임 종합 챌린지');
-                } else if (typeParam === 'putting') {
-                    setSelectedPart('long_putt');
-                    setSelectedGroup('퍼팅 종합 챌린지');
-                } else {
-                    const partKey = typeParam as TestType;
-                    setSelectedPart(partKey);
-                    // Find matching group
-                    const group = testGroups.find(g => g.parts.some(p => p.key === partKey));
-                    if (group) setSelectedGroup(group.label);
-                }
-            }
-            if (startParam) setTestTime(startParam);
+        if (!editId && startParam) {
+            setTestTime(startParam);
         }
 
         // Fetch baselines
         supabase.from("sg_baseline").select("*").order("distance_m").then(({ data }) => {
             if (data) setBaselines(data);
         });
-    }, [router]);
+    }, [router, searchParams, editId, testGroups]);
 
     // --- Edit Mode: Load existing record ---
     useEffect(() => {
@@ -476,7 +471,10 @@ function CreateTestContent() {
                 }
 
                 // Populate basic info
-                setSelectedPlayer(data.athlete?.name || "");
+                const athleteName = data.athlete?.name || "";
+                setSelectedPlayers([athleteName]);
+                setActivePlayer(athleteName);
+                const loadedState = getInitialPlayerState();
                 const createdAt = new Date(data.created_at);
                 setTestDate(data.created_at.split("T")[0]);
                 setTestTime(`${String(createdAt.getHours()).padStart(2, '0')}:${String(createdAt.getMinutes()).padStart(2, '0')}`);
@@ -485,39 +483,40 @@ function CreateTestContent() {
                 const category = data.category;
 
                 if (category === "shot" || category === "driver" || category === "iron") {
-                    setSelectedPart("driver");
-                    setSelectedGroup("샷 종합 챌린지");
-                    if (content.driver?.shots) setDriverShots(content.driver.shots);
-                    else if (category === "driver" && content.shots) setDriverShots(content.shots);
+                    loadedState.selectedPart = "driver";
+                    loadedState.selectedGroup = "샷 종합 챌린지";
+                    if (content.driver?.shots) loadedState.driverShots = content.driver.shots;
+                    else if (category === "driver" && content.shots) loadedState.driverShots = content.shots;
 
-                    if (content.iron?.shots) setIronShots(content.iron.shots);
-                    else if (category === "iron" && content.shots) setIronShots(content.shots);
+                    if (content.iron?.shots) loadedState.ironShots = content.iron.shots;
+                    else if (category === "iron" && content.shots) loadedState.ironShots = content.shots;
 
-                    if (content.iron?.distances) setSelectedIronDistances(content.iron.distances);
-                    else if (category === "iron" && content.distances) setSelectedIronDistances(content.distances);
+                    if (content.iron?.distances) loadedState.selectedIronDistances = content.iron.distances;
+                    else if (category === "iron" && content.distances) loadedState.selectedIronDistances = content.distances;
                 } else if (category === "around_green" || category === "approach" || category === "bunker") {
-                    setSelectedPart("approach");
-                    setSelectedGroup("숏게임 종합 챌린지");
-                    if (content.approach?.shots) setApproachShots(content.approach.shots);
-                    else if (category === "approach" && content.shots) setApproachShots(content.shots);
+                    loadedState.selectedPart = "approach";
+                    loadedState.selectedGroup = "숏게임 종합 챌린지";
+                    if (content.approach?.shots) loadedState.approachShots = content.approach.shots;
+                    else if (category === "approach" && content.shots) loadedState.approachShots = content.shots;
 
-                    if (content.bunker?.shots) setBunkerShots(content.bunker.shots);
-                    else if (category === "bunker" && content.shots) setBunkerShots(content.shots);
+                    if (content.bunker?.shots) loadedState.bunkerShots = content.bunker.shots;
+                    else if (category === "bunker" && content.shots) loadedState.bunkerShots = content.shots;
                 } else if (category === "long_putt" || category === "middle_putt" || category === "short_putt" || category === "putting") {
-                    setSelectedPart(category === "putting" ? "long_putt" : category);
-                    setSelectedGroup("퍼팅 종합 챌린지");
+                    loadedState.selectedPart = (category === "putting" ? "long_putt" : category) as TestType;
+                    loadedState.selectedGroup = "퍼팅 종합 챌린지";
                     if (category === "putting") {
-                        if (content.long?.shots) setLongPuttShots(content.long.shots);
-                        if (content.middle?.shots) setMiddlePuttShots(content.middle.shots);
-                        if (content.short?.shots) setShortPuttShots(content.short.shots);
+                        if (content.long?.shots) loadedState.longPuttShots = content.long.shots;
+                        if (content.middle?.shots) loadedState.middlePuttShots = content.middle.shots;
+                        if (content.short?.shots) loadedState.shortPuttShots = content.short.shots;
                     } else {
                         if (content.shots) {
-                            if (category === "long_putt") setLongPuttShots(content.shots);
-                            if (category === "middle_putt") setMiddlePuttShots(content.shots);
-                            if (category === "short_putt") setShortPuttShots(content.shots);
+                            if (category === "long_putt") loadedState.longPuttShots = content.shots;
+                            if (category === "middle_putt") loadedState.middlePuttShots = content.shots;
+                            if (category === "short_putt") loadedState.shortPuttShots = content.shots;
                         }
                     }
                 }
+                setPlayerStates({ [athleteName]: loadedState });
             } catch (err) {
                 console.error("Error loading record:", err);
             } finally {
@@ -529,49 +528,17 @@ function CreateTestContent() {
     }, [editId]);
 
     // --- Data State for all parts ---
-    const [driverShots, setDriverShots] = useState<ShotResult[]>(
-        Array.from({ length: 6 }, (_, i) => ({ id: i + 1, result: null }))
-    );
+    const {
+        driverShots,
+        selectedIronDistances,
+        ironShots,
+        approachShots,
+        bunkerShots,
+        longPuttShots,
+        middlePuttShots,
+        shortPuttShots
+    } = activeState;
 
-    // Iron & Approach share logic
-    const [selectedIronDistances, setSelectedIronDistances] = useState<number[]>([]);
-    const [ironShots, setIronShots] = useState<IronShotResult[]>([]);
-
-    const [approachShots, setApproachShots] = useState<IronShotResult[]>(
-        Array.from({ length: 12 }, (_, i) => ({ distance: 0, shotId: i + 1, proximity: "" }))
-    );
-
-    const [bunkerShots, setBunkerShots] = useState<any[]>(
-        Array.from({ length: 6 }, (_, i) => ({ distance: i < 3 ? "25m 이내" : "25m 이상", shotId: i + 1, proximity: "" }))
-    );
-
-    // Putting States
-    const [longPuttShots, setLongPuttShots] = useState<IronShotResult[]>(
-        Array.from({ length: 4 }, (_, i) => ({ distance: 0, shotId: i + 1, proximity: "" }))
-    );
-    const [middlePuttShots, setMiddlePuttShots] = useState<IronShotResult[]>(
-        Array.from({ length: 8 }, (_, i) => ({ distance: 0, shotId: i + 1, proximity: "" }))
-    );
-    const [shortPuttShots, setShortPuttShots] = useState<IronShotResult[]>(
-        Array.from({ length: 6 }, (_, i) => ({ distance: 0, shotId: i + 1, proximity: "" }))
-    );
-
-    // Iron initialization
-    useEffect(() => {
-        if (selectedIronDistances.length > 0) {
-            setIronShots(prev => {
-                // If we already have shots for these distances (likely from edit mode), don't reset them
-                const newShots: IronShotResult[] = [];
-                selectedIronDistances.forEach(dist => {
-                    for (let i = 1; i <= 4; i++) {
-                        const existing = prev.find(s => s.distance === dist && s.shotId === i);
-                        newShots.push(existing || { distance: dist, shotId: i, proximity: "" });
-                    }
-                });
-                return newShots;
-            });
-        }
-    }, [selectedIronDistances]);
 
     // --- Calculations ---
     const scores = useMemo(() => {
@@ -586,31 +553,22 @@ function CreateTestContent() {
         const approach = approachShots.reduce((acc, shot) => {
             if (shot.proximity === "") return acc;
             const prox = Math.round(Number(shot.proximity));
-            let attemptDist = 0;
-            if (shot.shotId <= 4) attemptDist = 8;
-            else if (shot.shotId <= 6) attemptDist = 15;
-            else if (shot.shotId <= 8) attemptDist = 20;
-            else if (shot.shotId <= 10) attemptDist = 30; // 26m 이상 uses 30m scoring logic
-            else attemptDist = 30;
-            return acc + calculateChallengeSG(attemptDist, prox, baselines);
+            const type = shot.shotId <= 4 ? 'short' : shot.shotId <= 8 ? 'middle' : 'long';
+            return acc + getApproachScore(type, prox);
         }, 0);
 
         const bunker = bunkerShots.reduce((acc, shot) => {
             if (shot.proximity === "") return acc;
             const prox = Math.round(Number(shot.proximity));
-            const attemptDist = shot.shotId <= 3 ? 17 : 27;
-            return acc + calculateChallengeSG(attemptDist, prox, baselines);
+            const type = shot.shotId <= 3 ? 'short' : 'long';
+            return acc + getBunkerScore(type, prox);
         }, 0);
 
         const calcPutting = (shots: IronShotResult[], type: 'long' | 'middle' | 'short') => {
             return shots.reduce((acc, shot) => {
                 if (shot.proximity === "") return acc;
                 const putts = Number(shot.proximity);
-                let distance = 0;
-                if (type === 'long') distance = [10, 13, 16, 19][shot.shotId - 1];
-                else if (type === 'middle') distance = [4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5][shot.shotId - 1];
-                else distance = [1, 1.5, 2, 2.5, 3, 3.5][shot.shotId - 1];
-                return acc + getChallengePuttScore(distance, putts);
+                return acc + getPuttingScore(type, shot.shotId, putts);
             }, 0);
         };
 
@@ -621,29 +579,27 @@ function CreateTestContent() {
         // Detailed 숏게임 breakdowns
         const shortApproach = approachShots.slice(0, 4).reduce((acc, shot) => {
             if (shot.proximity === "") return acc;
-            return acc + calculateChallengeSG(8, Math.round(Number(shot.proximity)), baselines);
+            return acc + getApproachScore('short', Math.round(Number(shot.proximity)));
         }, 0);
 
         const middleApproach = approachShots.slice(4, 8).reduce((acc, shot) => {
             if (shot.proximity === "") return acc;
-            const attemptDist = shot.shotId <= 6 ? 15 : 20;
-            return acc + calculateChallengeSG(attemptDist, Math.round(Number(shot.proximity)), baselines);
+            return acc + getApproachScore('middle', Math.round(Number(shot.proximity)));
         }, 0);
 
         const longApproach = approachShots.slice(8, 12).reduce((acc, shot) => {
             if (shot.proximity === "") return acc;
-            const attemptDist = shot.shotId <= 10 ? 30 : 30; // 26m 이상 uses 30m scoring logic
-            return acc + calculateChallengeSG(attemptDist, Math.round(Number(shot.proximity)), baselines);
+            return acc + getApproachScore('long', Math.round(Number(shot.proximity)));
         }, 0);
 
         const shortBunker = bunkerShots.slice(0, 3).reduce((acc, shot) => {
             if (shot.proximity === "") return acc;
-            return acc + calculateChallengeSG(17, Math.round(Number(shot.proximity)), baselines);
+            return acc + getBunkerScore('short', Math.round(Number(shot.proximity)));
         }, 0);
 
         const longBunker = bunkerShots.slice(3, 6).reduce((acc, shot) => {
             if (shot.proximity === "") return acc;
-            return acc + calculateChallengeSG(27, Math.round(Number(shot.proximity)), baselines);
+            return acc + getBunkerScore('long', Math.round(Number(shot.proximity)));
         }, 0);
 
         // Subtotals
@@ -670,14 +626,27 @@ function CreateTestContent() {
     }, [driverShots, ironShots, approachShots, bunkerShots, longPuttShots, middlePuttShots, shortPuttShots]);
 
     const handleDriverResultSelect = (shotId: number, result: "fairway" | "rough" | "penalty") => {
-        setDriverShots(prev => prev.map(s => s.id === shotId ? { ...s, result: s.result === result ? null : result } : s));
+        updateActiveState('driverShots', prev => prev.map(s => s.id === shotId ? { ...s, result: s.result === result ? null : result } : s));
     };
 
     const toggleIronDistance = (dist: number) => {
-        setSelectedIronDistances(prev => {
-            if (prev.includes(dist)) return prev.filter(d => d !== dist);
-            if (prev.length >= 3) return prev;
-            return [...prev, dist].sort((a, b) => a - b);
+        let nextDists: number[] = [];
+        updateActiveState('selectedIronDistances', prev => {
+            if (prev.includes(dist)) nextDists = prev.filter(d => d !== dist);
+            else if (prev.length >= 3) nextDists = prev;
+            else nextDists = [...prev, dist].sort((a, b) => a - b);
+            return nextDists;
+        });
+
+        updateActiveState('ironShots', prev => {
+            const newShots: IronShotResult[] = [];
+            nextDists.forEach(d => {
+                for (let i = 1; i <= 4; i++) {
+                    const existing = prev.find(s => s.distance === d && s.shotId === i);
+                    newShots.push(existing || { distance: d, shotId: i, proximity: "" });
+                }
+            });
+            return newShots;
         });
     };
 
@@ -686,134 +655,158 @@ function CreateTestContent() {
         if (field === 'proximity' && value !== "") {
             finalValue = Math.max(0, Math.floor(Number(value)));
         }
-        setIronShots(prev => prev.map(s => (s.distance === dist && s.shotId === shotId) ? { ...s, [field]: finalValue } : s));
+        updateActiveState('ironShots', prev => prev.map(s => (s.distance === dist && s.shotId === shotId) ? { ...s, [field]: finalValue } : s));
     };
 
     const updateApproachShot = (shotId: number, value: any) => {
         const finalValue = value === "" ? "" : Math.max(0, Math.floor(Number(value)));
-        setApproachShots(prev => prev.map(s => s.shotId === shotId ? { ...s, proximity: finalValue } : s));
+        updateActiveState('approachShots', prev => prev.map(s => s.shotId === shotId ? { ...s, proximity: finalValue } : s));
     };
 
     const updateBunkerShot = (shotId: number, value: any) => {
         const finalValue = value === "" ? "" : Math.max(0, Math.floor(Number(value)));
-        setBunkerShots(prev => prev.map(s => s.shotId === shotId ? { ...s, proximity: finalValue } : s));
+        updateActiveState('bunkerShots', prev => prev.map(s => s.shotId === shotId ? { ...s, proximity: finalValue } : s));
     };
 
     const updateLongPuttShot = (shotId: number, value: any) => {
-        setLongPuttShots(prev => prev.map(s => s.shotId === shotId ? { ...s, proximity: s.proximity === value ? "" : value } : s));
+        updateActiveState('longPuttShots', prev => prev.map(s => s.shotId === shotId ? { ...s, proximity: s.proximity === value ? "" : value } : s));
     };
 
     const updateMiddlePuttShot = (shotId: number, value: any) => {
-        setMiddlePuttShots(prev => prev.map(s => s.shotId === shotId ? { ...s, proximity: s.proximity === value ? "" : value } : s));
+        updateActiveState('middlePuttShots', prev => prev.map(s => s.shotId === shotId ? { ...s, proximity: s.proximity === value ? "" : value } : s));
     };
 
     const updateShortPuttShot = (shotId: number, value: any) => {
-        setShortPuttShots(prev => prev.map(s => s.shotId === shotId ? { ...s, proximity: s.proximity === value ? "" : value } : s));
+        updateActiveState('shortPuttShots', prev => prev.map(s => s.shotId === shotId ? { ...s, proximity: s.proximity === value ? "" : value } : s));
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!selectedPlayer) {
-            alert("선수를 선택해주세요.");
+        if (selectedPlayers.length === 0) {
+            alert("선수를 한 명 이상 선택해주세요.");
             return;
         }
-        if (!selectedPart) {
-            alert("테스트 파트를 선택해주세요.");
-            return;
-        }
+        const validPlayers: string[] = [];
+        const payloads: any[] = [];
+        let hasIncomplete = false;
 
-        // --- Validation Check ---
-        let isComplete = true;
-        let content: any = {};
-        let categoryToSave = selectedPart;
-        const partLabel = testGroups.flatMap(g => g.parts).find(p => p.key === selectedPart)?.label || selectedPart;
-        let finalTitle = `${partLabel} 테스트`;
+        for (const player of selectedPlayers) {
+            const state = playerStates[player];
+            if (!state) continue;
 
-        if (selectedPart === "driver" || selectedPart === "iron") {
-            const driverComplete = driverShots.every(s => s.result !== null);
-            const ironComplete = ironShots.length === 12 && ironShots.every(s => s.proximity !== "");
-
-            if (!driverComplete || !ironComplete) {
-                alert("드라이버(6회)와 아이언(12회) 기록을 모두 완료해주세요.");
+            if (!state.selectedPart) {
+                alert(`${player} 선수의 테스트 파트를 선택해주세요.`);
+                setActivePlayer(player);
                 return;
             }
 
-            isComplete = true;
-            categoryToSave = "shot";
-            finalTitle = `샷 종합 챌린지`;
-            content = {
-                type: "combined_shot",
-                driver: { shots: driverShots, score: scores.driver },
-                iron: { shots: ironShots, score: scores.iron, distances: selectedIronDistances },
-                totalScore: scores.driver + scores.iron
-            };
-        } else if (selectedPart === "approach" || selectedPart === "bunker") {
-            const approachComplete = approachShots.every(s => s.proximity !== "");
-            const bunkerComplete = bunkerShots.every(s => s.proximity !== "");
-
-            if (!approachComplete || !bunkerComplete) {
-                alert("어프로치(12회)와 벙커(6회) 기록을 모두 완료해주세요.");
-                return;
+            const pPart = state.selectedPart;
+            const partLabel = testGroups.flatMap(g => g.parts).find(p => p.key === pPart)?.label || pPart;
+            let categoryToSave = pPart as string;
+            let finalTitle = `${partLabel} 테스트`;
+            if (pPart === "driver" || pPart === "iron") {
+                categoryToSave = "shot";
+                finalTitle = `샷 종합 챌린지`;
+            } else if (pPart === "approach" || pPart === "bunker") {
+                categoryToSave = "around_green";
+                finalTitle = `숏게임 종합 챌린지`;
+            } else if (pPart === "long_putt" || pPart === "middle_putt" || pPart === "short_putt") {
+                categoryToSave = "putting";
+                finalTitle = `퍼팅 종합 챌린지`;
             }
 
-            isComplete = true;
-            categoryToSave = "around_green";
-            finalTitle = `숏게임 종합 챌린지`;
-            content = {
-                type: "combined_around_green",
-                approach: { shots: approachShots, score: scores.approach },
-                bunker: { shots: bunkerShots, score: scores.bunker },
-                totalScore: scores.approach + scores.bunker
-            };
-        } else if (selectedPart === "long_putt" || selectedPart === "middle_putt" || selectedPart === "short_putt") {
-            const longComplete = longPuttShots.every(s => s.proximity !== "");
-            const middleComplete = middlePuttShots.every(s => s.proximity !== "");
-            const shortComplete = shortPuttShots.every(s => s.proximity !== "");
+            let isComplete = true;
+            let content: any = {};
 
-            if (!longComplete || !middleComplete || !shortComplete) {
-                alert("롱퍼팅(4회), 미들퍼팅(8회), 숏퍼팅(6회) 기록을 모두 완료해주세요.");
-                return;
+            if (categoryToSave === "shot") {
+                if (state.selectedIronDistances.length < 3) {
+                    alert("아이언 테스트에서 거리 3개를 선택해 주세요");
+                    setActivePlayer(player);
+                    return;
+                }
+                const driverComplete = state.driverShots.every(s => s.result !== null);
+                const ironComplete = state.ironShots.length === 12 && state.ironShots.every(s => s.proximity !== "");
+                if (!driverComplete || !ironComplete) isComplete = false;
+                else {
+                    const drvScore = state.driverShots.reduce((acc, s) => s.result ? acc + SCORING[s.result] : acc, 0);
+                    const irnScore = state.ironShots.reduce((acc, s) => s.proximity !== "" ? acc + getIronScore(s.distance, Math.round(Number(s.proximity))) : acc, 0);
+                    content = { type: "combined_shot", driver: { shots: state.driverShots, score: drvScore }, iron: { shots: state.ironShots, score: irnScore, distances: state.selectedIronDistances }, totalScore: drvScore + irnScore };
+                }
+            } else if (categoryToSave === "around_green") {
+                const approachComplete = state.approachShots.every(s => s.proximity !== "");
+                const bunkerComplete = state.bunkerShots.every(s => s.proximity !== "");
+                if (!approachComplete || !bunkerComplete) isComplete = false;
+                else {
+                    const appScore = state.approachShots.reduce((acc, s) => {
+                        if (s.proximity === "") return acc;
+                        const type = s.shotId <= 4 ? 'short' : s.shotId <= 8 ? 'middle' : 'long';
+                        return acc + getApproachScore(type, Math.round(Number(s.proximity)));
+                    }, 0);
+                    const bnkScore = state.bunkerShots.reduce((acc, s) => {
+                        if (s.proximity === "") return acc;
+                        const type = s.shotId <= 3 ? 'short' : 'long';
+                        return acc + getBunkerScore(type, Math.round(Number(s.proximity)));
+                    }, 0);
+                    content = { type: "combined_around_green", approach: { shots: state.approachShots, score: appScore }, bunker: { shots: state.bunkerShots, score: bnkScore }, totalScore: appScore + bnkScore };
+                }
+            } else if (categoryToSave === "putting") {
+                const longComplete = state.longPuttShots.every(s => s.proximity !== "");
+                const middleComplete = state.middlePuttShots.every(s => s.proximity !== "");
+                const shortComplete = state.shortPuttShots.every(s => s.proximity !== "");
+                if (!longComplete || !middleComplete || !shortComplete) isComplete = false;
+                else {
+                    const calcPutting = (shots: IronShotResult[], type: 'long' | 'middle' | 'short') => {
+                        return shots.reduce((acc, s) => {
+                            if (s.proximity === "") return acc;
+                            return acc + getPuttingScore(type, s.shotId, Number(s.proximity));
+                        }, 0);
+                    };
+                    const lp = calcPutting(state.longPuttShots, 'long');
+                    const mp = calcPutting(state.middlePuttShots, 'middle');
+                    const sp = calcPutting(state.shortPuttShots, 'short');
+                    content = { type: "combined_putting", long: { shots: state.longPuttShots, score: lp }, middle: { shots: state.middlePuttShots, score: mp }, short: { shots: state.shortPuttShots, score: sp }, totalScore: lp + mp + sp };
+                }
             }
 
-            isComplete = true;
-            categoryToSave = "putting";
-            finalTitle = `퍼팅 종합 챌린지`;
-            content = {
-                type: "combined_putting",
-                long: { shots: longPuttShots, score: scores.long_putt },
-                middle: { shots: middlePuttShots, score: scores.middle_putt },
-                short: { shots: shortPuttShots, score: scores.short_putt },
-                totalScore: scores.puttingSubtotal
-            };
+            if (isComplete) {
+                validPlayers.push(player);
+                payloads.push({
+                    id: editId || undefined,
+                    playerName: player,
+                    coachName: currentCoachName,
+                    category: categoryToSave,
+                    title: finalTitle,
+                    content,
+                    date: testDate,
+                    time: testTime
+                });
+            } else {
+                hasIncomplete = true;
+                // Focus on the first incomplete player
+                if (!hasIncomplete || activePlayer !== player) {
+                    setActivePlayer(player);
+                }
+            }
         }
 
-        if (!isComplete) {
-            alert("기록을 다 채워주세요. (모든 샷의 결과가 입력되어야 합니다)");
+        if (validPlayers.length === 0) {
+            alert("모든 기록이 완료된 선수가 없습니다. 기록을 완성해주세요.");
             return;
+        }
+
+        if (hasIncomplete) {
+            const proceed = confirm("미완료된 선수의 데이터는 저장되지 않습니다. 저장하시겠습니까?");
+            if (!proceed) return;
         }
 
         try {
             setIsUploading(true);
+            await Promise.all(payloads.map(payload => saveTestRecord(payload)));
 
-            await saveTestRecord({
-                id: editId || undefined,
-                playerName: selectedPlayer,
-                coachName: currentCoachName,
-                category: categoryToSave,
-                title: finalTitle,
-                content,
-                date: testDate,
-                time: testTime
-            });
-
-            alert(editId ? "챌린지 기록이 수정되었습니다." : "챌린지 기록이 저장되었습니다.");
+            alert(editId ? "챌린지 기록이 수정되었습니다." : `${validPlayers.length}명의 챌린지 기록이 저장되었습니다.`);
             router.push("/training/challenges");
         } catch (err: any) {
-            console.error("Test save error details:", {
-                message: err.message,
-                stack: err.stack,
-                fullError: err
-            });
+            console.error("Test save error details:", { message: err.message, stack: err.stack, fullError: err });
             alert("저장 중 오류가 발생했습니다: " + (err.message || "알 수 없는 에러"));
         } finally {
             setIsUploading(false);
@@ -855,6 +848,53 @@ function CreateTestContent() {
                     </div>
                 )}
 
+                {selectedPlayers.length > 1 && (
+                    <div className="sticky top-[64px] md:top-0 z-[40] -mx-4 sm:-mx-8 mb-8 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md border-b border-zinc-200 dark:border-zinc-800 transition-all">
+                        <div className="max-w-3xl mx-auto px-4 sm:px-8 py-3">
+                            <div className="flex flex-nowrap overflow-x-auto gap-3 pt-2 pb-1 pr-2 scrollbar-hide items-center">
+                                {selectedPlayers.map(player => (
+                                    <div
+                                        key={player}
+                                        onClick={() => setActivePlayer(player)}
+                                        className={cn(
+                                            "relative flex-shrink-0 inline-flex items-center justify-center min-w-[70px] px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all cursor-pointer select-none",
+                                            activePlayer === player
+                                                ? "bg-brand-navy text-white border-brand-navy shadow-sm scale-105"
+                                                : "bg-white text-zinc-600 border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 hover:scale-105"
+                                        )}
+                                    >
+                                        <span>{player}</span>
+                                        {!editId && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const newPlayers = selectedPlayers.filter(p => p !== player);
+                                                    setSelectedPlayers(newPlayers);
+                                                    if (activePlayer === player) setActivePlayer(newPlayers[0] || "");
+                                                    setPlayerStates(prev => {
+                                                        const next = { ...prev };
+                                                        delete next[player];
+                                                        return next;
+                                                    });
+                                                }}
+                                                className={cn(
+                                                    "absolute -top-1.5 -right-1.5 rounded-full p-[3px] border shadow-sm transition-all",
+                                                    activePlayer === player
+                                                        ? "bg-brand-navy-dark text-white border-brand-navy-dark hover:bg-red-500 hover:border-red-500"
+                                                        : "bg-white text-zinc-400 border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700 hover:text-red-500 hover:border-red-200"
+                                                )}
+                                            >
+                                                <X size={10} strokeWidth={2.5} />
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <form onSubmit={handleSubmit} className="space-y-8">
                     {/* ── 1. Basic Info ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-[2rem] shadow-sm space-y-6">
@@ -863,11 +903,29 @@ function CreateTestContent() {
                                 선수 선택 <span className="text-brand-red">*</span>
                             </label>
                             <AthleteSearch
-                                multi={false}
-                                selectedNames={selectedPlayer ? [selectedPlayer] : []}
-                                onSelect={(name) => setSelectedPlayer(name)}
-                                onRemove={() => setSelectedPlayer("")}
-                                placeholder="선수 이름을 검색하세요..."
+                                multi={editId === null}
+                                showChips={selectedPlayers.length === 1}
+                                selectedNames={selectedPlayers}
+                                onSelect={(name) => {
+                                    if (editId) return; // Prevent multi-select in edit mode
+                                    if (!selectedPlayers.includes(name)) {
+                                        setSelectedPlayers(prev => [...prev, name]);
+                                        setPlayerStates(prev => ({ ...prev, [name]: getInitialPlayerState() }));
+                                        setActivePlayer(name);
+                                    }
+                                }}
+                                onRemove={(name) => {
+                                    if (editId) return;
+                                    const newPlayers = selectedPlayers.filter(p => p !== name);
+                                    setSelectedPlayers(newPlayers);
+                                    if (activePlayer === name) setActivePlayer(newPlayers[0] || "");
+                                    setPlayerStates(prev => {
+                                        const next = { ...prev };
+                                        delete next[name];
+                                        return next;
+                                    });
+                                }}
+                                placeholder="선수 이름 검색 후 Enter..."
                             />
                         </div>
 
@@ -1017,11 +1075,7 @@ function CreateTestContent() {
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        if (!scores.isIronComplete) {
-                                            setSelectedPart("iron");
-                                        } else {
-                                            setSelectedPart("approach");
-                                        }
+                                        setSelectedPart("iron");
                                         window.scrollTo({ top: 0, behavior: 'smooth' });
                                     }}
                                     className={cn(
@@ -1031,7 +1085,7 @@ function CreateTestContent() {
                                             : "bg-zinc-100 dark:bg-zinc-800 text-zinc-400"
                                     )}
                                 >
-                                    {!scores.isIronComplete ? "다음: 아이언 테스트 작성" : "다음: 어프로치 테스트 작성"} <ChevronRight size={18} />
+                                    다음: 아이언 테스트 작성 <ChevronRight size={18} />
                                 </button>
                             </div>
                         </section>
@@ -1153,27 +1207,7 @@ function CreateTestContent() {
                                 </div>
                             )}
 
-                            <div className="mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        if (!scores.isDriverComplete) {
-                                            setSelectedPart("driver");
-                                        } else {
-                                            setSelectedPart("approach");
-                                        }
-                                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                                    }}
-                                    className={cn(
-                                        "w-full py-4 rounded-2xl text-sm font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-md",
-                                        scores.isIronComplete
-                                            ? "bg-brand-navy text-white shadow-brand-navy/20"
-                                            : "bg-zinc-100 dark:bg-zinc-800 text-zinc-400"
-                                    )}
-                                >
-                                    {!scores.isDriverComplete ? "다음: 드라이버 테스트 작성" : "다음: 어프로치 테스트 작성"} <ChevronRight size={18} />
-                                </button>
-                            </div>
+
                         </div>
                     )}
 
@@ -1210,7 +1244,7 @@ function CreateTestContent() {
                                                         <span className="text-sm font-bold text-zinc-600 dark:text-zinc-400">{(group.labelMap as any)[shot.shotId]}</span>
                                                     </div>
                                                     <div className="flex gap-1 w-full sm:w-auto">
-                                                        {SHORT_GAME_OPTIONS.map((opt) => (
+                                                        {(group.scoreKey === 'shortApproach' ? SHORT_APPROACH_OPTIONS : group.scoreKey === 'middleApproach' ? MIDDLE_APPROACH_OPTIONS : LONG_APPROACH_OPTIONS).map((opt) => (
                                                             <button
                                                                 key={opt.label}
                                                                 type="button"
@@ -1306,7 +1340,7 @@ function CreateTestContent() {
                                                         <span className="text-sm font-bold text-zinc-600 dark:text-zinc-400">{group.label}</span>
                                                     </div>
                                                     <div className="flex gap-1 w-full sm:w-auto">
-                                                        {SHORT_GAME_OPTIONS.map((opt) => (
+                                                        {(group.scoreKey === 'shortBunker' ? SHORT_BUNKER_OPTIONS : LONG_BUNKER_OPTIONS).map((opt) => (
                                                             <button
                                                                 key={opt.label}
                                                                 type="button"
