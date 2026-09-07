@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useParams } from "next/navigation";
-import { ChevronLeft, Calendar, FileText, Upload, X, ChevronDown, ChevronUp, Layers, Search, Image as ImageIcon, Plus } from "lucide-react";
+import { ChevronLeft, Calendar, FileText, Upload, X, ChevronDown, ChevronUp, Layers, Search, Image as ImageIcon, Plus, Minus } from "lucide-react";
 import { CategoryTabs } from "@/components/ui/CategoryTabs";
 import { createClient } from "@/lib/supabase/client";
 import { fetchTrainingTemplates, TrainingTemplate } from "@/lib/training-template-sync";
@@ -52,6 +52,7 @@ export default function EditTrainingPage() {
     const [trainingComment, setTrainingComment] = useState("");
 
     const [lessonComments, setLessonComments] = useState<string[]>([""]);
+    const [commentIntervals, setCommentIntervals] = useState<(number | "")[]>([]);
     const [goalType, setGoalType] = useState<"count" | "time">("time");
     const [goalCount, setGoalCount] = useState<number | "">(10);
     const [goalTime, setGoalTime] = useState<number | "">(30);
@@ -115,6 +116,7 @@ export default function EditTrainingPage() {
                         }
                         setTrainingMethod(lessonReviewSetting.trainingMethod || "voice");
                         setSwingKeyInterval(lessonReviewSetting.swingKeyInterval || 25);
+                        setCommentIntervals(lessonReviewSetting.commentIntervals || []);
                     } else {
                         setTemplateSettings(settings);
                         setSelectedTemplates(settings.map((s: any) => s.id));
@@ -186,13 +188,26 @@ export default function EditTrainingPage() {
                 const typeLabel = trainingTypeOptions.find(opt => opt.key === selectedTrainingType)?.label || "";
                 combinedTitle = typeLabel ? `[${typeLabel}] 훈련` : "훈련";
                 finalTotalCount = (goalTime as number) || 0;
+                
+                const validComments: string[] = [];
+                const validIntervals: number[] = [];
+                for (let i = 0; i < lessonComments.length; i++) {
+                    if (lessonComments[i].trim() !== "") {
+                        validComments.push(lessonComments[i]);
+                        if (validComments.length > 1) {
+                            validIntervals.push((commentIntervals[i - 1] as number) || 3);
+                        }
+                    }
+                }
+
                 finalTemplateSettings = [{
                     type: "lesson_review",
-                    comments: lessonComments.filter(c => c.trim() !== ""),
+                    comments: validComments,
                     goalType: "time",
                     goalValue: (goalTime as number) || 0,
                     trainingMethod: "voice",
-                    swingKeyInterval: (swingKeyInterval as number) || 25
+                    swingKeyInterval: (swingKeyInterval as number) || 25,
+                    commentIntervals: validIntervals
                 }];
             } else {
                 combinedTitle = templateSettings.map(s => s.title).join(", ") || "훈련 기록";
@@ -283,39 +298,104 @@ export default function EditTrainingPage() {
                                     </div>
                                     <div className="space-y-2">
                                         {lessonComments.map((comment, index) => (
-                                            <div key={index} className="flex items-start gap-2">
-                                                <div className="flex-1">
-                                                    <textarea
-                                                        rows={1}
-                                                        value={comment}
-                                                        onChange={(e) => {
-                                                            const newComments = [...lessonComments];
-                                                            newComments[index] = e.target.value;
-                                                            setLessonComments(newComments);
-                                                        }}
-                                                        placeholder={`코멘트 ${index + 1} 입력...`}
-                                                        className="w-full p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all resize-y"
-                                                    />
+                                            <React.Fragment key={index}>
+                                                <div className="flex items-start gap-2">
+                                                    <div className="flex-1 flex flex-col">
+                                                        <textarea
+                                                            rows={1}
+                                                            value={comment}
+                                                            onChange={(e) => {
+                                                                const newComments = [...lessonComments];
+                                                                newComments[index] = e.target.value;
+                                                                setLessonComments(newComments);
+                                                            }}
+                                                            placeholder={`코멘트 ${index + 1} 입력...`}
+                                                            className="w-full p-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all resize-y"
+                                                        />
+                                                        {/* Interval Input between comments */}
+                                                        {index < lessonComments.length - 1 && (
+                                                            <div className="flex justify-center my-3 relative">
+                                                                <div className="absolute inset-0 flex items-center justify-center">
+                                                                    <div className="w-[2px] h-full bg-zinc-200 dark:bg-zinc-700"></div>
+                                                                </div>
+                                                                <div className="relative z-10 flex items-center gap-2 bg-white dark:bg-zinc-900 px-3 py-1 rounded-full border border-zinc-200 dark:border-zinc-700 shadow-sm">
+                                                                    <span className="text-[11px] font-bold text-zinc-500 uppercase">코멘트 간격</span>
+                                                                    <div className="flex items-center gap-1">
+                                                                        <button 
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                const newIntervals = [...commentIntervals];
+                                                                                const current = (newIntervals[index] as number) || 3;
+                                                                                newIntervals[index] = Math.max(1, current - 1);
+                                                                                setCommentIntervals(newIntervals);
+                                                                            }}
+                                                                            className="w-5 h-5 flex items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+                                                                        >
+                                                                            <Minus size={12} />
+                                                                        </button>
+                                                                        <div className="flex items-center">
+                                                                            <input
+                                                                                type="number"
+                                                                                value={commentIntervals[index] ?? 3}
+                                                                                onChange={(e) => {
+                                                                                    const newIntervals = [...commentIntervals];
+                                                                                    newIntervals[index] = e.target.value === "" ? "" : Math.max(1, parseInt(e.target.value));
+                                                                                    setCommentIntervals(newIntervals);
+                                                                                }}
+                                                                                className="w-6 text-center bg-transparent text-sm font-bold text-zinc-900 dark:text-zinc-100 focus:outline-none"
+                                                                                min="1"
+                                                                                placeholder="3"
+                                                                            />
+                                                                            <span className="text-[11px] text-zinc-500">초</span>
+                                                                        </div>
+                                                                        <button 
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                const newIntervals = [...commentIntervals];
+                                                                                const current = (newIntervals[index] as number) || 3;
+                                                                                newIntervals[index] = current + 1;
+                                                                                setCommentIntervals(newIntervals);
+                                                                            }}
+                                                                            className="w-5 h-5 flex items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+                                                                        >
+                                                                            <Plus size={12} />
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    {lessonComments.length > 1 && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const newComments = lessonComments.filter((_, i) => i !== index);
+                                                                setLessonComments(newComments);
+                                                                
+                                                                const newIntervals = [...commentIntervals];
+                                                                if (index > 0) {
+                                                                    newIntervals.splice(index - 1, 1);
+                                                                } else if (newIntervals.length > 0) {
+                                                                    newIntervals.splice(0, 1);
+                                                                }
+                                                                setCommentIntervals(newIntervals);
+                                                            }}
+                                                            className="p-2.5 text-zinc-400 hover:text-brand-red transition-colors bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700 mt-1"
+                                                        >
+                                                            <X size={16} />
+                                                        </button>
+                                                    )}
                                                 </div>
-                                                {lessonComments.length > 1 && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            const newComments = lessonComments.filter((_, i) => i !== index);
-                                                            setLessonComments(newComments);
-                                                        }}
-                                                        className="p-2.5 text-zinc-400 hover:text-brand-red transition-colors bg-zinc-50 dark:bg-zinc-800/50 rounded-xl border border-zinc-200 dark:border-zinc-700 mt-1"
-                                                    >
-                                                        <X size={16} />
-                                                    </button>
-                                                )}
-                                            </div>
+                                            </React.Fragment>
                                         ))}
                                         {lessonComments.length < 5 && (
                                             <div className="flex justify-end">
                                                 <button
                                                     type="button"
-                                                    onClick={() => setLessonComments([...lessonComments, ""])}
+                                                    onClick={() => {
+                                                        setLessonComments([...lessonComments, ""]);
+                                                        setCommentIntervals([...commentIntervals, 3]);
+                                                    }}
                                                     className="flex items-center gap-1 text-xs font-bold text-brand-navy hover:text-brand-navy/80 transition-colors mt-2"
                                                 >
                                                     <Plus size={14} /> 코멘트 추가

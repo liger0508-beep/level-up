@@ -39,7 +39,7 @@ const getInitialPlayerState = (): PlayerState => ({
     selectedIronDistances: [],
     ironShots: [],
     approachShots: Array.from({ length: 12 }, (_, i) => ({ distance: 0, shotId: i + 1, proximity: "" })),
-    bunkerShots: Array.from({ length: 6 }, (_, i) => ({ distance: i < 3 ? "25m 이내" : "25m 이상", shotId: i + 1, proximity: "" })),
+    bunkerShots: Array.from({ length: 6 }, (_, i) => ({ distance: i < 3 ? "10~20m" : "20~30m", shotId: i + 1, proximity: "" })),
     longPuttShots: Array.from({ length: 4 }, (_, i) => ({ distance: 0, shotId: i + 1, proximity: "" })),
     middlePuttShots: Array.from({ length: 8 }, (_, i) => ({ distance: 0, shotId: i + 1, proximity: "" })),
     shortPuttShots: Array.from({ length: 6 }, (_, i) => ({ distance: 0, shotId: i + 1, proximity: "" })),
@@ -689,15 +689,17 @@ function CreateTestContent() {
         const validPlayers: string[] = [];
         const payloads: any[] = [];
         let hasIncomplete = false;
+        const incompleteDetails: string[] = [];
 
         for (const player of selectedPlayers) {
             const state = playerStates[player];
             if (!state) continue;
 
             if (!state.selectedPart) {
-                alert(`${player} 선수의 테스트 파트를 선택해주세요.`);
-                setActivePlayer(player);
-                return;
+                incompleteDetails.push(`${player}: 테스트 파트 미선택`);
+                hasIncomplete = true;
+                if (!hasIncomplete || activePlayer !== player) setActivePlayer(player);
+                continue;
             }
 
             const pPart = state.selectedPart;
@@ -716,17 +718,20 @@ function CreateTestContent() {
             }
 
             let isComplete = true;
+            let missingParts: string[] = [];
             let content: any = {};
 
             if (categoryToSave === "shot") {
                 if (state.selectedIronDistances.length < 3) {
-                    alert("아이언 테스트에서 거리 3개를 선택해 주세요");
-                    setActivePlayer(player);
-                    return;
+                    missingParts.push("아이언 거리 3개 미선택");
+                    isComplete = false;
                 }
                 const driverComplete = state.driverShots.every(s => s.result !== null);
+                if (!driverComplete) missingParts.push("드라이버 기록");
                 const ironComplete = state.ironShots.length === 12 && state.ironShots.every(s => s.proximity !== "");
-                if (!driverComplete || !ironComplete) isComplete = false;
+                if (!ironComplete && state.selectedIronDistances.length >= 3) missingParts.push("아이언 기록");
+
+                if (!driverComplete || !ironComplete || state.selectedIronDistances.length < 3) isComplete = false;
                 else {
                     const drvScore = state.driverShots.reduce((acc, s) => s.result ? acc + SCORING[s.result] : acc, 0);
                     const irnScore = state.ironShots.reduce((acc, s) => s.proximity !== "" ? acc + getIronScore(s.distance, Math.round(Number(s.proximity))) : acc, 0);
@@ -734,7 +739,10 @@ function CreateTestContent() {
                 }
             } else if (categoryToSave === "around_green") {
                 const approachComplete = state.approachShots.every(s => s.proximity !== "");
+                if (!approachComplete) missingParts.push("어프로치 기록");
                 const bunkerComplete = state.bunkerShots.every(s => s.proximity !== "");
+                if (!bunkerComplete) missingParts.push("벙커 기록");
+
                 if (!approachComplete || !bunkerComplete) isComplete = false;
                 else {
                     const appScore = state.approachShots.reduce((acc, s) => {
@@ -751,8 +759,12 @@ function CreateTestContent() {
                 }
             } else if (categoryToSave === "putting") {
                 const longComplete = state.longPuttShots.every(s => s.proximity !== "");
+                if (!longComplete) missingParts.push("롱퍼팅 기록");
                 const middleComplete = state.middlePuttShots.every(s => s.proximity !== "");
+                if (!middleComplete) missingParts.push("미들퍼팅 기록");
                 const shortComplete = state.shortPuttShots.every(s => s.proximity !== "");
+                if (!shortComplete) missingParts.push("숏퍼팅 기록");
+
                 if (!longComplete || !middleComplete || !shortComplete) isComplete = false;
                 else {
                     const calcPutting = (shots: IronShotResult[], type: 'long' | 'middle' | 'short') => {
@@ -782,6 +794,9 @@ function CreateTestContent() {
                 });
             } else {
                 hasIncomplete = true;
+                if (missingParts.length > 0) {
+                    incompleteDetails.push(`${player}: ${missingParts.join(", ")} 누락`);
+                }
                 // Focus on the first incomplete player
                 if (!hasIncomplete || activePlayer !== player) {
                     setActivePlayer(player);
@@ -790,12 +805,12 @@ function CreateTestContent() {
         }
 
         if (validPlayers.length === 0) {
-            alert("모든 기록이 완료된 선수가 없습니다. 기록을 완성해주세요.");
+            alert(`모든 기록이 완료된 선수가 없습니다. 기록을 완성해주세요.\n\n[누락된 항목]\n${incompleteDetails.join("\n")}`);
             return;
         }
 
         if (hasIncomplete) {
-            const proceed = confirm("미완료된 선수의 데이터는 저장되지 않습니다. 저장하시겠습니까?");
+            const proceed = confirm(`미완료된 선수의 데이터는 저장되지 않습니다. 저장하시겠습니까?\n\n[누락된 항목]\n${incompleteDetails.join("\n")}`);
             if (!proceed) return;
         }
 
@@ -899,8 +914,13 @@ function CreateTestContent() {
                     {/* ── 1. Basic Info ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-[2rem] shadow-sm space-y-6">
                         <div className="space-y-4">
-                            <label className="block text-sm font-bold text-zinc-800 dark:text-zinc-200">
-                                선수 선택 <span className="text-brand-red">*</span>
+                            <label className="flex items-center text-sm font-bold text-zinc-800 dark:text-zinc-200">
+                                선수 선택 <span className="text-brand-red ml-1">*</span>
+                                {!editId && (
+                                    <span className="text-xs font-normal text-zinc-400 ml-2">
+                                        (선수 다중 선택 가능)
+                                    </span>
+                                )}
                             </label>
                             <AthleteSearch
                                 multi={editId === null}
@@ -1217,7 +1237,7 @@ function CreateTestContent() {
                             {[
                                 { title: "숏 어프로치 테스트", shots: approachShots.slice(0, 4), labelMap: { 1: "5~10m", 2: "5~10m", 3: "5~10m", 4: "5~10m" }, scoreKey: 'shortApproach' },
                                 { title: "미들 어프로치 테스트", shots: approachShots.slice(4, 8), labelMap: { 5: "15m", 6: "15m", 7: "20m", 8: "20m" }, scoreKey: 'middleApproach' },
-                                { title: "롱 어프로치 테스트", shots: approachShots.slice(8, 12), labelMap: { 9: "26m 이상", 10: "26m 이상", 11: "30m", 12: "30m" }, scoreKey: 'longApproach' }
+                                { title: "롱 어프로치 테스트", shots: approachShots.slice(8, 12), labelMap: { 9: "25m", 10: "25m", 11: "30m", 12: "30m" }, scoreKey: 'longApproach' }
                             ].map((group, gIdx) => {
                                 const distScore = (scores as any)[group.scoreKey];
                                 return (
@@ -1312,8 +1332,8 @@ function CreateTestContent() {
                         <div className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-300">
                             <h3 className="text-lg font-black text-brand-navy dark:text-brand-navy-light italic pl-2">벙커 테스트 (6회)</h3>
                             {[
-                                { title: "숏 벙커 테스트", shots: bunkerShots.slice(0, 3), label: "25m 이내", scoreKey: 'shortBunker' },
-                                { title: "롱 벙커 테스트", shots: bunkerShots.slice(3, 6), label: "25m 이상", scoreKey: 'longBunker' }
+                                { title: "숏 벙커 테스트", shots: bunkerShots.slice(0, 3), label: "10~20m", scoreKey: 'shortBunker' },
+                                { title: "롱 벙커 테스트", shots: bunkerShots.slice(3, 6), label: "20~30m", scoreKey: 'longBunker' }
                             ].map((group, gIdx) => {
                                 const distScore = (scores as any)[group.scoreKey];
                                 return (

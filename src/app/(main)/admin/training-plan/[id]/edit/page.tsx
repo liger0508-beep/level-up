@@ -87,7 +87,7 @@ export default function EditPlanPage() {
     useEffect(() => {
         if (selectedPlayer) {
             fetchPlansByAthlete(selectedPlayer).then(setPlayerPlans);
-            fetchAllLessonsByPlayer(selectedPlayer).then(lessons => {
+            fetchAllLessonsByPlayer(selectedPlayer, undefined, 10).then(lessons => {
                 setAllLessons(lessons);
                 if (fetchedPlan && fetchedPlan.linkedLessonIds && fetchedPlan.linkedLessonIds.length > 0) {
                     const initialSelected: Record<string, LessonRecord | null> = {};
@@ -101,7 +101,13 @@ export default function EditPlanPage() {
                 } else {
                     fetchLatestLessonsPerCategory(selectedPlayer).then(latestLessons => {
                         const initialSelected: Record<string, LessonRecord | null> = {};
-                        ["shot", "putt", "field", "physical"].forEach(part => {
+                        
+                        const top3Categories = Object.values(latestLessons)
+                            .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                            .slice(0, 3)
+                            .map(l => l.category);
+                            
+                        top3Categories.forEach(part => {
                             if (latestLessons[part]) {
                                 initialSelected[part] = latestLessons[part];
                             }

@@ -8,17 +8,42 @@ interface SwingKeyPreviewModalProps {
     isOpen: boolean;
     onClose: () => void;
     comments: string[];
-    intervalSeconds: number;
+    commentIntervals: (number | "")[];
+    swingKeyInterval: number;
 }
 
-export function SwingKeyPreviewModal({ isOpen, onClose, comments, intervalSeconds }: SwingKeyPreviewModalProps) {
-    const validComments = comments.filter(c => c.trim().length > 0);
+export function SwingKeyPreviewModal({ isOpen, onClose, comments, commentIntervals, swingKeyInterval }: SwingKeyPreviewModalProps) {
     
     const [isPlaying, setIsPlaying] = useState(false);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
     const [currentIndex, setCurrentIndex] = useState(-1);
+    const [timeRemaining, setTimeRemaining] = useState(0);
+    const [currentInterval, setCurrentInterval] = useState(0);
     
     const timerRef = useRef<NodeJS.Timeout | null>(null);
+    const stateRef = useRef({
+        index: 0,
+        timeRemaining: 0,
+        currentInterval: 0,
+    });
+
+    const validComments: string[] = [];
+    const validIntervals: number[] = [];
+    for (let i = 0; i < comments.length; i++) {
+        if (comments[i].trim() !== "") {
+            validComments.push(comments[i]);
+            if (validComments.length > 1) {
+                validIntervals.push((commentIntervals[i - 1] as number) || 3);
+            }
+        }
+    }
+
+    const getIntervalForNext = (currentIndex: number) => {
+        if (currentIndex < validComments.length - 1) {
+            return validIntervals[currentIndex] || 3;
+        }
+        return swingKeyInterval || 25;
+    };
 
     // Stop everything when closed
     useEffect(() => {
@@ -47,6 +72,8 @@ export function SwingKeyPreviewModal({ isOpen, onClose, comments, intervalSecond
         }
         setElapsedSeconds(0);
         setCurrentIndex(-1);
+        setTimeRemaining(0);
+        setCurrentInterval(0);
     };
 
     const startPreview = () => {
@@ -55,33 +82,48 @@ export function SwingKeyPreviewModal({ isOpen, onClose, comments, intervalSecond
             return;
         }
         
+        const firstInterval = getIntervalForNext(0);
+        
         setIsPlaying(true);
         setElapsedSeconds(0);
         setCurrentIndex(0);
+        setTimeRemaining(firstInterval);
+        setCurrentInterval(firstInterval);
+        
+        stateRef.current = {
+            index: 0,
+            timeRemaining: firstInterval,
+            currentInterval: firstInterval
+        };
+        
         speak(validComments[0]);
 
         timerRef.current = setInterval(() => {
-            setElapsedSeconds((prev) => {
-                const nextElapsed = prev + 1;
+            stateRef.current.timeRemaining -= 1;
+            setElapsedSeconds((prev) => prev + 1);
+            
+            if (stateRef.current.timeRemaining <= 0) {
+                const nextIdx = (stateRef.current.index + 1) % validComments.length;
+                speak(validComments[nextIdx]);
                 
-                // When elapsed time hits a multiple of intervalSeconds
-                if (nextElapsed > 0 && nextElapsed % intervalSeconds === 0) {
-                    setCurrentIndex((prevIdx) => {
-                        const nextIdx = (prevIdx + 1) % validComments.length;
-                        speak(validComments[nextIdx]);
-                        return nextIdx;
-                    });
-                }
-                
-                return nextElapsed;
-            });
+                const nextInterval = getIntervalForNext(nextIdx);
+                stateRef.current = {
+                    index: nextIdx,
+                    timeRemaining: nextInterval,
+                    currentInterval: nextInterval
+                };
+            }
+            
+            setCurrentIndex(stateRef.current.index);
+            setTimeRemaining(stateRef.current.timeRemaining);
+            setCurrentInterval(stateRef.current.currentInterval);
         }, 1000);
     };
 
     if (!isOpen) return null;
 
-    const progressPercentage = intervalSeconds > 0 
-        ? ((elapsedSeconds % intervalSeconds) / intervalSeconds) * 100 
+    const progressPercentage = currentInterval > 0 
+        ? ((currentInterval - timeRemaining) / currentInterval) * 100 
         : 0;
 
     return (
@@ -135,7 +177,7 @@ export function SwingKeyPreviewModal({ isOpen, onClose, comments, intervalSecond
                         </div>
 
                         <div className="text-center space-y-1">
-                            <p className="text-sm text-zinc-500 font-medium">재생 간격: {intervalSeconds}초</p>
+                            <p className="text-sm text-zinc-500 font-medium">현재 간격: {currentInterval}초</p>
                         </div>
                     </div>
 

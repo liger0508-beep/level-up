@@ -22,8 +22,10 @@ import { AthleteSearch } from "@/components/ui/AthleteSearch";
 
 import { LinkedLessonCard } from "@/components/training-plan/LinkedLessonCard";
 import { LinkedJournalCard } from "@/components/training-plan/LinkedJournalCard";
+import { LinkedPlanCard } from "@/components/training-plan/LinkedPlanCard";
 import { LessonHistoryModal } from "@/components/training-plan/LessonHistoryModal";
 import { JournalHistoryModal } from "@/components/training-plan/JournalHistoryModal";
+import { PlanHistoryModal } from "@/components/training-plan/PlanHistoryModal";
 import { PageTitle, SectionTitle, LabelText } from "@/components/ui/Typography";
 import { fetchLatestLessonsPerCategory, fetchAllLessonsByPlayer, LessonRecord } from "@/lib/lesson-sync";
 import { fetchPlans, savePlan, calculateShotRatio, PlanType, PLAN_TYPE_LABELS, fetchPlansByAthlete, Plan } from "@/lib/plan-sync";
@@ -38,6 +40,7 @@ import ReferenceDataModal from "@/components/lesson/ReferenceDataModal";
 const mockPlayers = ["이수진", "최민준", "김지윤", "박도윤", "이지원", "한상욱"];
 
 const partOptions = [
+    { key: "all", label: "ALL" },
     { key: "shot", label: "Shot" },
     { key: "pitch", label: "Pitch" },
     { key: "bunker", label: "Bunker" },
@@ -51,10 +54,8 @@ const partOptions = [
 export default function CreatePlanPage() {
     const router = useRouter();
 
-    // ── Form State ──────────────────────────────────────────────────
     const [searchQuery, setSearchQuery] = useState("");
-    const [planSearchQuery, setPlanSearchQuery] = useState("");
-    const [planSelectedPart, setPlanSelectedPart] = useState<string>("shot");
+    const [planSelectedPart, setPlanSelectedPart] = useState<string>("all");
     const [selectedPlayer, setSelectedPlayer] = useState("");
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [trainingDate, setTrainingDate] = useState(() =>
@@ -76,6 +77,10 @@ export default function CreatePlanPage() {
     const [allJournals, setAllJournals] = useState<Journal[]>([]);
     const [isJournalModalOpen, setIsJournalModalOpen] = useState(false);
     const [isReferenceModalOpen, setIsReferenceModalOpen] = useState(false);
+
+    // Plan State
+    const [recentPlan, setRecentPlan] = useState<Plan | null>(null);
+    const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
 
     // ── Lesson Integration State ─────────────────────────────────────
     const [selectedLessons, setSelectedLessons] = useState<Record<string, LessonRecord | null>>({});
@@ -114,13 +119,26 @@ export default function CreatePlanPage() {
 
     useEffect(() => {
         if (selectedPlayer) {
-            fetchPlansByAthlete(selectedPlayer).then(setPlayerPlans);
-            fetchAllLessonsByPlayer(selectedPlayer).then(setAllLessons);
+            fetchPlansByAthlete(selectedPlayer).then(plans => {
+                setPlayerPlans(plans);
+                if (plans.length > 0) {
+                    setRecentPlan(plans[0]);
+                } else {
+                    setRecentPlan(null);
+                }
+            });
+            fetchAllLessonsByPlayer(selectedPlayer, undefined, 10).then(setAllLessons);
             fetchLatestLessonsPerCategory(selectedPlayer).then(lessons => {
-                // Initialize selectedLessons with the latest for each part
+                // Initialize selectedLessons with the top 3 latest parts
                 const initialSelected: Record<string, LessonRecord | null> = {};
+                
+                const top3Categories = Object.values(lessons)
+                    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                    .slice(0, 3)
+                    .map(l => l.category);
+
                 partOptions.forEach(opt => {
-                    if (lessons[opt.key]) {
+                    if (opt.key !== "all" && lessons[opt.key] && top3Categories.includes(opt.key)) {
                         initialSelected[opt.key] = lessons[opt.key];
                     }
                 });
@@ -136,6 +154,7 @@ export default function CreatePlanPage() {
             });
         } else {
             setPlayerPlans([]);
+            setRecentPlan(null);
             setAllLessons([]);
             setSelectedLessons({});
             setRecentJournal(null);
@@ -332,6 +351,24 @@ export default function CreatePlanPage() {
 
 
 
+                    {/* ── 최근 훈련 계획 (Recent Plan) ── */}
+                    {selectedPlayer && (
+                        <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <SectionTitle>
+                                    <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" /> 훈련 계획
+                                </SectionTitle>
+                            </div>
+
+                            <LinkedPlanCard
+                                plan={recentPlan}
+                                onMoreClick={() => setIsPlanModalOpen(true)}
+                                onRemove={() => setRecentPlan(null)}
+                                readOnly={false}
+                            />
+                        </section>
+                    )}
+
                     {/* ── 최근 훈련 일지 (Recent Journal) ── */}
                     {selectedPlayer && (
                         <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-4">
@@ -470,37 +507,30 @@ export default function CreatePlanPage() {
                                 </SectionTitle>
                             </div>
                             <CategoryTabs options={partOptions} value={planSelectedPart} onChange={setPlanSelectedPart} />
-                            <div className="relative w-full mt-2 mb-4">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                                <input
-                                    type="text"
-                                    placeholder="레슨 내용 검색..."
-                                    value={planSearchQuery}
-                                    onChange={(e) => setPlanSearchQuery(e.target.value)}
-                                    className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all"
-                                />
-                            </div>
-                            <div className="grid grid-cols-1 gap-4">
+                            
+                            <div className="grid grid-cols-1 gap-4 mt-4">
                                 {(() => {
                                     if (!planSelectedPart) return null;
 
-                                    if (planSearchQuery) {
-                                        const searchResults = allLessons.filter(l =>
-                                            l.category === planSelectedPart &&
-                                            l.content.toLowerCase().includes(planSearchQuery.toLowerCase())
-                                        ).slice(0, 5);
-
-                                        if (searchResults.length === 0) {
-                                            return <div className="text-sm text-zinc-500 py-8 text-center border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl">검색 결과가 없습니다.</div>;
+                                    if (planSelectedPart === "all") {
+                                        const allSelected = Object.values(selectedLessons).filter(Boolean) as LessonRecord[];
+                                        if (allSelected.length === 0) {
+                                            return (
+                                                <div className="flex flex-col items-center justify-center text-zinc-400 min-h-[120px] bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800/50">
+                                                    <span className="text-sm font-semibold text-zinc-500">선택된 레슨 내용이 없습니다</span>
+                                                </div>
+                                            );
                                         }
-
-                                        return searchResults.map(lesson => (
-                                            <div key={lesson.id} onClick={() => {
-                                                setSelectedLessons(prev => ({ ...prev, [lesson.category]: lesson }));
-                                                setPlanSearchQuery("");
-                                            }} className="cursor-pointer hover:ring-2 hover:ring-brand-navy rounded-2xl transition-all ring-offset-2 dark:ring-offset-zinc-950">
-                                                <LinkedLessonCard part={lesson.category} lesson={lesson} readOnly />
-                                            </div>
+                                        return allSelected.map(lesson => (
+                                            <LinkedLessonCard
+                                                key={lesson.id}
+                                                part={lesson.category}
+                                                lesson={lesson}
+                                                onMoreClick={() => {
+                                                    setHistoryModalTargetPart(lesson.category);
+                                                    setIsHistoryModalOpen(true);
+                                                }}
+                                            />
                                         ));
                                     }
 
@@ -603,6 +633,20 @@ export default function CreatePlanPage() {
                     setIsJournalModalOpen(false);
                 }}
                 connectedJournalId={recentJournal?.id}
+            />
+            <PlanHistoryModal
+                isOpen={isPlanModalOpen}
+                onClose={() => setIsPlanModalOpen(false)}
+                allPlans={playerPlans}
+                readOnly={false}
+                onSelectPlan={(planId) => {
+                    const plan = playerPlans.find(p => p.id === planId);
+                    if (plan) {
+                        setRecentPlan(plan);
+                    }
+                    setIsPlanModalOpen(false);
+                }}
+                connectedPlanId={recentPlan?.id}
             />
             <ReferenceDataModal
                 isOpen={isReferenceModalOpen}

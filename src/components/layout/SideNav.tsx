@@ -78,6 +78,7 @@ const menuItems = [
         subItems: [
             { key: "scores", title: "스코어", href: "/scores" },
             { key: "scores-stats", title: "스코어 통계", href: "/scores/stats" },
+            { key: "scores-tournaments", title: "토너먼트", href: "/scores/tournaments" },
         ],
     },
     {

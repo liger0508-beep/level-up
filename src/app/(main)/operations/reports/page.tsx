@@ -261,6 +261,15 @@ export default function AthleteReportPage() {
         return found ? found.branch : "";
     }, [athletes, selectedAthleteId, user]);
 
+    const handleMonthChange = (delta: number) => {
+        const [year, month] = selectedMonth.split('-').map(Number);
+        const date = new Date(year, month - 1 + delta, 1);
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        setSelectedMonth(`${y}-${m}`);
+        setExcludedIds(new Set());
+    };
+
     // Query Data from Supabase when athlete or month changes
     useEffect(() => {
         if (!selectedAthleteId) return;
@@ -919,14 +928,28 @@ export default function AthleteReportPage() {
                 {/* Filter and Selection Section (Hidden in print) */}
                 <div className="flex flex-col md:flex-row items-stretch md:items-center gap-4 bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-800 shadow-sm print:hidden">
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3 flex-1">
-                        <div className="flex items-center gap-2 px-3 py-2.5 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl w-full sm:w-auto">
-                            <Calendar size={18} className="text-brand-navy shrink-0" />
-                            <input
-                                type="month"
-                                value={selectedMonth}
-                                onChange={(e) => { setSelectedMonth(e.target.value); setExcludedIds(new Set()); }}
-                                className="bg-transparent text-sm font-black text-zinc-900 dark:text-zinc-100 focus:outline-none w-full cursor-pointer"
-                            />
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                            <button
+                                onClick={() => handleMonthChange(-1)}
+                                className="px-3 py-2 rounded-xl bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 transition-colors shrink-0"
+                            >
+                                <ChevronRight size={18} className="rotate-180" />
+                            </button>
+                            <div className="flex items-center justify-center gap-2 px-3 py-2 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl flex-1 sm:flex-none sm:w-auto">
+                                <Calendar size={18} className="text-brand-navy shrink-0" />
+                                <input
+                                    type="month"
+                                    value={selectedMonth}
+                                    onChange={(e) => { setSelectedMonth(e.target.value); setExcludedIds(new Set()); }}
+                                    className="bg-transparent text-sm font-black text-center text-zinc-900 dark:text-zinc-100 focus:outline-none w-full sm:w-auto cursor-pointer"
+                                />
+                            </div>
+                            <button
+                                onClick={() => handleMonthChange(1)}
+                                className="px-3 py-2 rounded-xl bg-zinc-50 hover:bg-zinc-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 transition-colors shrink-0"
+                            >
+                                <ChevronRight size={18} />
+                            </button>
                         </div>
 
                         {['coach', 'total', 'superadmin', 'admin', 'office'].includes(user?.role || '') && (

@@ -8,6 +8,8 @@ import {
 import { cn } from "@/lib/utils";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { AthleteSearch } from "@/components/ui/AthleteSearch";
+import { BottomSheetPicker } from "@/components/ui/bottom-sheet-picker";
+import { SignaturePad } from "@/components/ui/SignaturePad";
 import { createClient } from "@/lib/supabase/client";
 import { formatLocalDate } from "@/lib/utils";
 import { calculateAnalysisFromHoles, HoleAnalysis } from "@/lib/score-calculations";
@@ -81,94 +83,8 @@ interface Shot {
 interface HoleData {
     par: number;
     shots: Shot[];
-}
-
-// ── Bottom Sheet Picker (mobile only) ────────────────────────
-
-interface BottomSheetPickerProps {
-    isOpen: boolean;
-    onClose: () => void;
-    options: string[];
-    value: string;
-    onSelect: (val: string) => void;
-    title?: string;
-}
-
-function BottomSheetPicker({ isOpen, onClose, options, value, onSelect, title }: BottomSheetPickerProps) {
-    useEffect(() => {
-        if (isOpen) document.body.style.overflow = "hidden";
-        else document.body.style.overflow = "";
-        return () => { document.body.style.overflow = ""; };
-    }, [isOpen]);
-
-    if (!isOpen) return null;
-
-    // All items: empty + BALL_LOCATIONS (13) = 14 rows
-    // Keep each row compact so all fit in ~50vh without scrolling
-    const rowCls = (active: boolean) => cn(
-        "w-full px-2 py-3 rounded-xl border text-[14px] font-medium text-center transition-all",
-        active
-            ? "bg-brand-navy/10 border-brand-navy/30 text-brand-navy dark:text-brand-navy-light font-bold shadow-sm"
-            : "bg-zinc-50 dark:bg-zinc-800/50 border-zinc-100 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 active:bg-zinc-100"
-    );
-
-    return (
-        <div className="fixed inset-0 z-[60] flex flex-col justify-end">
-            {/* Backdrop */}
-            <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-
-            {/* Sheet */}
-            <div
-                className="relative bg-white dark:bg-zinc-900 rounded-t-3xl shadow-2xl flex flex-col"
-                style={{ animation: "slideUp 0.22s ease-out", maxHeight: "90vh" }}
-            >
-                {/* Handle */}
-                <div className="flex justify-center pt-3 pb-1 shrink-0">
-                    <div className="w-10 h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-700" />
-                </div>
-
-                {/* Title */}
-                {title && (
-                    <div className="px-4 py-3 shrink-0">
-                        <p className="text-[13px] font-bold text-zinc-800 dark:text-zinc-200 text-center">{title}</p>
-                    </div>
-                )}
-
-                {/* Options */}
-                <div className="flex-1 grid grid-cols-2 gap-2 px-4 pb-4 pt-1 overflow-y-auto">
-                    <div className="flex flex-col gap-2">
-                        {options.slice(0, Math.ceil(options.length / 2)).map(opt => (
-                            <button key={opt} type="button" onClick={() => { onSelect(opt); onClose(); }} className={rowCls(value === opt)}>
-                                {opt}
-                            </button>
-                        ))}
-                    </div>
-                    <div className="flex flex-col gap-2">
-                        {options.slice(Math.ceil(options.length / 2)).map(opt => (
-                            <button key={opt} type="button" onClick={() => { onSelect(opt); onClose(); }} className={rowCls(value === opt)}>
-                                {opt}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-
-                {/* Close */}
-                <div className="px-4 pb-4 pt-1 shrink-0 border-t border-zinc-100 dark:border-zinc-800">
-                    <button type="button" onClick={onClose}
-                        className="w-full py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-[13px] font-semibold text-zinc-600 dark:text-zinc-300 active:bg-zinc-200 transition-colors">
-                        닫기
-                    </button>
-                </div>
-            </div>
-
-            <style jsx>{`
-                @keyframes slideUp {
-                    from { transform: translateY(100%); }
-                    to   { transform: translateY(0); }
-                }
-            `}</style>
-        </div>
-    );
+    markerScore?: string;
+    markerPutts?: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -243,6 +159,13 @@ function ScoreCreateContent() {
     const [validationError, setValidationError] = useState<string | null>(null);
     const formRef = useRef<HTMLDivElement>(null);
 
+    // Signature state
+    const [showSignatureModal, setShowSignatureModal] = useState(false);
+    const [signatureStep, setSignatureStep] = useState<'marker' | 'player'>('marker');
+    const [markerSignature, setMarkerSignature] = useState<string | null>(null);
+    const [playerSignature, setPlayerSignature] = useState<string | null>(null);
+    const [isSignaturesCollected, setIsSignaturesCollected] = useState(false);
+
     // Player selection
     const [selectedPlayer, setSelectedPlayer] = useState("");
 
@@ -251,6 +174,8 @@ function ScoreCreateContent() {
     const [roundDate, setRoundDate] = useState(() => formatLocalDate(new Date()));
     const [category, setCategory] = useState("연습");
     const [golfCourse, setGolfCourse] = useState("");
+    const [tournamentId, setTournamentId] = useState<string | null>(searchParams.get("tournament_id"));
+    const [selectedMarker, setSelectedMarker] = useState("");
 
     // Hole data
     const [currentHole, setCurrentHole] = useState(1);
@@ -261,38 +186,48 @@ function ScoreCreateContent() {
         }))
     );
 
-
-
-
-
     // Basic info confirmation state
     const [isBasicInfoConfirmed, setIsBasicInfoConfirmed] = useState(isEditMode);
 
     useEffect(() => {
         if (isEditMode) return;
 
-        const checkAthleteLogin = async () => {
+        const checkInitialData = async () => {
             try {
                 const supabase = createClient();
                 const { data: { user } } = await supabase.auth.getUser();
-                if (!user) return;
-                
-                const { data: userData } = await supabase
-                    .from("users")
-                    .select("name, role")
-                    .eq("id", user.id)
-                    .single();
-                    
-                if (userData && userData.role === "athlete") {
-                    setSelectedPlayer(userData.name);
+                if (user) {
+                    const { data: userData } = await supabase
+                        .from("users")
+                        .select("name, role")
+                        .eq("id", user.id)
+                        .single();
+                        
+                    if (userData) {
+                        // Always set the default player to themselves
+                        setSelectedPlayer(userData.name);
+                    }
+                }
+
+                if (tournamentId) {
+                    const { data: tData } = await supabase
+                        .from("score_tournaments")
+                        .select("location")
+                        .eq("id", tournamentId)
+                        .single();
+                        
+                    if (tData) {
+                        setGolfCourse(tData.location);
+                        setCategory("대회");
+                    }
                 }
             } catch (error) {
-                console.error("Error fetching athlete info:", error);
+                console.error("Error fetching initial info:", error);
             }
         };
 
-        checkAthleteLogin();
-    }, [isEditMode]);
+        checkInitialData();
+    }, [isEditMode, tournamentId]);
 
     const hasFinalized = useRef(false);
     const draftIdRef = useRef<string | null>(null);
@@ -507,7 +442,6 @@ function ScoreCreateContent() {
                     setCurrentHole(lastSavedHole);
                     draftIdRef.current = draft.id;
                     setIsBasicInfoConfirmed(true);
-                    setIsInfoExpanded(false);
                     return; // 로컬 데이터로 로드 성공!
                 }
             }
@@ -581,7 +515,6 @@ function ScoreCreateContent() {
                 setHoles(newHoles);
                 draftIdRef.current = sc.id;
                 setIsBasicInfoConfirmed(true);
-                setIsInfoExpanded(false);
             }
         };
 
@@ -744,6 +677,17 @@ function ScoreCreateContent() {
             return;
         }
 
+        if (tournamentId && forced) {
+            if (!currentHoleData.markerScore || currentHoleData.markerScore.trim() === "") {
+                setValidationError("마커(동반자)의 스코어(타수)를 입력해주세요.");
+                return;
+            }
+            if (!currentHoleData.markerPutts || currentHoleData.markerPutts.trim() === "") {
+                setValidationError("마커(동반자)의 퍼팅 수를 입력해주세요.");
+                return;
+            }
+        }
+
         setValidationError(null);
 
         if (forced) {
@@ -862,6 +806,8 @@ function ScoreCreateContent() {
             next[currentHole - 1] = {
                 par,
                 shots: getDefaultShots(par), // PAR 변경 시 샷 초기화
+                markerScore: next[currentHole - 1].markerScore,
+                markerPutts: next[currentHole - 1].markerPutts,
             };
             return next;
         });
@@ -918,6 +864,22 @@ function ScoreCreateContent() {
             const shots = [...next[currentHole - 1].shots];
             shots[shotIndex] = { ...shots[shotIndex], memo };
             next[currentHole - 1] = { ...next[currentHole - 1], shots };
+            return next;
+        });
+    };
+
+    const updateMarkerScore = (score: string) => {
+        setHoles(prev => {
+            const next = [...prev];
+            next[currentHole - 1] = { ...next[currentHole - 1], markerScore: score };
+            return next;
+        });
+    };
+
+    const updateMarkerPutts = (putts: string) => {
+        setHoles(prev => {
+            const next = [...prev];
+            next[currentHole - 1] = { ...next[currentHole - 1], markerPutts: putts };
             return next;
         });
     };
@@ -1057,9 +1019,35 @@ function ScoreCreateContent() {
             if (userErr || !userData) throw new Error(`선수 조회 실패: ${userErr?.message}`);
             const athleteId = userData.id;
 
+            let markerId = null;
+            if (tournamentId && selectedMarker) {
+                const { data: markerData } = await supabase
+                    .from("users")
+                    .select("id")
+                    .eq("name", selectedMarker)
+                    .single();
+                if (markerData) markerId = markerData.id;
+            }
+
             // 2. 로그인 유저(코치) ID
             const { data: { user } } = await supabase.auth.getUser();
             const coachId = user?.id ?? null;
+
+            // 2.5 토너먼트 유효성 검증 (오래된 임시저장 데이터 방어)
+            let finalTournamentId = tournamentId;
+            if (tournamentId) {
+                const { data: validTournament, error: validErr } = await supabase
+                    .from("score_tournaments")
+                    .select("id")
+                    .eq("id", tournamentId)
+                    .maybeSingle();
+                
+                if (validErr || !validTournament) {
+                    console.warn("유효하지 않은 토너먼트입니다. 임시저장 데이터에서 토너먼트 연결을 해제합니다.");
+                    finalTournamentId = "";
+                    setTournamentId(""); // UI 상태 업데이트
+                }
+            }
 
             // 3. 스코어카드 헤더 저장 (Insert or Update)
             let scorecardId = draftIdRef.current || editId;
@@ -1070,7 +1058,9 @@ function ScoreCreateContent() {
                     .update({
                         total_score: computedTotalScore,
                         is_final: true,
-                        hole_count: completedCount
+                        hole_count: completedCount,
+                        tournament_id: finalTournamentId || null,
+                        marker_id: markerId || null
                     })
                     .eq("id", scorecardId);
                 if (scErr) throw new Error(`스코어카드 업데이트 실패: ${scErr.message}`);
@@ -1086,7 +1076,9 @@ function ScoreCreateContent() {
                         total_score:   computedTotalScore,
                         distance_unit: distanceUnit.includes("야드") ? "yard" : "meter",
                         is_final:      true,
-                        hole_count:    completedCount
+                        hole_count:    completedCount,
+                        tournament_id: finalTournamentId || null,
+                        marker_id:     markerId || null
                     })
                     .select("id")
                     .single();
@@ -1161,6 +1153,41 @@ function ScoreCreateContent() {
                     .from("scorecard_shots")
                     .insert(shotsToInsert);
                 if (shotsErr) throw new Error(`샷 정보 저장 실패: ${shotsErr?.message}`);
+            }
+
+            // 7.5 토너먼트인 경우: 마커 스코어 저장 및 리더보드 업데이트
+            if (tournamentId) {
+                // 기존 마커 스코어 삭제 (업데이트 시 중복 방지)
+                await supabase.from("tournament_marker_scores").delete().eq("scorecard_id", scorecardId);
+                
+                const markerScoresToInsert: any[] = [];
+                holes.forEach((h, hIdx) => {
+                    if (h.par > 0 && h.markerScore) {
+                        markerScoresToInsert.push({
+                            scorecard_id: scorecardId,
+                            hole_number: hIdx + 1,
+                            score: parseInt(h.markerScore, 10) || 0,
+                            putts: h.markerPutts ? parseInt(h.markerPutts, 10) : 0
+                        });
+                    }
+                });
+                
+                if (markerScoresToInsert.length > 0) {
+                    const { error: markerErr } = await supabase.from("tournament_marker_scores").insert(markerScoresToInsert);
+                    if (markerErr) console.error("마커 스코어 저장 오류:", markerErr);
+                }
+
+                // 리더보드 업데이트 (Upsert)
+                // 기본적으로 1라운드로 취급 (이후 대회 상세에 맞춰 다중 라운드 개선 가능)
+                const { error: tbErr } = await supabase.from("tournament_leaderboards").upsert({
+                    tournament_id: tournamentId,
+                    athlete_id: athleteId,
+                    round_number: 1,
+                    thru_hole: completedCount,
+                    total_score: computedTotalScore,
+                    updated_at: new Date().toISOString()
+                }, { onConflict: "tournament_id,athlete_id,round_number" });
+                if (tbErr) console.error("리더보드 업데이트 오류:", tbErr);
             }
 
             // 8. 기록(records) 테이블에 활동 로그 추가 (최근 업데이트 연동)
@@ -1393,13 +1420,35 @@ function ScoreCreateContent() {
                                             className="w-full px-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all disabled:opacity-60 disabled:bg-zinc-50 dark:disabled:bg-zinc-800/50"
                                         />
                                     </div>
+
+                                    {/* 마커 선택 (토너먼트 모드일 때만 표시) */}
+                                    {tournamentId && (
+                                        <div className="space-y-2 md:col-span-2">
+                                            <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                                                마커 선택 <span className="text-brand-red">*</span>
+                                            </label>
+                                            <AthleteSearch
+                                                multi={false}
+                                                selectedNames={selectedMarker ? [selectedMarker] : []}
+                                                onSelect={(name: string) => setSelectedMarker(name)}
+                                                onRemove={() => setSelectedMarker("")}
+                                                placeholder="마커(동반자) 이름을 검색하여 선택하세요..."
+                                            />
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* 확인 버튼 */}
                                 <div className="mt-4 flex justify-end">
                                     <button
                                         type="button"
-                                        onClick={handleConfirmBasicInfo}
+                                        onClick={() => {
+                                            if (tournamentId && !selectedMarker) {
+                                                alert("토너먼트 참가 시 마커(동반자)를 반드시 선택해야 합니다.");
+                                                return;
+                                            }
+                                            handleConfirmBasicInfo();
+                                        }}
                                         className="px-5 py-2 rounded-xl text-sm font-semibold bg-brand-navy text-white hover:bg-brand-navy/90 transition-colors shadow-sm"
                                     >
                                         확인
@@ -1521,7 +1570,7 @@ function ScoreCreateContent() {
                                                 {/* Shot index */}
                                                 <div className="flex items-center justify-center text-sm font-semibold text-zinc-400">{idx}</div>
 
-                                                {/* Ball location — native select on desktop, bottom sheet on mobile */}
+                                                {/* Ball location */}
                                                 {idx === 0 ? (
                                                     <div className="px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-sm font-medium text-zinc-500 text-center border border-zinc-200 dark:border-zinc-700">
                                                         티박스
@@ -1611,6 +1660,48 @@ function ScoreCreateContent() {
                             })}
                         </div>
                         </div>
+                        )}
+
+                        {/* Tournament Marker Score Inputs */}
+                        {tournamentId && (
+                            <div className="mt-2 mb-4 pt-6 border-t border-zinc-100 dark:border-zinc-800">
+                                <h3 className="text-sm font-bold text-zinc-800 dark:text-zinc-200 mb-4 flex items-center gap-2">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-brand-red"></div>
+                                    마커 기록 ({selectedMarker || '동반자'})
+                                </h3>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1.5">
+                                        <label className="block text-xs font-semibold text-zinc-500">스코어 (타수)</label>
+                                        <div className="relative">
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="20"
+                                                value={holeData.markerScore || ""}
+                                                onChange={(e) => updateMarkerScore(e.target.value)}
+                                                placeholder="예: 4"
+                                                className="w-full pl-4 pr-10 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-red/40 transition-all font-bold text-center"
+                                            />
+                                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 text-xs font-semibold pointer-events-none">타</span>
+                                        </div>
+                                    </div>
+                                    <div className="space-y-1.5">
+                                        <label className="block text-xs font-semibold text-zinc-500">퍼팅 수</label>
+                                        <div className="relative">
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                max="10"
+                                                value={holeData.markerPutts || ""}
+                                                onChange={(e) => updateMarkerPutts(e.target.value)}
+                                                placeholder="예: 2"
+                                                className="w-full pl-4 pr-10 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-red/40 transition-all font-bold text-center"
+                                            />
+                                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 text-xs font-semibold pointer-events-none">펏</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         )}
 
                         {/* Validation Error Message */}

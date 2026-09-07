@@ -29,6 +29,7 @@ export async function fetchRecentLessonsByPlayer(playerName: string, category?: 
             .from("users")
             .select("id")
             .eq("name", playerName)
+            .limit(1)
             .maybeSingle();
 
         if (userError || !userRes) return [];
@@ -114,6 +115,7 @@ export async function fetchAllLessonsByPlayer(playerName: string, category?: str
             .from("users")
             .select("id")
             .eq("name", playerName)
+            .limit(1)
             .maybeSingle();
 
         if (userError || !userRes) return [];
@@ -222,6 +224,7 @@ export async function fetchRecentScorecard(playerName: string): Promise<any | nu
             .from("users")
             .select("id")
             .eq("name", playerName)
+            .limit(1)
             .maybeSingle();
 
         if (userError || !userRes) return null;
@@ -260,14 +263,15 @@ export async function saveLessonRecord(record: {
 }) {
     try {
         const supabase = createClient();
+        console.log("DEBUG saveLessonRecord:", { playerName: record.playerName, coachName: record.coachName });
 
         // 1. Resolve user IDs
         const [userRes, coachRes] = await Promise.all([
-            supabase.from("users").select("id").eq("name", record.playerName).maybeSingle(),
-            supabase.from("users").select("id").eq("name", record.coachName).maybeSingle()
+            supabase.from("users").select("id").eq("name", record.playerName).limit(1).maybeSingle(),
+            supabase.from("users").select("id").eq("name", record.coachName).limit(1).maybeSingle()
         ]);
 
-        if (userRes.error || !userRes.data) throw new Error("Player not found");
+        if (userRes.error || !userRes.data) throw new Error("Player not found: " + record.playerName);
 
         // 2. Create timestamp
         let createdAt = new Date().toISOString();

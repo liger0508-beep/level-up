@@ -30,6 +30,7 @@ import { JournalHistoryModal } from "@/components/training-plan/JournalHistoryMo
 import { fetchJournalsByAthlete, Journal } from "@/lib/journal-sync";
 import { fetchPlansByAthlete, Plan } from "@/lib/plan-sync";
 import { LinkedPlanCard } from "@/components/training-plan/LinkedPlanCard";
+import { PlanHistoryModal } from "@/components/training-plan/PlanHistoryModal";
 
 const ALL_SLOTS = [
     "07:00", "07:30", "08:00", "08:30", "09:00", "09:30",
@@ -293,7 +294,8 @@ function CreateLessonContent() {
 
     // Plan State
     const [allPlans, setAllPlans] = useState<Plan[]>([]);
-    const selectedPlan = useMemo(() => allPlans.find(p => p.date === lessonDate) || null, [allPlans, lessonDate]);
+    const [recentPlan, setRecentPlan] = useState<Plan | null>(null);
+    const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
 
     // No Goal Editing State Needed
 
@@ -354,13 +356,21 @@ function CreateLessonContent() {
                     setSelectedJournalId(null);
                 }
             });
-            fetchPlansByAthlete(lastSelectedPlayer, 10).then(setAllPlans);
+            fetchPlansByAthlete(lastSelectedPlayer, 10).then(plans => {
+                setAllPlans(plans);
+                if (plans.length > 0) {
+                    setRecentPlan(plans[0]);
+                } else {
+                    setRecentPlan(null);
+                }
+            });
         } else {
             setRecentLessons([]);
             setRecentScore(null);
             setAllJournals([]);
             setSelectedJournalId(null);
             setAllPlans([]);
+            setRecentPlan(null);
         }
     }, [lastSelectedPlayer, selectedPart]);
 
@@ -632,7 +642,7 @@ function CreateLessonContent() {
                         <div className="space-y-6">
 
                             {/* Training Plan Box */}
-                            {selectedPlan && (
+                            {recentPlan && (
                                 <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
                                     <div className="flex items-center justify-between mb-2">
                                         <SectionTitle>
@@ -640,8 +650,10 @@ function CreateLessonContent() {
                                         </SectionTitle>
                                     </div>
                                     <LinkedPlanCard
-                                        plan={selectedPlan}
-                                        readOnly={true}
+                                        plan={recentPlan}
+                                        onMoreClick={() => setIsPlanModalOpen(true)}
+                                        readOnly={false}
+                                        onRemove={() => setRecentPlan(null)}
                                     />
                                 </section>
                             )}
@@ -1157,9 +1169,11 @@ function CreateLessonContent() {
                                         >
                                             <div className="flex items-center justify-between mb-2">
                                                 <div className="flex items-center gap-2">
-                                                    <span className="text-[11px] font-bold text-brand-navy dark:text-brand-navy-light uppercase px-2 py-1 bg-brand-navy/5 dark:bg-brand-navy/20 rounded-md">
-                                                        {partOptions.find(p => p.key === lesson.category)?.label || lesson.category}
-                                                    </span>
+                                                    {!isSub && (
+                                                        <span className="text-[11px] font-bold text-brand-navy dark:text-brand-navy-light uppercase px-2 py-1 bg-brand-navy/5 dark:bg-brand-navy/20 rounded-md">
+                                                            {partOptions.find(p => p.key === lesson.category)?.label || lesson.category}
+                                                        </span>
+                                                    )}
                                                     {lesson.is_core_lesson && (
                                                         <span className="text-[10px] font-bold text-white bg-red-500 px-1.5 py-0.5 rounded-md shrink-0">
                                                             핵심 레슨
@@ -1260,6 +1274,21 @@ function CreateLessonContent() {
                     </div>
                 </div>
             )}
+
+            <PlanHistoryModal
+                isOpen={isPlanModalOpen}
+                onClose={() => setIsPlanModalOpen(false)}
+                allPlans={allPlans}
+                readOnly={false}
+                onSelectPlan={(planId) => {
+                    const plan = allPlans.find(p => p.id === planId);
+                    if (plan) {
+                        setRecentPlan(plan);
+                    }
+                    setIsPlanModalOpen(false);
+                }}
+                connectedPlanId={recentPlan?.id}
+            />
 
             <ReferenceDataModal
                 isOpen={isReferenceModalOpen}

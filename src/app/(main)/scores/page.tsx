@@ -179,6 +179,7 @@ export default function ScoresPage() {
                     holes:scorecard_holes(score, par)
                 `)
                 .eq("is_final", false)
+                .is("tournament_id", null)
                 .limit(1);
             
             if (role === 'athlete' && user?.id) {
@@ -322,6 +323,9 @@ export default function ScoresPage() {
                 `, { count: 'exact' });
                 
             // Apply Filters
+            // 토너먼트 임시저장은 스코어 메뉴에 표시하지 않음 (일반 임시저장과 헷갈림 방지)
+            query = query.or("tournament_id.is.null,is_final.eq.true");
+
             if (startDate) query = query.gte("round_date", startDate);
             if (endDate) query = query.lte("round_date", endDate);
             
