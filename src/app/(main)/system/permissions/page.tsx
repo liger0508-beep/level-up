@@ -74,6 +74,10 @@ const defaultPermissions: MenuPermission[] = [
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     {
+        menuKey: "scores-category-stats", label: "항목별 통계", section: "스코어",
+        permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+    },
+    {
         menuKey: "scores-tournaments", label: "토너먼트", section: "스코어",
         permissions: { admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
     },

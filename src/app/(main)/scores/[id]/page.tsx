@@ -428,6 +428,29 @@ export default function ScoreDetailPage() {
                     const girHits = result.filter(h => h.summary.gir === 'O').length;
                     const girRate = result.length > 0 ? (girHits / result.length) * 100 : 0;
 
+                    // 파세이브 (Par Save)
+                    const missedGirHoles = result.filter(h => h.summary.gir === 'X');
+                    const parSaves = missedGirHoles.filter(h => h.score <= h.par).length;
+                    const parSaveRate = missedGirHoles.length > 0 ? (parSaves / missedGirHoles.length) * 100 : 0;
+
+                    // 바운스백 (Bounce Back)
+                    let bounceBackOppHoles = 0;
+                    let bounceBackSuccesses = 0;
+                    for (let i = 1; i < result.length; i++) {
+                        const prevHole = result[i - 1];
+                        const currHole = result[i];
+                        if (prevHole.score > prevHole.par) {
+                            bounceBackOppHoles++;
+                            if (currHole.score < currHole.par) {
+                                bounceBackSuccesses++;
+                            }
+                        }
+                    }
+                    const bounceBackRate = bounceBackOppHoles > 0 ? (bounceBackSuccesses / bounceBackOppHoles) * 100 : 0;
+
+                    // 버디 이상 (Birdie or Better)
+                    const birdieOrBetterCount = result.filter(h => h.score < h.par).length;
+
                     // Segment & Par Type Scores
                     const getRelScore = (list: HoleAnalysis[]) => {
                         const s = list.reduce((acc, h) => acc + (h.score - h.par), 0);
@@ -544,6 +567,9 @@ export default function ScoreDetailPage() {
                         penaltyCount: totalPA + totalOB,
                         fairwayHitRate,
                         girRate,
+                        parSaveRate,
+                        bounceBackRate,
+                        birdieOrBetterCount,
                         score1_3,
                         score4_15,
                         score16_18,
@@ -636,11 +662,13 @@ export default function ScoreDetailPage() {
         },
         avgMetrics: [
             { label: "페어웨이 안착률", value: roundToOne(summary.fairwayHitRate), unit: "%" },
-            { label: "첫 퍼트 거리", value: roundToOne(summary.avgFirstPuttDist), unit: "m" },
             { label: "그린 적중률", value: roundToOne(summary.girRate), unit: "%" },
+            { label: "파세이브률", value: roundToOne(summary.parSaveRate), unit: "%" },
             { label: "퍼트수", value: summary.totalPutts, unit: "개" },
             { label: "3퍼트 이상", value: summary.threePuttCount, unit: "회" },
-            { label: "패널티/OB", value: summary.penaltyCount, unit: "개" }
+            { label: "패널티/OB", value: summary.penaltyCount, unit: "개" },
+            { label: "BOUNCE BACK", value: roundToOne(summary.bounceBackRate), unit: "%" },
+            { label: "버디 이상수", value: summary.birdieOrBetterCount, unit: "개" }
         ],
         sectorChanges: summary.sectorChanges,
         contributions: summary.contributions,

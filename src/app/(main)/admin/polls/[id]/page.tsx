@@ -1,9 +1,7 @@
 "use client";
 import { fetchComments, saveComment, updateComment, deleteComment, AnalysisComment } from "@/lib/analysis-sync";
 import { MessageSquare, Send, Paperclip, X } from "lucide-react";
-
-
-
+import "react-quill-new/dist/quill.snow.css";
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
@@ -272,9 +270,15 @@ export default function PollDetailPage() {
     };
 
     const handleVoteSubmit = async () => {
-        if (selectedOptionIds.length === 0) {
+        if (selectedOptionIds.length === 0 && userVotedOptionIds.length === 0) {
             alert("투표할 항목을 선택해주세요.");
             return;
+        }
+
+        if (selectedOptionIds.length === 0 && userVotedOptionIds.length > 0) {
+            if (!confirm("참여한 투표를 취소하시겠습니까?")) {
+                return;
+            }
         }
 
         try {
@@ -502,9 +506,9 @@ export default function PollDetailPage() {
 
                 {/* ── Content (Description) ── */}
                 {vote.description && vote.description.replace(/<[^>]*>/g, '').trim() !== "" && (
-                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-3xl shadow-sm min-h-[100px]">
+                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-3xl shadow-sm min-h-[100px] ql-snow">
                         <div 
-                            className="prose prose-sm sm:prose-base prose-zinc dark:prose-invert max-w-none text-zinc-700 dark:text-zinc-300 leading-relaxed ql-editor"
+                            className="ql-editor !p-0 text-zinc-700 dark:text-zinc-300"
                             dangerouslySetInnerHTML={{ __html: vote.description }}
                         />
                     </section>
@@ -560,7 +564,7 @@ export default function PollDetailPage() {
                                                     prev.includes(opt.id) ? prev.filter(id => id !== opt.id) : [...prev, opt.id]
                                                 );
                                             } else {
-                                                setSelectedOptionIds([opt.id]);
+                                                setSelectedOptionIds(prev => prev.includes(opt.id) ? [] : [opt.id]);
                                             }
                                         }}
                                         className={cn(
@@ -590,15 +594,18 @@ export default function PollDetailPage() {
 
                                 <button
                                     onClick={handleVoteSubmit}
-                                    disabled={selectedOptionIds.length === 0 || isSubmitting || (
-                                        selectedOptionIds.length === userVotedOptionIds.length &&
-                                        selectedOptionIds.every(id => userVotedOptionIds.includes(id))
-                                    )}
+                                    disabled={
+                                        isSubmitting || 
+                                        (userVotedOptionIds.length === 0 && selectedOptionIds.length === 0) || 
+                                        (selectedOptionIds.length === userVotedOptionIds.length &&
+                                        selectedOptionIds.every(id => userVotedOptionIds.includes(id)) &&
+                                        userVotedOptionIds.every(id => selectedOptionIds.includes(id)))
+                                    }
                                     className="w-full mt-6 bg-brand-navy hover:bg-brand-navy-dark text-white disabled:bg-zinc-300 dark:disabled:bg-zinc-800 disabled:text-zinc-500 py-4 rounded-xl font-bold text-base transition-all active:scale-[0.99]"
                                 >
                                     {isSubmitting ? "처리 중..." : (userVotedOptionIds.length > 0 ? (
-                                        selectedOptionIds.length === userVotedOptionIds.length && selectedOptionIds.every(id => userVotedOptionIds.includes(id)) 
-                                        ? "이미 참여하신 항목입니다" : "투표 변경하기"
+                                        selectedOptionIds.length === userVotedOptionIds.length && selectedOptionIds.every(id => userVotedOptionIds.includes(id)) && userVotedOptionIds.every(id => selectedOptionIds.includes(id))
+                                        ? "이미 참여하신 항목입니다" : (selectedOptionIds.length === 0 ? "투표 취소하기" : "투표 변경하기")
                                     ) : "투표하기")}
                                 </button>
                             </>
@@ -826,6 +833,12 @@ export default function PollDetailPage() {
                     )}
                 </div>
             </main>
+            <style jsx global>{`
+                .ql-editor p:empty {
+                    min-height: 1.6em;
+                    display: block;
+                }
+            `}</style>
         </div>
     );
 }

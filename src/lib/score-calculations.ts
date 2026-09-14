@@ -993,3 +993,139 @@ export function generateReviewFocusCategories(analysis: HoleAnalysis[]): Record<
 
     return result;
 }
+
+export async function generateAndSaveScorecardSummary(scorecardId: string): Promise<boolean> {
+    const supabase = createClient();
+    
+    // 1. Fetch scorecard base info
+    const { data: scorecard, error } = await supabase
+        .from('scorecards')
+        .select('id, athlete_id, total_score, hole_count, round_date')
+        .eq('id', scorecardId)
+        .single();
+        
+    if (error || !scorecard) {
+        console.error("Failed to fetch scorecard for summary", error);
+        return false;
+    }
+
+    // 2. Calculate hole-by-hole stats
+    const allHoles = await calculateScorecardAnalysis(scorecardId);
+    if (!allHoles || allHoles.length === 0) return false;
+
+    // 3. Aggregate stats (similar to category-stats page logic)
+    const teeDistSG = allHoles.reduce((s, h) => s + (h.summary.distSG_DriverDist || 0), 0);
+    const teeAccSG = allHoles.reduce((s, h) => s + (h.summary.distSG_DriverAcc || 0), 0);
+    const dist180SG = allHoles.reduce((s, h) => s + (h.summary.distSG_180Plus || 0), 0);
+    const dist150SG = allHoles.reduce((s, h) => s + (h.summary.distSG_150_179 || 0), 0);
+    const dist120SG = allHoles.reduce((s, h) => s + (h.summary.distSG_120_149 || 0), 0);
+    const dist90SG = allHoles.reduce((s, h) => s + (h.summary.distSG_90_119 || 0), 0);
+    
+    const pitchSG = allHoles.reduce((s, h) => s + (h.summary.distSG_Pitch31_89 || 0), 0);
+    const bunkerSG = allHoles.reduce((s, h) => s + (h.summary.distSG_Bunker || 0), 0);
+    const approachSG = allHoles.reduce((s, h) => s + (h.summary.distSG_Approach || 0), 0);
+    
+    const putt9SG = allHoles.reduce((s, h) => s + (h.summary.distSG_Putt9Plus || 0), 0);
+    const putt4_8SG = allHoles.reduce((s, h) => s + (h.summary.distSG_Putt4_8 || 0), 0);
+    const putt2_3SG = allHoles.reduce((s, h) => s + (h.summary.distSG_Putt2_3 || 0), 0);
+    const putt1SG = allHoles.reduce((s, h) => s + (h.summary.distSG_Putt1 || 0), 0);
+
+    const fwHoles = allHoles.filter(h => h.summary.fairwayHit !== '-');
+    const fwHits = fwHoles.filter(h => h.summary.fairwayHit === 'O').length;
+    const fwTotal = fwHoles.length;
+
+    const girHits = allHoles.filter(h => h.summary.gir === 'O').length;
+    const girTotal = allHoles.length;
+
+    const missedGirHoles = allHoles.filter(h => h.summary.gir !== 'O');
+    const parSaves = missedGirHoles.filter(h => h.score <= h.par).length;
+    const missedGirTotal = missedGirHoles.length;
+
+    const totalPutts = allHoles.reduce((s, h) => s + h.summary.putts, 0);
+    const threePutts = allHoles.filter(h => h.summary.putts >= 3).length;
+    const penaltyOB = allHoles.reduce((s, h) => s + h.summary.paCount + h.summary.obCount, 0);
+
+    let totalBogeyOrWorseForBounceBack = 0;
+    let totalBounceBacks = 0;
+    let totalBirdieOrBetter = 0;
+
+    const sortedHoles = [...allHoles].sort((a,b) => a.holeNumber - b.holeNumber);
+    for (let i = 0; i < sortedHoles.length; i++) {
+        const h = sortedHoles[i];
+        if (h.score > 0 && h.score !== -1) {
+            if (h.score <= h.par - 1) totalBirdieOrBetter++;
+            if (h.score >= h.par + 1) {
+                if (i + 1 < sortedHoles.length) {
+                    const nextH = sortedHoles[i + 1];
+                    if (nextH.score > 0 && nextH.score !== -1) {
+                        totalBogeyOrWorseForBounceBack++;
+                        if (nextH.score <= nextH.par - 1) totalBounceBacks++;
+                    }
+                }
+            }
+        }
+    }
+
+    const payload = {
+        scorecard_id: scorecardId,
+        athlete_id: scorecard.athlete_id,
+        hole_count: scorecard.hole_count,
+        round_date: scorecard.round_date,
+        total_score: scorecard.total_score,
+        rounds: 1,
+        
+        tee_dist_sg: teeDistSG,
+        tee_acc_sg: teeAccSG,
+        dist_180_plus_sg: dist180SG,
+        dist_150_179_sg: dist150SG,
+        dist_120_149_sg: dist120SG,
+        dist_90_119_sg: dist90SG,
+        
+        pitch_sg: pitchSG,
+        bunker_sg: bunkerSG,
+        approach_sg: approachSG,
+        
+        putt_9_plus_sg: putt9SG,
+        putt_4_8_sg: putt4_8SG,
+        putt_2_3_sg: putt2_3SG,
+        putt_1_sg: putt1SG,
+        
+        fw_hits: fwHits,
+        fw_total: fwTotal,
+        gir_hits: girHits,
+        gir_total: girTotal,
+        par_saves: parSaves,
+        missed_gir_total: missedGirTotal,
+        
+        total_putts: totalPutts,
+        three_putts: threePutts,
+        penalty_ob: penaltyOB,
+        
+        bounce_backs: totalBounceBacks,
+        bogey_or_worse: totalBogeyOrWorseForBounceBack,
+        birdie_or_better: totalBirdieOrBetter,
+        
+        updated_at: new Date().toISOString()
+    };
+
+    // 4. Upsert into scorecard_summary
+    // Try to update first, if error or no rows updated, insert. (Assuming scorecard_id is unique per summary)
+    // Actually, let's check if it exists
+    const { data: existing } = await supabase.from('scorecard_summary').select('id').eq('scorecard_id', scorecardId).single();
+    
+    let dbErr = null;
+    if (existing) {
+        const { error } = await supabase.from('scorecard_summary').update(payload).eq('id', existing.id);
+        dbErr = error;
+    } else {
+        const { error } = await supabase.from('scorecard_summary').insert([payload]);
+        dbErr = error;
+    }
+
+    if (dbErr) {
+        console.error("Error saving scorecard summary", dbErr);
+        return false;
+    }
+
+    return true;
+}

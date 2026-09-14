@@ -66,7 +66,7 @@ export default function EditVotePage() {
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
     const [endTime, setEndTime] = useState("23:59");
-    const [options, setOptions] = useState<string[]>(["", ""]);
+    const [options, setOptions] = useState<string[]>([""]);
     const [allowMultiple, setAllowMultiple] = useState(false);
 
     useEffect(() => {
@@ -95,8 +95,8 @@ export default function EditVotePage() {
     };
 
     const removeOption = (index: number) => {
-        if (options.length <= 2) {
-            alert("최소 2개의 선택지가 필요합니다.");
+        if (options.length <= 1) {
+            alert("최소 1개의 선택지가 필요합니다.");
             return;
         }
         setOptions(options.filter((_, i) => i !== index));
@@ -301,7 +301,7 @@ export default function EditVotePage() {
                                     <Layout size={18} className="text-zinc-400" />
                                     투표 항목 설정 <span className="text-brand-red">*</span>
                                 </label>
-                                <span className="text-[10px] text-zinc-400 font-medium">최소 2개 필수</span>
+                                <span className="text-[10px] text-zinc-400 font-medium">최소 1개 필수</span>
                             </div>
 
                             {/* Allow Multiple Toggle */}

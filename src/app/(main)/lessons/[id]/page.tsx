@@ -576,19 +576,7 @@ export default function LessonDetailPage() {
                     </div>
                 )}
 
-                {/* ── 2.2 부모 목표 내용 (Parent Goal / Connected Lesson) ── */}
-                {lesson.parentGoalContent && (
-                    <div className="space-y-4 pt-2">
-                        <SectionTitle className="px-1">
-                            <Flag size={20} className="text-brand-red" /> {lesson.isParentCoreLesson ? "핵심 레슨" : (lesson.isConnectedLesson ? "연결 레슨 내용" : "목표")}
-                        </SectionTitle>
-                        <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm">
-                            <BodyText className="whitespace-pre-line">
-                                {lesson.parentGoalContent}
-                            </BodyText>
-                        </section>
-                    </div>
-                )}
+
 
                 {/* ── 3. 교정전 (Before) ── */}
                 {(lesson.media?.length > 0 || lesson.selectedImages?.length > 0) && (
@@ -720,7 +708,7 @@ export default function LessonDetailPage() {
                 {lesson.content && (
                     <div className="space-y-4">
                         <SectionTitle className="px-1">
-                            <FileText size={20} className="text-emerald-500" /> 레슨 내용
+                            <FileText size={20} className="text-emerald-500" /> {lesson.isConnectedLesson ? "연결 레슨 내용" : "레슨 내용"}
                         </SectionTitle>
                         <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm">
                             <BodyText className="whitespace-pre-line">

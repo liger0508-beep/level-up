@@ -480,7 +480,6 @@ export default function VoteListPage() {
                                             <th className="py-2.5 px-4 font-semibold text-center w-24">지점</th>
                                             <th className="py-2.5 px-4 font-semibold text-center">제목</th>
                                             <th className="py-2.5 px-4 font-semibold text-center w-24">참여자</th>
-                                            <th className="py-2.5 px-4 font-semibold text-center w-24">작성자</th>
                                             <th className="py-2.5 px-4 font-semibold text-center w-40 whitespace-nowrap">종료일</th>
                                         </tr>
                                     </thead>
@@ -528,9 +527,6 @@ export default function VoteListPage() {
                                                     </td>
                                                     <td className="py-3.5 px-4 text-center font-semibold text-zinc-600 dark:text-zinc-300">
                                                         {v.totalParticipants}
-                                                    </td>
-                                                    <td className="py-3.5 px-4 text-center text-zinc-600 dark:text-zinc-400 truncate">
-                                                        {v.author}
                                                     </td>
                                                     <td className="py-3.5 px-4 text-center whitespace-nowrap">
                                                         <span className={cn(

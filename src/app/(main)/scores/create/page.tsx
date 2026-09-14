@@ -1194,6 +1194,14 @@ function ScoreCreateContent() {
             // (사용자 요청으로 스코어 작성 시 측정/분석 자동 생성 기능 제거됨)
             const isInitialSave = !isOriginallyFinal.current;
 
+            // 8.1 제안 1번: 통계 미리 계산 및 저장 (scorecard_summary)
+            try {
+                const { generateAndSaveScorecardSummary } = await import("@/lib/score-calculations");
+                await generateAndSaveScorecardSummary(scorecardId);
+            } catch (err) {
+                console.error("통계 요약 저장 실패:", err);
+            }
+
 
             // 8.5 복습 훈련(Review Training) 배정 (미배정 상태일 경우 재저장 시 자동 배정)
             // (사용자 요청으로 스코어 작성 시 복습/예습 훈련 자동 생성 기능 제거됨)
