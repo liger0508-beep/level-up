@@ -37,7 +37,7 @@ export default function CourseInfoDetailPage() {
     const [isSubmittingComment, setIsSubmittingComment] = useState(false);
     const [newComment, setNewComment] = useState("");
     const [commentFile, setCommentFile] = useState<File | null>(null);
-    const [currentUser, setCurrentUser] = useState<{ id: string; name: string } | null>(null);
+    const [currentUser, setCurrentUser] = useState<{ id: string; name: string; role?: string } | null>(null);
     const commentFileRef = useRef<HTMLInputElement>(null);
     const [openHoles, setOpenHoles] = useState<Record<number, boolean>>({});
     const [isHolesOpen, setIsHolesOpen] = useState(false);
@@ -46,8 +46,12 @@ export default function CourseInfoDetailPage() {
         if (id) {
             fetchComments(id as string).then(setComments);
         }
-        createClient().auth.getUser().then(({ data }) => {
-            if (data?.user) setCurrentUser({ id: data.user.id, name: data.user.user_metadata?.name || 'User' });
+        const supabase = createClient();
+        supabase.auth.getUser().then(async ({ data }) => {
+            if (data?.user) {
+                const { data: profile } = await supabase.from('users').select('role').eq('id', data.user.id).single();
+                setCurrentUser({ id: data.user.id, name: data.user.user_metadata?.name || 'User', role: profile?.role });
+            }
         });
     }, [id]);
 
@@ -372,8 +376,8 @@ export default function CourseInfoDetailPage() {
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
                                         <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">{c.author}</span>
-                                        {currentUser?.id === c.userId && (
-                                            <div className="hidden group-hover:flex items-center gap-1">
+                                        {(currentUser?.id === c.userId || currentUser?.role === 'super_admin') && (
+                                            <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                                                 <button onClick={() => { setEditingCommentId(c.id); setEditingCommentText(c.text); }} className="p-1 text-zinc-400 hover:text-brand-navy"><Edit2 size={12} /></button>
                                                 <button onClick={() => handleDeleteComment(c.id)} className="p-1 text-zinc-400 hover:text-brand-red"><Trash2 size={12} /></button>
                                             </div>

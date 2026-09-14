@@ -9,9 +9,11 @@ import {
     Calendar,
     AlertCircle,
     Check,
+    Clock,
     Layout,
-    Plus,
     X,
+    FileText,
+    Plus
 } from "lucide-react";
 import { VOTE_TYPE_LABELS, VoteType, getPollById, updatePoll, Vote } from "@/lib/vote-sync";
 import { cn } from "@/lib/utils";
@@ -24,6 +26,7 @@ const ReactQuill = dynamic(() => import("react-quill-new"), {
 
 import "react-quill-new/dist/quill.snow.css";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
+import { CustomTimePicker } from "@/components/ui/CustomTimePicker";
 
 const quillModules = {
     toolbar: [
@@ -62,6 +65,7 @@ export default function EditVotePage() {
     const [isImportant, setIsImportant] = useState(false);
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
+    const [endTime, setEndTime] = useState("23:59");
     const [options, setOptions] = useState<string[]>(["", ""]);
     const [allowMultiple, setAllowMultiple] = useState(false);
 
@@ -77,7 +81,9 @@ export default function EditVotePage() {
                     setIsImportant(vote.isImportant || false);
                     setStartDate(vote.startDate);
                     setEndDate(vote.endDate);
+                    setEndTime(vote.endTime || "23:59");
                     setOptions(vote.options.map(opt => opt.text));
+                    setAllowMultiple(vote.allowMultiple || false);
                 }
             })
             .catch(err => console.error(err))
@@ -135,7 +141,9 @@ export default function EditVotePage() {
                 options: updatedOptions,
                 startDate,
                 endDate,
-                isImportant
+                endTime,
+                isImportant,
+                allowMultiple
             });
 
             alert("투표가 수정되었습니다.");
@@ -147,6 +155,8 @@ export default function EditVotePage() {
             setIsSubmitting(false);
         }
     };
+
+
 
     if (loading) {
         return (
@@ -183,7 +193,7 @@ export default function EditVotePage() {
                             <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300">
                                 투표 대상 <span className="text-brand-red">*</span>
                             </label>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-nowrap overflow-x-auto pb-1 scrollbar-hide gap-2">
                                 {(Object.entries(VOTE_TYPE_LABELS) as [VoteType, string][]).map(([key, label]) => {
                                     const isActive = type === key;
                                     return (
@@ -192,7 +202,7 @@ export default function EditVotePage() {
                                             type="button"
                                             onClick={() => setType(key)}
                                             className={cn(
-                                                "px-5 py-2 rounded-full text-sm font-bold transition-all border",
+                                                "whitespace-nowrap px-5 py-2 rounded-full text-sm font-bold transition-all border",
                                                 isActive
                                                     ? "bg-brand-navy text-white border-brand-navy shadow-sm"
                                                     : "bg-transparent text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50"
@@ -210,14 +220,14 @@ export default function EditVotePage() {
                             <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300">
                                 지점 선택 <span className="text-brand-red">*</span>
                             </label>
-                            <div className="flex flex-wrap gap-2">
-                                {["전체", "조이마루", "구미"].map((b) => (
+                            <div className="flex flex-nowrap overflow-x-auto pb-1 scrollbar-hide gap-2">
+                                {["전체", "조이마루점", "구미점"].map((b) => (
                                     <button
                                         key={b}
                                         type="button"
                                         onClick={() => setBranch(b)}
                                         className={cn(
-                                            "px-5 py-2 rounded-full text-sm font-bold transition-all border",
+                                            "whitespace-nowrap px-5 py-2 rounded-full text-sm font-bold transition-all border",
                                             branch === b
                                                 ? "bg-brand-navy text-white border-brand-navy shadow-sm"
                                                 : "bg-transparent text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50"
@@ -262,23 +272,24 @@ export default function EditVotePage() {
                                 />
                             </div>
                         </div>
+                    </section>
 
-                        {/* Description */}
-                        <div className="space-y-3">
-                            <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300">
-                                투표 설명
-                            </label>
-                            <div className="quill-container border-zinc-200 dark:border-zinc-800">
-                                <ReactQuill
-                                    theme="snow"
-                                    value={description}
-                                    onChange={setDescription}
-                                    modules={quillModules}
-                                    formats={quillFormats}
-                                    className="h-[400px] mb-12 dark:bg-zinc-800/50"
-                                    placeholder="투표에 대한 상세 설명을 입력하세요..."
-                                />
-                            </div>
+                    {/* Description */}
+                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-3">
+                        <label className="flex items-center gap-2 text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                            <FileText size={16} className="text-zinc-400" />
+                            투표 설명
+                        </label>
+                        <div className="quill-container border-zinc-200 dark:border-zinc-800 pb-10">
+                            <ReactQuill
+                                theme="snow"
+                                value={description}
+                                onChange={setDescription}
+                                modules={quillModules}
+                                formats={quillFormats}
+                                className="dark:bg-zinc-800/50"
+                                placeholder="투표에 대한 상세 설명을 입력하세요..."
+                            />
                         </div>
                     </section>
 
@@ -354,12 +365,16 @@ export default function EditVotePage() {
 
                     {/* ── 3. Period Section ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-6">
-                        <div className="space-y-3">
-                            <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                            <label className="flex items-center gap-2 text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                                <Calendar size={16} className="text-zinc-400" />
                                 투표 기간 설정 <span className="text-brand-red">*</span>
                             </label>
-                            <div className="flex items-center gap-3">
-                                <div className="relative flex-1">
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3 w-full">
+                            <div className="flex items-center gap-3 w-full sm:w-auto">
+                                <div className="relative flex-1 sm:w-[160px] sm:flex-none">
                                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
                                     <DatePickerInput
                                         value={startDate}
@@ -368,7 +383,7 @@ export default function EditVotePage() {
                                     />
                                 </div>
                                 <span className="text-zinc-400">~</span>
-                                <div className="relative flex-1">
+                                <div className="relative flex-1 sm:w-[160px] sm:flex-none">
                                     <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
                                     <DatePickerInput
                                         value={endDate}
@@ -377,6 +392,10 @@ export default function EditVotePage() {
                                     />
                                 </div>
                             </div>
+                            <CustomTimePicker
+                                value={endTime}
+                                onChange={setEndTime}
+                            />
                         </div>
                     </section>
 
@@ -431,9 +450,18 @@ export default function EditVotePage() {
                 .dark .ql-editor.ql-blank::before {
                     color: #52525b !important;
                 }
+                .ql-editor:focus::before {
+                    display: none !important;
+                }
                 .ql-editor {
                     font-size: 15px;
                     line-height: 1.6;
+                    min-height: 300px;
+                }
+                @media (min-width: 640px) {
+                    .ql-editor {
+                        min-height: 350px;
+                    }
                 }
                 .ql-toolbar.ql-snow {
                     border-top-left-radius: 12px;

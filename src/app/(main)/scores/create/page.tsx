@@ -1721,7 +1721,7 @@ function ScoreCreateContent() {
                             <button
                                 type="button"
                                 onClick={() => saveCurrentAndNext(true, false)}
-                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border border-brand-navy text-brand-navy hover:bg-brand-navy/5 transition-colors shadow-sm"
+                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border border-brand-navy text-brand-navy dark:border-brand-navy-light dark:text-brand-navy-light hover:bg-brand-navy/5 dark:hover:bg-brand-navy-light/10 transition-colors shadow-sm"
                             >
                                 샷별 점수 확인
                             </button>
@@ -1835,7 +1835,7 @@ function ScoreCreateContent() {
                         <button
                             type="button"
                             onClick={handleOpenIntermediate}
-                            className="px-3 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm whitespace-nowrap font-semibold text-brand-navy dark:text-brand-navy-light hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shrink-0"
+                            className="px-3 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm whitespace-nowrap font-semibold border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors shrink-0 shadow-sm"
                         >
                             중간 점수 확인
                         </button>

@@ -138,7 +138,7 @@ export default function CreatePlanPage() {
                     .map(l => l.category);
 
                 partOptions.forEach(opt => {
-                    if (opt.key !== "all" && lessons[opt.key] && top3Categories.includes(opt.key)) {
+                    if (opt.key !== "all" && lessons[opt.key] && top3Categories.includes(opt.key as any)) {
                         initialSelected[opt.key] = lessons[opt.key];
                     }
                 });

@@ -29,7 +29,7 @@ export default function LessonDetailPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [comments, setComments] = useState<AnalysisComment[]>([]);
     const [dbTemplates, setDbTemplates] = useState<LessonTemplate[]>([]);
-    const [currentUser, setCurrentUser] = useState<{ id: string; name: string; role?: string } | null>(null);
+    const [currentUser, setCurrentUser] = useState<{ id: string; name: string; role?: string; academy_id?: string; academy_name?: string } | null>(null);
     const [directorComment, setDirectorComment] = useState("");
     const [isEditingDirectorComment, setIsEditingDirectorComment] = useState(false);
     const [directorCommentInput, setDirectorCommentInput] = useState("");
@@ -839,8 +839,8 @@ export default function LessonDetailPage() {
                                     <div className="flex items-center gap-2">
                                         <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">{c.author}</span>
                                         <span className="text-[10px] bg-zinc-100 dark:bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded leading-none">{c.role}</span>
-                                        {currentUser?.id === c.userId && (
-                                            <div className="hidden group-hover:flex items-center gap-1 ml-2">
+                                        {(currentUser?.id === c.userId || currentUser?.role === 'super_admin') && (
+                                            <div className="flex items-center gap-1 ml-2 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                                                 <button onClick={() => { setEditingCommentId(c.id); setEditingCommentText(c.text); }} className="p-1 text-zinc-400 hover:text-brand-navy"><Edit2 size={12} /></button>
                                                 <button onClick={() => handleDeleteComment(c.id)} className="p-1 text-zinc-400 hover:text-brand-red"><Trash2 size={12} /></button>
                                             </div>

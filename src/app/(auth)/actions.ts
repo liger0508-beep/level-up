@@ -10,13 +10,17 @@ export async function login(formData: FormData) {
     const email = formData.get('email') as string
     const password = formData.get('password') as string
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data: authData, error } = await supabase.auth.signInWithPassword({
         email,
         password,
     })
 
     if (error) {
         redirect('/login?message=' + encodeURIComponent('이메일 또는 비밀번호가 올바르지 않습니다.'))
+    }
+
+    if (authData.user) {
+        await supabase.from('login_logs').insert([{ user_id: authData.user.id }])
     }
 
     revalidatePath('/', 'layout')

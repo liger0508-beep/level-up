@@ -13,7 +13,8 @@ import {
     Layout,
     Plus,
     X,
-    GripVertical
+    GripVertical,
+    FileText
 } from "lucide-react";
 import { VOTE_TYPE_LABELS, VoteType, VOTE_TYPE_COLORS, savePoll } from "@/lib/vote-sync";
 import { createClient } from "@/lib/supabase/client";
@@ -27,6 +28,7 @@ const ReactQuill = dynamic(() => import("react-quill-new"), {
 
 import "react-quill-new/dist/quill.snow.css";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
+import { CustomTimePicker } from "@/components/ui/CustomTimePicker";
 
 const quillModules = {
     toolbar: [
@@ -65,10 +67,16 @@ export default function CreateVotePage() {
         const dd = String(now.getDate()).padStart(2, '0');
         return `${yyyy}-${mm}-${dd}`;
     });
-    const [endDate, setEndDate] = useState("");
+    const [endDate, setEndDate] = useState(() => {
+        const now = new Date();
+        const yyyy = now.getFullYear();
+        const mm = String(now.getMonth() + 1).padStart(2, '0');
+        const dd = String(now.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    });
+    const [endTime, setEndTime] = useState("23:59");
     const [options, setOptions] = useState<string[]>(["", ""]);
     const [allowMultiple, setAllowMultiple] = useState(false);
-    const [isRecurring, setIsRecurring] = useState(false);
 
     const [isDraftLoaded, setIsDraftLoaded] = useState(false);
     const DRAFT_KEY = "gla_polls_draft";
@@ -85,9 +93,9 @@ export default function CreateVotePage() {
                 if (parsed.isImportant !== undefined) setIsImportant(parsed.isImportant);
                 if (parsed.startDate) setStartDate(parsed.startDate);
                 if (parsed.endDate !== undefined) setEndDate(parsed.endDate);
+                if (parsed.endTime !== undefined) setEndTime(parsed.endTime);
                 if (parsed.options) setOptions(parsed.options);
                 if (parsed.allowMultiple !== undefined) setAllowMultiple(parsed.allowMultiple);
-                if (parsed.isRecurring !== undefined) setIsRecurring(parsed.isRecurring);
             }
         } catch (e) {
             console.error(e);
@@ -100,10 +108,10 @@ export default function CreateVotePage() {
         if (!isDraftLoaded) return;
         try {
             sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
-                type: types, branch: branches, title, description, isImportant, startDate, endDate, options, allowMultiple, isRecurring
+                type: types, branch: branches, title, description, isImportant, startDate, endDate, endTime, options, allowMultiple
             }));
         } catch (e) {}
-    }, [isDraftLoaded, types, branches, title, description, isImportant, startDate, endDate, options, allowMultiple, isRecurring]);
+    }, [isDraftLoaded, types, branches, title, description, isImportant, startDate, endDate, endTime, options, allowMultiple]);
 
     const addOption = () => {
         setOptions([...options, ""]);
@@ -174,9 +182,10 @@ export default function CreateVotePage() {
                 options: pollOptions,
                 startDate,
                 endDate,
+                endTime,
                 authorId: currentUserId,
                 isImportant,
-                isRecurring
+                allowMultiple
             });
 
             alert("투표가 등록되었습니다.");
@@ -257,7 +266,7 @@ export default function CreateVotePage() {
                                 지점 선택 <span className="text-brand-red">*</span>
                             </label>
                             <div className="flex flex-nowrap overflow-x-auto pb-1 scrollbar-hide gap-2">
-                                {["전체", "조이마루", "구미"].map((b) => {
+                                {["전체", "조이마루점", "구미점"].map((b) => {
                                     const isActive = branches.includes(b);
                                     return (
                                         <button
@@ -324,23 +333,7 @@ export default function CreateVotePage() {
                             </div>
                         </div>
 
-                        {/* Description */}
-                        <div className="space-y-3">
-                            <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300">
-                                투표 설명
-                            </label>
-                            <div className="quill-container border-zinc-200 dark:border-zinc-800">
-                                <ReactQuill
-                                    theme="snow"
-                                    value={description}
-                                    onChange={setDescription}
-                                    modules={quillModules}
-                                    formats={quillFormats}
-                                    className="h-[400px] mb-12 dark:bg-zinc-800/50"
-                                    placeholder="투표에 대한 상세 설명을 입력하세요..."
-                                />
-                            </div>
-                        </div>
+
                     </section>
 
                     {/* ── 2. Options Section ── */}
@@ -416,55 +409,59 @@ export default function CreateVotePage() {
                     {/* ── 3. Period Section ── */}
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-6">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                            <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                            <label className="flex items-center gap-2 text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                                <Calendar size={16} className="text-zinc-400" />
                                 투표 기간 설정 <span className="text-brand-red">*</span>
-                            </label>
-                            
-                            {/* Repeat Daily Toggle */}
-                            <label className="flex items-center gap-2 cursor-pointer group bg-rose-50/50 dark:bg-rose-500/5 px-3 py-1.5 rounded-lg border border-rose-100 dark:border-rose-900/30 w-fit">
-                                <div className={cn(
-                                    "w-8 h-4.5 rounded-full transition-colors relative flex items-center",
-                                    isRecurring ? "bg-rose-500" : "bg-zinc-300 dark:bg-zinc-600"
-                                )}>
-                                    <div className={cn(
-                                        "w-3.5 h-3.5 rounded-full bg-white absolute top-0.5 transition-transform",
-                                        isRecurring ? "translate-x-[18px]" : "translate-x-0.5"
-                                    )} />
-                                </div>
-                                <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400 select-none group-hover:text-rose-700 dark:group-hover:text-rose-300 transition-colors">
-                                    기간내 매일 반복 (새벽 6시 갱신)
-                                </span>
-                                <input
-                                    type="checkbox"
-                                    className="sr-only"
-                                    checked={isRecurring}
-                                    onChange={(e) => setIsRecurring(e.target.checked)}
-                                />
                             </label>
                         </div>
 
-                        <div className="flex items-center gap-3">
-                            <div className="relative flex-1">
-                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                                <DatePickerInput
-                                    value={startDate}
-                                    onChange={(e) => setStartDate(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-transparent dark:bg-zinc-800 text-sm text-center cursor-pointer"
-                                />
+                        <div className="flex flex-wrap items-center gap-3 w-full">
+                            <div className="flex items-center gap-3 w-full sm:w-auto">
+                                <div className="relative flex-1 sm:w-[160px] sm:flex-none">
+                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                                    <DatePickerInput
+                                        value={startDate}
+                                        onChange={(e) => setStartDate(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-transparent dark:bg-zinc-800 text-sm text-center cursor-pointer"
+                                    />
+                                </div>
+                                <span className="text-zinc-400">~</span>
+                                <div className="relative flex-1 sm:w-[160px] sm:flex-none">
+                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                                    <DatePickerInput
+                                        value={endDate}
+                                        onChange={(e) => setEndDate(e.target.value)}
+                                        className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-transparent dark:bg-zinc-800 text-sm text-center cursor-pointer"
+                                    />
+                                </div>
                             </div>
-                            <span className="text-zinc-400">~</span>
-                            <div className="relative flex-1">
-                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                                <DatePickerInput
-                                    value={endDate}
-                                    onChange={(e) => setEndDate(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-transparent dark:bg-zinc-800 text-sm text-center cursor-pointer"
-                                />
-                            </div>
+                            <CustomTimePicker
+                                value={endTime}
+                                onChange={setEndTime}
+                            />
                         </div>
                     </section>
 
-                    {/* ── 4. Footer Actions ── */}
+                    {/* ── 4. Description Section ── */}
+                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-3">
+                        <label className="flex items-center gap-2 text-sm font-bold text-zinc-700 dark:text-zinc-300">
+                            <FileText size={16} className="text-zinc-400" />
+                            투표 설명
+                        </label>
+                        <div className="quill-container border-zinc-200 dark:border-zinc-800 pb-10">
+                            <ReactQuill
+                                theme="snow"
+                                value={description}
+                                onChange={setDescription}
+                                modules={quillModules}
+                                formats={quillFormats}
+                                className="dark:bg-zinc-800/50"
+                                placeholder="투표에 대한 상세 설명을 입력하세요..."
+                            />
+                        </div>
+                    </section>
+
+                    {/* ── 5. Footer Actions ── */}
                     <div className="flex items-center justify-end gap-3 pt-6 border-t border-zinc-200 dark:border-zinc-800">
                         <button
                             type="button"
@@ -484,7 +481,7 @@ export default function CreateVotePage() {
                             ) : (
                                 <Check size={18} />
                             )}
-                            투표 등록 완료
+                            등록
                         </button>
                     </div>
                 </form>
@@ -515,9 +512,18 @@ export default function CreateVotePage() {
                 .dark .ql-editor.ql-blank::before {
                     color: #52525b !important;
                 }
+                .ql-editor:focus::before {
+                    display: none !important;
+                }
                 .ql-editor {
                     font-size: 15px;
                     line-height: 1.6;
+                    min-height: 300px;
+                }
+                @media (min-width: 640px) {
+                    .ql-editor {
+                        min-height: 350px;
+                    }
                 }
                 .ql-toolbar.ql-snow {
                     border-top-left-radius: 12px;

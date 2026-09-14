@@ -53,7 +53,7 @@ export default function TrainingDetailPage() {
     const [error, setError] = useState<string | null>(null);
     const [comments, setComments] = useState<AnalysisComment[]>([]);
     const [dbTemplates, setDbTemplates] = useState<TrainingTemplate[]>([]);
-    const [currentUser, setCurrentUser] = useState<{ id: string; name: string } | null>(null);
+    const [currentUser, setCurrentUser] = useState<{ id: string; name: string; role?: string } | null>(null);
 
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [editingCommentText, setEditingCommentText] = useState("");
@@ -504,7 +504,8 @@ function getTrainingCategories(isPrep: boolean, reviewData: any) {
             try {
                 const { data: { user } } = await supabase.auth.getUser();
                 if (user) {
-                    setCurrentUser({ id: user.id, name: user.user_metadata?.name || 'User' });
+                    const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single();
+                    setCurrentUser({ id: user.id, name: user.user_metadata?.name || 'User', role: profile?.role });
                 }
 
                 // 1. Fetch training record
@@ -1940,8 +1941,8 @@ function getTrainingCategories(isPrep: boolean, reviewData: any) {
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
                                         <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">{c.author}</span>
-                                        {currentUser?.id === c.userId && (
-                                            <div className="hidden group-hover:flex items-center gap-1">
+                                        {(currentUser?.id === c.userId || currentUser?.role === 'super_admin') && (
+                                            <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                                                 <button onClick={() => { setEditingCommentId(c.id); setEditingCommentText(c.text); }} className="p-1 text-zinc-400 hover:text-brand-navy"><Edit2 size={12} /></button>
                                                 <button onClick={() => handleDeleteComment(c.id)} className="p-1 text-zinc-400 hover:text-brand-red"><Trash2 size={12} /></button>
                                             </div>

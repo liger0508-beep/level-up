@@ -20,7 +20,8 @@ import {
     Trophy,
     Clock,
     ChevronRight,
-    Users
+    Users,
+    ClipboardList
 } from "lucide-react";
 import { 
     getPollById, 
@@ -47,8 +48,8 @@ export default function PollDetailPage() {
     const [userId, setUserId] = useState<string | null>(null);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
-    const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
-    const [userVotedOptionId, setUserVotedOptionId] = useState<string | null>(null);
+    const [selectedOptionIds, setSelectedOptionIds] = useState<string[]>([]);
+    const [userVotedOptionIds, setUserVotedOptionIds] = useState<string[]>([]);
     const [voters, setVoters] = useState<{ optionId: string; userName: string }[]>([]);
     const [recurringHistory, setRecurringHistory] = useState<any[]>([]);
     const [selectedHistoryDate, setSelectedHistoryDate] = useState(() => {
@@ -73,7 +74,7 @@ export default function PollDetailPage() {
     const [newComment, setNewComment] = useState("");
     const [commentFile, setCommentFile] = useState<File | null>(null);
     const [commentPreviewUrl, setCommentPreviewUrl] = useState<string | null>(null);
-    const [currentUser, setCurrentUser] = useState<{ id: string; name: string } | null>(null);
+    const [currentUser, setCurrentUser] = useState<{ id: string; name: string; role?: string; branch?: string } | null>(null);
     const commentFileRef = useRef<HTMLInputElement>(null);
 
 
@@ -82,17 +83,11 @@ export default function PollDetailPage() {
         if (id) {
             fetchComments(id as string).then(setComments);
         }
-        createClient().auth.getUser().then(({ data }) => {
-            if (data?.user) setCurrentUser({ id: data.user.id, name: data.user.user_metadata?.name || 'User' });
-        });
+
     }, [id]);
 
     useEffect(() => {
-        const supabase = createClient();
-        supabase.auth.getUser().then(({ data }) => {
-            if (data?.user) setUserId(data.user.id);
-        });
-        
+
         fetchData();
 
         function handleClickOutside(event: MouseEvent) {
@@ -151,10 +146,19 @@ export default function PollDetailPage() {
 
                 if (currentUserId) {
                     setUserId(currentUserId);
+                    // Fetch role and branch
+                    const { data: profile } = await supabase.from("users").select("role, branch").eq("id", currentUserId).single();
+                    if (profile) {
+                        setCurrentUser(prev => prev ? { ...prev, role: profile.role, branch: profile.branch } : { id: currentUserId, name: userData?.user?.user_metadata?.name || 'User', role: profile.role, branch: profile.branch });
+                    }
+                    
                     // Check if user already voted
-                    const votedOption = await getUserVote(id, currentUserId);
-                    setUserVotedOptionId(votedOption);
-                    if (votedOption) setShowResults(true);
+                    const votedOptions = await getUserVote(id, currentUserId);
+                    setUserVotedOptionIds(votedOptions);
+                    if (votedOptions.length > 0) {
+                        setSelectedOptionIds(votedOptions);
+                        setShowResults(true);
+                    }
                 }
             }
         } catch (error) {
@@ -268,7 +272,7 @@ export default function PollDetailPage() {
     };
 
     const handleVoteSubmit = async () => {
-        if (!selectedOptionId) {
+        if (selectedOptionIds.length === 0) {
             alert("투표할 항목을 선택해주세요.");
             return;
         }
@@ -279,7 +283,7 @@ export default function PollDetailPage() {
                 return;
             }
             setIsSubmitting(true);
-            await castVote(id, selectedOptionId, userId);
+            await castVote(id, selectedOptionIds, userId);
             alert("투표가 완료되었습니다.");
             await fetchData(); // Refresh data
         } catch (error: any) {
@@ -326,10 +330,45 @@ export default function PollDetailPage() {
         );
     }
 
-    // Sort options by votes if closed or showResults
-    const displayOptions = (vote.status === "closed" || showResults)
-        ? [...vote.options].sort((a, b) => b.votes - a.votes)
-        : vote.options;
+    const isPastEndDate = vote.endDate 
+        ? new Date() > new Date(`${vote.endDate}T${vote.endTime || '23:59:59'}`) 
+        : false;
+    const isVotingActive = vote.status === "ongoing" && !isPastEndDate;
+
+    // Keep options in original order without sorting
+    const displayOptions = vote.options;
+    const maxVotes = Math.max(...vote.options.map(o => o.votes), 0);
+
+    const pollTypes = vote.type.split(',').map(t => t.trim());
+    const isMasterBranch = currentUser?.branch === '오피스' || currentUser?.branch === '총괄';
+    const hasRolePermission = isMasterBranch || pollTypes.includes("all") || (currentUser?.role && pollTypes.includes(currentUser.role));
+    
+    const pollBranches = vote.branch.split(',').map(b => b.trim());
+    const hasBranchPermission = isMasterBranch || pollBranches.includes("전체") || (currentUser?.branch && pollBranches.includes(currentUser.branch));
+    
+    const canVote = hasRolePermission && hasBranchPermission;
+
+    const isAuthor = currentUser?.id && vote.authorId === currentUser.id;
+    const isAdmin = currentUser?.role === "admin";
+    const isCoach = currentUser?.role === "coach";
+    const canEditOrDelete = isAuthor || isAdmin;
+    
+    // Admins, coaches, and office staff can always view results
+    const canViewResults = canVote || canEditOrDelete || isCoach || isMasterBranch;
+
+    if (!canViewResults) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen gap-4 bg-white dark:bg-zinc-950">
+                <p className="text-zinc-500 font-medium">이 투표에 접근할 권한이 없습니다.</p>
+                <button onClick={() => router.push("/")} className="px-6 py-2 bg-brand-navy text-white rounded-xl font-bold transition-transform active:scale-95">
+                    돌아가기
+                </button>
+            </div>
+        );
+    }
+
+    const canSeeRoster = currentUser?.role === 'super_admin' || currentUser?.role === 'superadmin' || currentUser?.role === 'admin' || currentUser?.role === 'coach' || currentUser?.branch === '총괄' || currentUser?.branch === '오피스';
+    const showRosterButton = vote?.status === "closed" && canSeeRoster;
 
     return (
         <div className="min-h-screen bg-white dark:bg-zinc-950 pb-20">
@@ -351,33 +390,35 @@ export default function PollDetailPage() {
                         </div>
                     </div>
 
-                    <div className="relative" ref={menuRef}>
-                        <button
-                            onClick={() => setIsMenuOpen(!isMenuOpen)}
-                            className="p-2 -mr-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
-                        >
-                            <MoreVertical size={20} />
-                        </button>
+                    {canEditOrDelete && (
+                        <div className="relative" ref={menuRef}>
+                            <button
+                                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                                className="p-2 -mr-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
+                            >
+                                <MoreVertical size={20} />
+                            </button>
 
-                        {isMenuOpen && (
-                            <div className="absolute right-0 mt-2 w-36 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-lg overflow-hidden z-50 animate-in fade-in zoom-in-95 origin-top-right duration-100">
-                                <Link
-                                    href={`/admin/polls/${id}/edit`}
-                                    className="w-full text-left px-4 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 flex items-center gap-2 transition-colors"
-                                >
-                                    <Edit2 size={16} className="text-zinc-400" />
-                                    수정
-                                </Link>
-                                <button
-                                    onClick={handleDelete}
-                                    className="w-full text-left px-4 py-3 text-sm font-medium text-brand-red hover:bg-brand-red/5 flex items-center gap-2 transition-colors border-t border-zinc-100 dark:border-zinc-800"
-                                >
-                                    <Trash2 size={16} className="text-brand-red/70" />
-                                    삭제
-                                </button>
-                            </div>
-                        )}
-                    </div>
+                            {isMenuOpen && (
+                                <div className="absolute right-0 mt-2 w-36 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-lg overflow-hidden z-50 animate-in fade-in zoom-in-95 origin-top-right duration-100">
+                                    <Link
+                                        href={`/admin/polls/${id}/edit`}
+                                        className="w-full text-left px-4 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 flex items-center gap-2 transition-colors"
+                                    >
+                                        <Edit2 size={16} className="text-zinc-400" />
+                                        수정
+                                    </Link>
+                                    <button
+                                        onClick={handleDelete}
+                                        className="w-full text-left px-4 py-3 text-sm font-medium text-brand-red hover:bg-brand-red/5 flex items-center gap-2 transition-colors border-t border-zinc-100 dark:border-zinc-800"
+                                    >
+                                        <Trash2 size={16} className="text-brand-red/70" />
+                                        삭제
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </header>
 
@@ -411,11 +452,11 @@ export default function PollDetailPage() {
                             )}
                             <span className={cn(
                                 "text-[10px] font-bold px-3 py-1 rounded-full border",
-                                vote.status === "ongoing"
-                                    ? "bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20"
-                                    : "bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800/50 dark:text-zinc-400 dark:border-zinc-700"
+                                (!isVotingActive)
+                                    ? "bg-zinc-100 text-zinc-500 border-zinc-200 dark:bg-zinc-800/50 dark:text-zinc-400 dark:border-zinc-700"
+                                    : "bg-emerald-50 text-emerald-600 border-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20"
                             )}>
-                                {vote.status === "ongoing" ? "진행 중" : "종료됨"}
+                                {!isVotingActive ? "종료됨" : "진행 중"}
                             </span>
                         </div>
                     </div>
@@ -474,17 +515,19 @@ export default function PollDetailPage() {
                     <div className="flex items-center justify-between px-1">
                         <div className="flex items-center gap-2">
                             <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                                {vote.status === "ongoing" && !showResults ? "투표 항목" : "투표 결과"}
+                                {(() => {
+                                    const now = new Date();
+                                    const effectiveDate = new Date(now.getTime() - 6 * 60 * 60 * 1000);
+                                    const mm = String(effectiveDate.getMonth() + 1).padStart(2, '0');
+                                    const dd = String(effectiveDate.getDate()).padStart(2, '0');
+                                    const prefix = vote.isRecurring ? `${mm}/${dd} ` : "";
+                                    return prefix + (isVotingActive && !showResults && canVote ? "투표 항목" : "투표 결과");
+                                })()}
                             </h3>
-                            {userVotedOptionId && (
-                                <span className="text-[11px] font-medium text-emerald-600 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-500/10 px-2.5 py-1 rounded-md">
-                                    참여 완료
-                                </span>
-                            )}
                         </div>
-                        {vote.status === "ongoing" && (
+                        {(!isVotingActive || vote.status === "ongoing") && (
                             <div className="flex items-center gap-2">
-                                {showResults && (
+                                {(showResults || !isVotingActive || !canVote) && (
                                     <button
                                         onClick={() => setShowVoterList(!showVoterList)}
                                         className="text-[12px] font-bold text-zinc-500 hover:text-brand-navy transition-colors px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-brand-navy/5 dark:hover:bg-brand-navy-light/10"
@@ -492,54 +535,71 @@ export default function PollDetailPage() {
                                         {showVoterList ? "명단 접기" : "명단보기"}
                                     </button>
                                 )}
-                                <button
-                                    onClick={() => setShowResults(!showResults)}
-                                    className="text-[12px] font-bold text-zinc-500 hover:text-brand-navy transition-colors px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-brand-navy/5 dark:hover:bg-brand-navy-light/10"
-                                >
-                                    {showResults ? "투표하기" : "결과보기"}
-                                </button>
+                                {canVote && isVotingActive && (
+                                    <button
+                                        onClick={() => setShowResults(!showResults)}
+                                        className="text-[12px] font-bold text-zinc-500 hover:text-brand-navy transition-colors px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 rounded-lg hover:bg-brand-navy/5 dark:hover:bg-brand-navy-light/10"
+                                    >
+                                        {showResults ? "투표하기" : "결과보기"}
+                                    </button>
+                                )}
                             </div>
                         )}
                     </div>
 
                     <div className="space-y-4">
-                        {vote.status === "ongoing" && !showResults ? (
+                        {isVotingActive && !showResults && canVote ? (
                             // Ongoing: Voting Form
                             <>
                                 {displayOptions.map((opt) => (
                                     <button
                                         key={opt.id}
-                                        onClick={() => setSelectedOptionId(opt.id)}
+                                        onClick={() => {
+                                            if (vote.allowMultiple) {
+                                                setSelectedOptionIds(prev => 
+                                                    prev.includes(opt.id) ? prev.filter(id => id !== opt.id) : [...prev, opt.id]
+                                                );
+                                            } else {
+                                                setSelectedOptionIds([opt.id]);
+                                            }
+                                        }}
                                         className={cn(
                                             "w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all active:scale-[0.99] text-left",
-                                            selectedOptionId === opt.id
+                                            selectedOptionIds.includes(opt.id)
                                                 ? "border-brand-navy bg-brand-navy/5 dark:bg-brand-navy-light/5"
                                                 : "border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
                                         )}
                                     >
                                         <span className={cn(
                                             "font-semibold",
-                                            selectedOptionId === opt.id ? "text-brand-navy dark:text-brand-navy-light" : "text-zinc-700 dark:text-zinc-300"
+                                            selectedOptionIds.includes(opt.id) ? "text-brand-navy dark:text-brand-navy-light" : "text-zinc-700 dark:text-zinc-300"
                                         )}>
                                             {opt.text}
                                         </span>
                                         <div className={cn(
-                                            "w-5 h-5 rounded-full flex items-center justify-center shrink-0 transition-all",
-                                            selectedOptionId === opt.id
+                                            "w-5 h-5 flex items-center justify-center shrink-0 transition-all",
+                                            vote.allowMultiple ? "rounded" : "rounded-full",
+                                            selectedOptionIds.includes(opt.id)
                                                 ? "bg-brand-navy border-2 border-brand-navy"
                                                 : "border-2 border-zinc-300 dark:border-zinc-600"
                                         )}>
-                                            {selectedOptionId === opt.id && <CheckCircle2 size={12} className="text-white" />}
+                                            {selectedOptionIds.includes(opt.id) && <CheckCircle2 size={12} className="text-white" />}
                                         </div>
                                     </button>
                                 ))}
 
                                 <button
                                     onClick={handleVoteSubmit}
-                                    disabled={!selectedOptionId || isSubmitting || (selectedOptionId === userVotedOptionId)}
+                                    disabled={selectedOptionIds.length === 0 || isSubmitting || (
+                                        selectedOptionIds.length === userVotedOptionIds.length &&
+                                        selectedOptionIds.every(id => userVotedOptionIds.includes(id))
+                                    )}
                                     className="w-full mt-6 bg-brand-navy hover:bg-brand-navy-dark text-white disabled:bg-zinc-300 dark:disabled:bg-zinc-800 disabled:text-zinc-500 py-4 rounded-xl font-bold text-base transition-all active:scale-[0.99]"
                                 >
-                                    {isSubmitting ? "처리 중..." : (userVotedOptionId ? (selectedOptionId === userVotedOptionId ? "이미 참여하신 항목입니다" : "투표 변경하기") : "투표하기")}
+                                    {isSubmitting ? "처리 중..." : (userVotedOptionIds.length > 0 ? (
+                                        selectedOptionIds.length === userVotedOptionIds.length && selectedOptionIds.every(id => userVotedOptionIds.includes(id)) 
+                                        ? "이미 참여하신 항목입니다" : "투표 변경하기"
+                                    ) : "투표하기")}
                                 </button>
                             </>
                         ) : (
@@ -547,8 +607,8 @@ export default function PollDetailPage() {
                             <div className="space-y-5">
                                 {displayOptions.map((opt, i) => {
                                     const percentage = Math.round((opt.votes / Math.max(vote.totalParticipants, 1)) * 100);
-                                    const isTop = i === 0;
-                                    const isUserChoice = opt.id === userVotedOptionId;
+                                    const isTop = opt.votes > 0 && opt.votes === maxVotes;
+                                    const isUserChoice = userVotedOptionIds.includes(opt.id);
 
                                     if (showVoterList) {
                                         return (
@@ -594,7 +654,7 @@ export default function PollDetailPage() {
                                                         "font-black text-lg",
                                                         isTop ? "text-brand-navy dark:text-brand-navy-light" : "text-zinc-900 dark:text-zinc-100"
                                                     )}>
-                                                        {percentage}% <span className="text-sm text-zinc-500 font-semibold tracking-normal">({opt.votes}표)</span>
+                                                        {opt.votes}명 <span className="text-sm text-zinc-500 font-semibold tracking-normal">({percentage}%)</span>
                                                     </span>
                                                 </div>
                                             </div>
@@ -617,140 +677,49 @@ export default function PollDetailPage() {
                     </div>
                 </section>
 
-                {/* ── Recurring History Table ── */}
-                {vote.isRecurring && (
-                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-6">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-1">
+                {/* ── Final Roster ── */}
+                {vote.finalRoster && canSeeRoster && (
+                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-6 animate-in fade-in slide-in-from-bottom-4">
+                        <div className="flex items-center gap-2 px-1">
                             <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                                <Clock size={18} className="text-rose-500" />
-                                일자별 참여 히스토리
+                                <Users size={18} className="text-brand-navy" /> 최종 명단
                             </h3>
-                            
-                            {/* Date Selector */}
-                            <div className="space-y-1">
-                                <p className="text-[10px] font-bold text-zinc-400 ml-1">날짜 선택</p>
-                                <div className="flex items-center gap-4 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-100 dark:border-zinc-700/50 rounded-2xl p-1.5 min-w-[220px] justify-between">
-                                    <button 
-                                        onClick={() => handleDateChange(-1)}
-                                        className="p-2 hover:bg-white dark:hover:bg-zinc-700 rounded-xl transition-all shadow-sm active:scale-90"
-                                    >
-                                        <ChevronLeft size={18} className="text-zinc-500" />
-                                    </button>
-                                    <div className="flex items-center gap-2 font-black text-sm text-zinc-800 dark:text-zinc-200">
-                                        <Calendar size={14} className="text-zinc-400" />
-                                        {selectedHistoryDate}
+                        </div>
+                        <div className="space-y-6">
+                            {Object.entries(vote.finalRoster.groupedData || {}).map(([optionText, items]: [string, any]) => (
+                                <div key={optionText} className="bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl overflow-hidden shadow-sm">
+                                    <div className="bg-zinc-100 dark:bg-zinc-800 px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
+                                        <h4 className="font-bold text-zinc-800 dark:text-zinc-100">{optionText} 명단 ({items.length}명)</h4>
                                     </div>
-                                    <button 
-                                        onClick={() => handleDateChange(1)}
-                                        className="p-2 hover:bg-white dark:hover:bg-zinc-700 rounded-xl transition-all shadow-sm active:scale-90"
-                                    >
-                                        <ChevronRight size={18} className="text-zinc-500" />
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Option Filter Buttons with Desktop Navigation Arrows */}
-                        <div className="relative group px-1">
-                            {/* Left Arrow */}
-                            {canScrollLeft && (
-                                <button
-                                    onClick={() => scrollFilter("left")}
-                                    className="absolute left-0 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-8 h-8 bg-white/90 dark:bg-zinc-800/90 rounded-full shadow-lg border border-zinc-100 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:scale-110 transition-all"
-                                >
-                                    <ChevronLeft size={16} />
-                                </button>
-                            )}
-
-                            <div 
-                                ref={filterContainerRef}
-                                onScroll={checkScroll}
-                                className="flex flex-nowrap overflow-x-auto pb-2 scrollbar-hide gap-2"
-                            >
-                                <button
-                                    onClick={() => setSelectedHistoryOption("all")}
-                                    className={cn(
-                                        "whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold transition-all border shrink-0",
-                                        selectedHistoryOption === "all"
-                                            ? "bg-zinc-800 text-white border-zinc-800 shadow-md"
-                                            : "bg-white dark:bg-zinc-900 text-zinc-500 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400"
-                                    )}
-                                >
-                                    전체 ({recurringHistory.filter(h => h.voteDate === selectedHistoryDate).length})
-                                </button>
-                                {vote.options.map(opt => {
-                                    const count = recurringHistory.filter(h => h.voteDate === selectedHistoryDate && h.optionId === opt.id).length;
-                                    return (
-                                        <button
-                                            key={opt.id}
-                                            onClick={() => setSelectedHistoryOption(opt.id)}
-                                            className={cn(
-                                                "whitespace-nowrap px-4 py-2 rounded-full text-xs font-bold transition-all border shrink-0",
-                                                selectedHistoryOption === opt.id
-                                                    ? "bg-brand-navy text-white border-brand-navy shadow-md"
-                                                    : "bg-white dark:bg-zinc-900 text-zinc-500 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50"
-                                            )}
-                                        >
-                                            {opt.text} ({count})
-                                        </button>
-                                    );
-                                })}
-                            </div>
-
-                            {/* Right Arrow */}
-                            {canScrollRight && (
-                                <button
-                                    onClick={() => scrollFilter("right")}
-                                    className="absolute right-0 top-1/2 -translate-y-1/2 z-10 hidden md:flex items-center justify-center w-8 h-8 bg-white/90 dark:bg-zinc-800/90 rounded-full shadow-lg border border-zinc-100 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 hover:scale-110 transition-all"
-                                >
-                                    <ChevronRight size={16} />
-                                </button>
-                            )}
-                        </div>
-                        
-                        <div className="overflow-hidden border border-zinc-100 dark:border-zinc-800 rounded-2xl">
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm text-left">
-                                    <thead className="bg-zinc-50 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400 font-bold border-b border-zinc-100 dark:border-zinc-800">
-                                        <tr>
-                                            <th className="px-4 py-3">참여자</th>
-                                            <th className="px-4 py-3">선택 항목</th>
-                                            <th className="px-4 py-3 text-right">참여 시간</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
-                                        {filteredHistory.length > 0 ? (
-                                            filteredHistory.map((item, idx) => {
-                                                const optionText = vote.options.find(o => o.id === item.optionId)?.text || "알 수 없음";
-                                                return (
-                                                    <tr key={idx} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/30 transition-colors">
-                                                        <td className="px-4 py-3 font-bold text-zinc-900 dark:text-zinc-100">
-                                                            {item.userName}
-                                                        </td>
-                                                        <td className="px-4 py-3">
-                                                            <span className="inline-flex px-2 py-0.5 bg-zinc-100 dark:bg-zinc-800 rounded text-[11px] font-medium text-zinc-600 dark:text-zinc-400">
-                                                                {optionText}
-                                                            </span>
-                                                        </td>
-                                                        <td className="px-4 py-3 text-right text-xs text-zinc-400 font-medium">
-                                                            {new Date(item.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
-                                                        </td>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm text-center min-w-[360px] border-collapse bg-white dark:bg-zinc-900">
+                                            <thead className="text-zinc-500 font-bold border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800/30">
+                                                <tr>
+                                                    <th className="py-2.5 px-2 border border-zinc-200 dark:border-zinc-700 w-12">NO</th>
+                                                    <th className="py-2.5 px-2 border border-zinc-200 dark:border-zinc-700 w-24">구분</th>
+                                                    <th className="py-2.5 px-2 border border-zinc-200 dark:border-zinc-700 w-28">선수명</th>
+                                                    <th className="py-2.5 px-2 border border-zinc-200 dark:border-zinc-700">연락처</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="text-zinc-800 dark:text-zinc-200 font-medium">
+                                                {items.map((item: any, idx: number) => (
+                                                    <tr key={idx}>
+                                                        <td className="py-2 px-2 border border-zinc-200 dark:border-zinc-700 text-orange-600 dark:text-orange-400 font-bold bg-orange-50/30 dark:bg-orange-900/10">{item.no}</td>
+                                                        <td className="py-2 px-2 border border-zinc-200 dark:border-zinc-700">{item.category}</td>
+                                                        <td className="py-2 px-2 border border-zinc-200 dark:border-zinc-700">{item.userName}</td>
+                                                        <td className="py-2 px-2 border border-zinc-200 dark:border-zinc-700">{item.phone}</td>
                                                     </tr>
-                                                );
-                                            })
-                                        ) : (
-                                            <tr>
-                                                <td colSpan={3} className="px-4 py-10 text-center text-zinc-400 font-medium">
-                                                    해당 조건에 맞는 투표 내역이 없습니다.
-                                                </td>
-                                            </tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </section>
                 )}
+
+
 
                 
                 {/* ── Feedback Section ── */}
@@ -766,8 +735,8 @@ export default function PollDetailPage() {
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">
                                         <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">{c.author}</span>
-                                        {currentUser?.id === c.userId && (
-                                            <div className="hidden group-hover:flex items-center gap-1">
+                                        {(currentUser?.id === c.userId || currentUser?.role === 'super_admin') && (
+                                            <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                                                 <button onClick={() => { setEditingCommentId(c.id); setEditingCommentText(c.text); }} className="p-1 text-zinc-400 hover:text-brand-navy"><Edit2 size={12} /></button>
                                                 <button onClick={() => handleDeleteComment(c.id)} className="p-1 text-zinc-400 hover:text-brand-red"><Trash2 size={12} /></button>
                                             </div>
@@ -840,13 +809,21 @@ export default function PollDetailPage() {
                 </section>
 
                 {/* ── Footer Actions ── */}
-                <div className="flex justify-center pt-4">
+                <div className={`flex ${showRosterButton ? 'justify-between' : 'justify-center'} items-center pt-4`}>
                     <button
                         onClick={() => router.push("/admin/polls")}
                         className="px-8 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-all active:scale-95"
                     >
                         목록으로 돌아가기
                     </button>
+                    {showRosterButton && (
+                        <button
+                            onClick={() => router.push(`/admin/polls/${id}/roster`)}
+                            className="px-8 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 text-sm font-bold bg-brand-navy hover:bg-brand-navy-light text-white transition-all active:scale-95 flex items-center gap-2"
+                        >
+                            <ClipboardList size={18} /> 명단 정리하기
+                        </button>
+                    )}
                 </div>
             </main>
         </div>

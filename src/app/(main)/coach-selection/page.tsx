@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { format } from "date-fns";
-import { UserCircle, Calendar, CheckCircle2, Check } from "lucide-react";
+import { UserCircle, Calendar, CheckCircle2, Check, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface Coach {
@@ -49,7 +49,7 @@ export default function CoachSelectionPage() {
                 
                 setUser(profile);
                 
-                if (profile && profile.role === "athlete") {
+                if (profile && (profile.role === "athlete" || profile.role === "admin")) {
                     await fetchData(profile, selectedMonth);
                 }
             } catch (err) {
@@ -64,10 +64,16 @@ export default function CoachSelectionPage() {
     
     // When month changes, re-fetch assignments
     useEffect(() => {
-        if (user && user.role === "athlete") {
+        if (user && (user.role === "athlete" || user.role === "admin")) {
             fetchData(user, selectedMonth);
         }
     }, [selectedMonth, user]);
+
+    const handleMonthChange = (offset: number) => {
+        const [year, month] = selectedMonth.split('-').map(Number);
+        const date = new Date(year, month - 1 + offset, 1);
+        setSelectedMonth(format(date, "yyyy-MM"));
+    };
 
     const fetchData = async (currentUser: User, month: string) => {
         try {
@@ -80,8 +86,12 @@ export default function CoachSelectionPage() {
             if (coachesError) throw coachesError;
             
             let branchCoaches = coachesData || [];
-            if (currentUser.branch && currentUser.branch !== "총괄") {
-                branchCoaches = branchCoaches.filter(c => c.branch === currentUser.branch || c.branch === "총괄");
+            
+            // Filter out Office and HQ (총괄) from the list
+            branchCoaches = branchCoaches.filter(c => c.branch !== "오피스" && c.branch !== "총괄");
+            
+            if (currentUser.branch && currentUser.branch !== "총괄" && currentUser.branch !== "오피스") {
+                branchCoaches = branchCoaches.filter(c => c.branch === currentUser.branch);
             }
             setCoaches(branchCoaches);
 
@@ -168,7 +178,7 @@ export default function CoachSelectionPage() {
         );
     }
 
-    if (user && user.role !== "athlete") {
+    if (user && user.role !== "athlete" && user.role !== "admin") {
         return (
             <div className="max-w-3xl mx-auto px-4 py-8">
                 <div className="bg-white dark:bg-zinc-900 rounded-2xl p-8 text-center border border-zinc-200 dark:border-zinc-800">
@@ -198,13 +208,25 @@ export default function CoachSelectionPage() {
                         <Calendar size={18} className="text-brand-navy" />
                         기준 월
                     </label>
-                    <div className="w-fit">
+                    <div className="w-fit flex items-center bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl p-1 shadow-sm transition-all focus-within:ring-2 focus-within:ring-brand-navy focus-within:border-transparent">
+                        <button
+                            onClick={() => handleMonthChange(-1)}
+                            className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors active:scale-95"
+                        >
+                            <ChevronLeft size={18} />
+                        </button>
                         <input
                             type="month"
                             value={selectedMonth}
                             onChange={(e) => setSelectedMonth(e.target.value)}
-                            className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-2.5 text-sm font-medium text-zinc-900 dark:text-zinc-100 shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-navy focus:border-transparent transition-all"
+                            className="bg-transparent px-2 py-1.5 text-sm font-bold text-zinc-900 dark:text-zinc-100 focus:outline-none flex-1 text-center"
                         />
+                        <button
+                            onClick={() => handleMonthChange(1)}
+                            className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 transition-colors active:scale-95"
+                        >
+                            <ChevronRight size={18} />
+                        </button>
                     </div>
                 </div>
 

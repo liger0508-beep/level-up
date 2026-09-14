@@ -1,337 +1,180 @@
+import os
 import re
 
-with open('d:\\gla_coach\\src\\app\\(main)\\lessons\\create\\page.tsx', 'r', encoding='utf-8') as f:
-    content = f.read()
+src_file = r"d:\gla_coach\src\app\(main)\admin\training-temp\create\page.tsx"
+tgt_file = r"d:\gla_coach\src\app\(main)\training\create\page.tsx"
 
-if 'Video' not in content[:1000]:
-    content = re.sub(r'import \{([^}]+)\} from "lucide-react";', r'import {\1, Video} from "lucide-react";', content)
+with open(src_file, 'r', encoding='utf-8') as f:
+    src_content = f.read()
 
-state_addition = """
-    const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
-    const [beforeFiles, setBeforeFiles] = useState<File[]>([]);
-    const [afterFiles, setAfterFiles] = useState<File[]>([]);
-    const [isGoal, setIsGoal] = useState(false);
-"""
-content = re.sub(r'const \[attachedFiles, setAttachedFiles\] = useState<File\[\]>\(\[\]\);', state_addition, content)
+with open(tgt_file, 'r', encoding='utf-8') as f:
+    tgt_content = f.read()
 
-new_return = '''    return (
-        <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 px-4 sm:px-8 py-6">
-            <div className="max-w-3xl mx-auto space-y-6">
+# 1. Update trainingTypeOptions
+tgt_content = tgt_content.replace(
+    '{ key: "preview", label: "예습" }',
+    '{ key: "lesson_review", label: "스윙키" }'
+)
 
-                {/* Header */}
-                <div className="flex items-center gap-3">
-                    <button onClick={handleAbort} type="button" className="p-2 -ml-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-900 dark:text-zinc-50 transition-colors">
-                        <ChevronLeft size={24} />
-                    </button>
-                    <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-                        레슨 작성
-                    </h1>
-                </div>
+# 2. Add imports
+import_lucide = re.search(r'import \{[^}]+\} from "lucide-react";', tgt_content)
+if import_lucide:
+    lucide_str = import_lucide.group(0)
+    if 'Play' not in lucide_str:
+        new_lucide = lucide_str.replace('} from "lucide-react"', ', Play, Plus, Minus} from "lucide-react"')
+        tgt_content = tgt_content.replace(lucide_str, new_lucide)
 
-                <form onSubmit={handleSubmit} className="space-y-6">
+if "SwingKeyPreviewModal" not in tgt_content:
+    lines = tgt_content.split('\n')
+    for i, line in enumerate(lines):
+        if line.startswith('import { TopicPickerSheet'):
+            lines.insert(i, 'import { SwingKeyPreviewModal } from "@/components/training/SwingKeyPreviewModal";')
+            break
+    tgt_content = '\n'.join(lines)
 
-                    {/* 1. Basic Info */}
-                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-2xl shadow-sm space-y-6">
-                        {/* Player Selection */}
-                        <div className="space-y-4">
-                            <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                선수 선택 <span className="text-brand-red">*</span>
-                            </label>
-                            <AthleteSearch
-                                multi={true}
-                                selectedNames={selectedPlayers}
-                                onSelect={handlePlayerAdd}
-                                onRemove={handlePlayerRemove}
-                                placeholder="선수 이름을 검색하여 추가하세요..."
-                            />
-                        </div>
+# 3. Add state variables
+state_vars = """    const [showSwingKeyPreview, setShowSwingKeyPreview] = useState(false);
+    const [previewCurrentComment, setPreviewCurrentComment] = useState("");
 
-                        {/* Part Selection */}
-                        <div className="space-y-4">
-                            <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                파트 선택 <span className="text-brand-red">*</span>
-                            </label>
-                            <div className="flex flex-wrap gap-2">
-                                {partOptions.map((opt) => (
-                                    <button
-                                        key={opt.key}
-                                        type="button"
-                                        onClick={() => setSelectedPart(opt.key)}
-                                        className={cn(
-                                            "px-4 py-2.5 rounded-full text-sm font-medium transition-colors border",
-                                            selectedPart === opt.key
-                                                ? "bg-brand-navy text-white border-brand-navy"
-                                                : "bg-transparent dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:border-brand-navy/50"
-                                        )}
-                                    >
-                                        {opt.label}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
+    // Swing Key (lesson_review) states
+    const [lessonComments, setLessonComments] = useState<string[]>([""]);
+    const [commentIntervals, setCommentIntervals] = useState<(number | "")[]>([]);
+    const [goalTime, setGoalTime] = useState<number | "">("");
+    const [swingKeyInterval, setSwingKeyInterval] = useState<number | "">(25);"""
 
-                        {/* Date Selection */}
-                        <div className="space-y-4">
-                            <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                레슨 일자 <span className="text-brand-red">*</span>
-                            </label>
-                            <div className="relative w-full sm:w-1/2">
-                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                <DatePickerInput
-                                    value={lessonDate}
-                                    onChange={(e) => setLessonDate(e.target.value)}
-                                    required
-                                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all text-center"
-                                />
-                            </div>
-                        </div>
-                    </section>
+if "lessonComments" not in tgt_content:
+    tgt_content = tgt_content.replace('const [isSaving, setIsSaving] = useState(false);', 'const [isSaving, setIsSaving] = useState(false);\n' + state_vars)
 
-                    {/* 2. History & Analysis (Conditional) */}
-                    {selectedPlayers.length > 0 && selectedPart && (
-                        <div className="space-y-6">
-                            
-                            {/* Lesson Goal */}
-                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-4">
-                                <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                                    <FileText size={18} className="text-brand-navy" />
-                                    레슨 목표 <span className="text-[11px] font-normal text-zinc-400">({lastSelectedPlayer})</span>
-                                </h3>
-                                <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-xl p-4 border border-zinc-100 dark:border-zinc-800 space-y-3">
-                                    <div className="flex justify-between items-center">
-                                        <div className="flex gap-2">
-                                            <span className="text-[10px] font-bold text-brand-navy uppercase px-1.5 py-0.5 bg-brand-navy/10 rounded-md">{selectedPart}</span>
-                                            <span className="text-[10px] font-bold text-red-500 uppercase px-1.5 py-0.5 bg-red-500/10 rounded-md">목표</span>
-                                        </div>
-                                        <span className="text-xs text-zinc-400">{lessonDate}</span>
-                                    </div>
-                                    <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">{lessonContent || "설정된 목표가 없습니다."}</p>
-                                    <div className="flex justify-end pt-2">
-                                        <button type="button" className="px-4 py-2 rounded-xl bg-red-50 text-red-500 hover:bg-red-100 transition-colors text-xs font-bold">평가하기</button>
-                                    </div>
-                                </div>
-                            </section>
+# 4. Extract logic block from source for handleSubmit
+# find start of selectedTrainingType === "lesson_review" in handleSubmit
+# Actually it's easier to just replace the blocks directly with string replacement.
 
-                            {/* Lesson History */}
-                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm flex flex-col space-y-4">
-                                <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                                    <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" />
-                                    레슨 히스토리 <span className="text-[11px] font-normal text-zinc-400">({lastSelectedPlayer})</span>
-                                </h3>
-                                <div className="flex justify-end">
-                                    <button type="button" className="px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 transition-colors">찾아보기</button>
-                                </div>
-                            </section>
+handle_submit_validation_old = """        if (selectedTemplates.length === 0) {
+            alert("훈련 컨텐츠를 하나 이상 선택해주세요.");
+            return;
+        }"""
+handle_submit_validation_new = """        if (selectedTrainingType === "basic" && selectedTemplates.length === 0) {
+            alert("훈련 컨텐츠를 하나 이상 선택해주세요.");
+            return;
+        }
 
-                            {/* Recent Scorecard Summary Box */}
-                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm flex flex-col min-h-[200px]">
-                                <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
-                                    <Trophy size={18} className="text-amber-500" />
-                                    최근 라운드 요약 <span className="text-[11px] font-normal text-zinc-400">({lastSelectedPlayer})</span>
-                                </h3>
-                                {recentScore ? (
-                                    <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-[1.5rem] p-5 border border-zinc-100 dark:border-zinc-800 space-y-5 flex-1">
-                                        <div className="flex items-center justify-between">
-                                            <div className="space-y-0.5">
-                                                <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{recentScore.courseName}</p>
-                                                <p className="text-[11px] text-zinc-400 font-medium">{recentScore.title}</p>
-                                                <div className="flex items-center gap-1.5 mt-1.5 px-2 py-0.5 w-fit rounded bg-zinc-100 dark:bg-zinc-800 text-[10px] font-bold text-zinc-500">
-                                                    <Calendar size={10} />
-                                                    {recentScore.date.replace(/-/g, ".")}
-                                                </div>
-                                            </div>
-                                            <div className="text-right">
-                                                <div className={cn(
-                                                    "text-2xl font-black tracking-tighter leading-none",
-                                                    recentScore.score < 72 ? "text-red-500" : recentScore.score > 72 ? "text-blue-500" : "text-zinc-900 dark:text-zinc-100"
-                                                )}>
-                                                    {recentScore.score}타
-                                                </div>
-                                                <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider mt-1">Final Score</p>
-                                            </div>
-                                        </div>
+        if (selectedTrainingType === "lesson_review" && lessonComments.every(c => c.trim() === "")) {
+            alert("코멘트를 최소 1개 이상 입력해주세요.");
+            return;
+        }"""
+tgt_content = tgt_content.replace(handle_submit_validation_old, handle_submit_validation_new)
 
-                                        <div className="grid grid-cols-4 gap-2">
-                                            {[
-                                                { label: "티샷", val: recentScore.teeShotSG },
-                                                { label: "세컨샷", val: recentScore.secondShotSG },
-                                                { label: "그린주변", val: recentScore.aroundGreenSG },
-                                                { label: "퍼팅", val: recentScore.puttingSG }
-                                            ].map((item, i) => (
-                                                <div key={i} className="bg-white dark:bg-zinc-900/50 p-2.5 rounded-xl border border-zinc-100 dark:border-zinc-800/60 text-center">
-                                                    <p className="text-[10px] font-bold text-zinc-400 mb-1">{item.label}</p>
-                                                    <p className={cn(
-                                                        "text-[13px] font-black tracking-tight",
-                                                        item.val < 0 ? "text-red-500" : item.val > 0 ? "text-blue-500" : "text-zinc-600 dark:text-zinc-400"
-                                                    )}>
-                                                        {item.val > 0 ? `+${item.val.toFixed(2)}` : item.val.toFixed(2)}
-                                                    </p>
-                                                </div>
-                                            ))}
-                                        </div>
 
-                                        <div className="flex items-start gap-6 pt-1">
-                                            <div className="flex-1 space-y-2">
-                                                <div className="flex items-center gap-1.5">
-                                                    <Trophy size={14} className="text-amber-500" />
-                                                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight">Strong</span>
-                                                </div>
-                                                <div className="px-3 py-2 rounded-xl bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 text-[11px] font-black text-red-600 dark:text-red-400 text-center">
-                                                    {recentScore.strongPoint}
-                                                </div>
-                                            </div>
+handle_submit_loop_old = """            for (const player of selectedPlayers) {
+                // 1. Save to Supabase Records
+                const { error } = await saveTrainingRecord({
+                    playerName: player,
+                    category: selectedPart,
+                    title: finalTitle || "훈련 기록",
+                    content: trainingComment,
+                    date: trainingDate,
+                    startTime: trainingTime,
+                    training_start: termStart,
+                    training_end: termEnd,
+                    total_count: totalCount,
+                    template_settings: templateSettings
+                });
 
-                                            <div className="flex-[2] space-y-2">
-                                                <div className="flex items-center gap-1.5">
-                                                    <AlertTriangle size={14} className="text-blue-500" />
-                                                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight">Weak</span>
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    {recentScore.weakPoints.map((wp, idx) => (
-                                                        <div key={idx} className="flex-1 px-3 py-2 rounded-xl bg-blue-50 dark:bg-blue-500/10 border border-blue-100 dark:border-blue-500/20 text-[11px] font-black text-blue-600 dark:text-blue-400 text-center">
-                                                            {wp}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="pt-2 flex justify-end">
-                                            <button 
-                                                type="button"
-                                                onClick={() => handleResumeNavigate(`/scores/${recentScore.id}`)}
-                                                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-brand-navy text-white text-[11px] font-bold hover:bg-brand-navy/90 transition-all shadow-md shadow-brand-navy/10 active:scale-95"
-                                            >
-                                                상세 분석
-                                                <ChevronRight2 size={14} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                 ) : (
-                                     <div className="flex-1 flex items-center justify-center py-8 text-center bg-zinc-50 dark:bg-zinc-900/50 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800">
-                                         <p className="text-xs text-zinc-400">최근 라운드 기록이 없습니다.</p>
-                                     </div>
-                                 )}
-                            </section>
-                        </div>
-                    )}
+                if (error) throw new Error(error);
+            }"""
 
-                    {/* 교정전 (Before) */}
-                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-4">
-                        <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                            <CheckCircle2 size={18} className="text-zinc-500" />
-                            교정전 (Before)
-                        </h3>
-                        <div className="flex gap-3">
-                            <label className="flex items-center gap-2 px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 text-sm font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 transition-colors cursor-pointer">
-                                <Upload size={16} /> 파일 추가
-                                <input type="file" multiple onChange={(e) => setBeforeFiles([...beforeFiles, ...Array.from(e.target.files||[])])} className="hidden" />
-                            </label>
-                            <button type="button" className="flex items-center gap-2 px-4 py-2 rounded-xl border border-brand-navy/20 text-sm font-semibold text-brand-navy bg-brand-navy/5 hover:bg-brand-navy/10 transition-colors">
-                                <Video size={16} /> 바로 촬영
-                            </button>
-                        </div>
-                        {beforeFiles.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mt-3">
-                                {beforeFiles.map((f, i) => (
-                                    <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
-                                        <Paperclip size={14} className="text-zinc-400" />
-                                        <span className="text-xs text-zinc-600 dark:text-zinc-300 max-w-[150px] truncate">{f.name}</span>
-                                        <button type="button" onClick={() => setBeforeFiles(beforeFiles.filter((_, idx) => idx !== i))} className="text-zinc-400 hover:text-brand-red"><X size={14} /></button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </section>
+handle_submit_loop_new = """            for (const player of selectedPlayers) {
+                if (selectedTrainingType === "lesson_review") {
+                    const finalTitle = typeLabel ? `[${typeLabel}] 훈련` : "훈련";
+                    
+                    const validComments: string[] = [];
+                    const validIntervals: number[] = [];
+                    for (let i = 0; i < lessonComments.length; i++) {
+                        if (lessonComments[i].trim() !== "") {
+                            validComments.push(lessonComments[i]);
+                            if (validComments.length > 1) {
+                                validIntervals.push((commentIntervals[i - 1] as number) || 3);
+                            }
+                        }
+                    }
 
-                    {/* 교정후 (After) */}
-                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-4">
-                        <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                            <CheckCircle2 size={18} className="text-brand-navy" />
-                            교정후 (After)
-                        </h3>
-                        <div className="flex gap-3">
-                            <label className="flex items-center gap-2 px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 text-sm font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 transition-colors cursor-pointer">
-                                <Upload size={16} /> 파일 추가
-                                <input type="file" multiple onChange={(e) => setAfterFiles([...afterFiles, ...Array.from(e.target.files||[])])} className="hidden" />
-                            </label>
-                            <button type="button" className="flex items-center gap-2 px-4 py-2 rounded-xl border border-brand-navy/20 text-sm font-semibold text-brand-navy bg-brand-navy/5 hover:bg-brand-navy/10 transition-colors">
-                                <Video size={16} /> 바로 촬영
-                            </button>
-                        </div>
-                        {afterFiles.length > 0 && (
-                            <div className="flex flex-wrap gap-2 mt-3">
-                                {afterFiles.map((f, i) => (
-                                    <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
-                                        <Paperclip size={14} className="text-zinc-400" />
-                                        <span className="text-xs text-zinc-600 dark:text-zinc-300 max-w-[150px] truncate">{f.name}</span>
-                                        <button type="button" onClick={() => setAfterFiles(afterFiles.filter((_, idx) => idx !== i))} className="text-zinc-400 hover:text-brand-red"><X size={14} /></button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </section>
+                    const { error } = await saveTrainingRecord({
+                        playerName: player,
+                        category: selectedPart, // Use selectedPart as per training page convention, unlike temp
+                        title: finalTitle,
+                        content: trainingComment,
+                        date: trainingDate,
+                        startTime: trainingTime,
+                        training_start: termStart,
+                        training_end: termEnd,
+                        total_count: (goalTime as number) || 0,
+                        template_settings: [{
+                            type: "lesson_review",
+                            comments: validComments,
+                            goalType: "time",
+                            goalValue: (goalTime as number) || 0,
+                            trainingMethod: "voice",
+                            swingKeyInterval: (swingKeyInterval as number) || 25,
+                            commentIntervals: validIntervals
+                        }]
+                    });
+                    if (error) throw new Error(error);
+                } else {
+                    const { error } = await saveTrainingRecord({
+                        playerName: player,
+                        category: selectedPart,
+                        title: finalTitle || "훈련 기록",
+                        content: trainingComment,
+                        date: trainingDate,
+                        startTime: trainingTime,
+                        training_start: termStart,
+                        training_end: termEnd,
+                        total_count: totalCount,
+                        template_settings: templateSettings
+                    });
+                    if (error) throw new Error(error);
+                }
+            }"""
+tgt_content = tgt_content.replace(handle_submit_loop_old, handle_submit_loop_new)
 
-                    {/* 레슨 내용 */}
-                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-2xl shadow-sm space-y-4">
-                        <div className="flex justify-between items-center">
-                            <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                                <FileText size={18} className="text-green-500" />
-                                레슨 내용
-                            </h3>
-                            <div className="flex items-center gap-3">
-                                <span className="text-sm font-bold text-zinc-700 dark:text-zinc-300">목표 설정</span>
-                                <button 
-                                    type="button" 
-                                    onClick={() => setIsGoal(!isGoal)} 
-                                    className={cn("w-11 h-6 rounded-full relative transition-colors", isGoal ? "bg-brand-navy" : "bg-zinc-200 dark:bg-zinc-700")}
-                                >
-                                    <div className={cn("absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform", isGoal ? "translate-x-5" : "")}></div>
-                                </button>
-                            </div>
-                        </div>
-                        <p className="text-xs text-zinc-500">* 레슨의 목적과 교정 방향을 명확하게 작성해 주세요.</p>
-                        <textarea
-                            rows={6}
-                            value={lessonContent}
-                            onChange={(e) => setLessonContent(e.target.value)}
-                            className="w-full p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent text-sm focus:outline-none focus:ring-2 focus:ring-brand-navy/40 resize-y text-zinc-900 dark:text-zinc-100"
-                        />
-                    </section>
+# 5. UI replacement
+# In source: from {selectedTrainingType === "lesson_review" ? ( to ) : selectedTrainingType === "basic" && (
+src_start = '{selectedTrainingType === "lesson_review" ? ('
+src_end = ') : selectedTrainingType === "basic" && ('
+if src_start in src_content and src_end in src_content:
+    idx1 = src_content.find(src_start)
+    idx2 = src_content.find(src_end) + len(src_end)
+    ui_block = src_content[idx1:idx2]
+    
+    # We replace from {/* Training Content Selection */} to <div className="space-y-2"> (which is Training Comment)
+    tgt_start = '{/* Training Content Selection */}'
+    # The end of the block in tgt is before {/* Training Comment */}
+    tgt_end_marker = '{/* Training Comment */}'
+    if tgt_start in tgt_content and tgt_end_marker in tgt_content:
+        idx_t1 = tgt_content.find(tgt_start)
+        idx_t2 = tgt_content.find(tgt_end_marker)
+        
+        old_ui = tgt_content[idx_t1:idx_t2]
+        
+        # we combine ui_block + old_ui + )}
+        new_ui = ui_block + '\\n' + old_ui + '\\n                        )}\\n\\n                        '
+        tgt_content = tgt_content.replace(old_ui, new_ui)
 
-                    {/* 스윙오류 */}
-                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-4">
-                        <div className="flex justify-between items-center">
-                            <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                                <ImageIcon size={18} className="text-orange-500" />
-                                스윙오류
-                            </h3>
-                            <div className="flex justify-end">
-                                <button type="button" className="px-4 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 transition-colors">찾아보기</button>
-                            </div>
-                        </div>
-                    </section>
+# Finally add the SwingKeyPreviewModal at the end of the file if not exists
+modal_str = """            <SwingKeyPreviewModal
+                isOpen={showSwingKeyPreview}
+                onClose={() => setShowSwingKeyPreview(false)}
+                comments={lessonComments.filter(c => c.trim() !== "")}
+                intervals={commentIntervals as number[]}
+                currentComment={previewCurrentComment}
+                onCommentChange={setPreviewCurrentComment}
+                swingKeyInterval={(swingKeyInterval as number) || 25}
+            />"""
+if "SwingKeyPreviewModal" not in tgt_content.split('return (')[1]:
+    tgt_content = tgt_content.replace('</form>', '</form>\\n' + modal_str)
 
-                    {/* Submit Button */}
-                    <div className="pt-6 pb-20">
-                        <button
-                            type="submit"
-                            disabled={!isFormValid || isUploading}
-                            className="w-full py-4 rounded-2xl font-bold text-lg transition-all shadow-md active:scale-[0.98] disabled:active:scale-100 disabled:opacity-50 disabled:cursor-not-allowed bg-brand-navy text-white hover:bg-brand-navy/90"
-                        >
-                            {isUploading ? "저장 중..." : "레슨 등록하기"}
-                        </button>
-                    </div>
 
-                </form>
-            </div>
-        </div>
-    );
-}'''
+with open(tgt_file, 'w', encoding='utf-8') as f:
+    f.write(tgt_content)
 
-start_idx = content.find('    return (\n        <div className="min-h-screen')
-if start_idx != -1:
-    content = content[:start_idx] + new_return
-
-with open('d:\\gla_coach\\src\\app\\(main)\\lessons\\create\\page.tsx', 'w', encoding='utf-8') as f:
-    f.write(content)
+print("Done")

@@ -51,7 +51,7 @@ export default function JournalDetailPage() {
     const [isSubmittingComment, setIsSubmittingComment] = useState(false);
     const [commentFile, setCommentFile] = useState<File | null>(null);
     const [commentPreviewUrl, setCommentPreviewUrl] = useState<string | null>(null);
-    const [currentUser, setCurrentUser] = useState<{ id: string; name: string } | null>(null);
+    const [currentUser, setCurrentUser] = useState<{ id: string; name: string; role?: string } | null>(null);
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [editingCommentText, setEditingCommentText] = useState("");
     const [isUpdatingComment, setIsUpdatingComment] = useState(false);
@@ -89,8 +89,8 @@ export default function JournalDetailPage() {
                 const supabase = createClient();
                 const { data: { user } } = await supabase.auth.getUser();
                 if (user) {
-                    const { data: profile } = await supabase.from('users').select('name').eq('id', user.id).single();
-                    setCurrentUser({ id: user.id, name: profile?.name || "알 수 없음" });
+                    const { data: profile } = await supabase.from('users').select('name, role').eq('id', user.id).single();
+                    setCurrentUser({ id: user.id, name: profile?.name || "알 수 없음", role: profile?.role });
                 }
             } catch (error) {
                 console.error("Error loading journal details:", error);
@@ -296,14 +296,14 @@ export default function JournalDetailPage() {
                 </section>
 
                 {/* ── 2. Attached Media ── */}
-                <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden">
-                    <div className="flex items-center gap-2 px-5 pt-4 pb-3 border-b border-zinc-100 dark:border-zinc-800">
-                        <Play size={14} className="text-zinc-400" />
-                        <h3 className="text-[11px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">첨부 파일</h3>
-                    </div>
+                {journal.media_urls && journal.media_urls.length > 0 && (
+                    <div className="space-y-4 pt-2">
+                        <div className="flex items-center gap-2 px-1">
+                            <Play size={20} className="text-zinc-400" />
+                            <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">첨부 파일</h3>
+                        </div>
 
-                    <div className="p-4 bg-transparent relative group">
-                        {journal.media_urls && journal.media_urls.length > 0 ? (
+                        <section className="bg-transparent relative group">
                             <>
                                 <div
                                     ref={mediaCarouselRef}
@@ -342,16 +342,9 @@ export default function JournalDetailPage() {
                                     </>
                                 )}
                             </>
-                        ) : (
-                            <div className="aspect-[4/5] sm:aspect-[4/3] bg-zinc-50 dark:bg-zinc-800/50 rounded-xl flex flex-col items-center justify-center gap-2 border border-dashed border-zinc-300 dark:border-zinc-700">
-                                <div className="w-12 h-12 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400">
-                                    <Play size={22} className="ml-0.5" />
-                                </div>
-                                <p className="text-xs text-zinc-400">첨부된 파일이 없습니다</p>
-                            </div>
-                        )}
+                        </section>
                     </div>
-                </section>
+                )}
 
                 {/* ── 3. Content ── */}
                 <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm min-h-[140px]">
@@ -384,7 +377,7 @@ export default function JournalDetailPage() {
                                             <span className="text-[10px] text-zinc-400 font-medium">
                                                 {c.time}
                                             </span>
-                                            {currentUser?.id === c.userId && (
+                                            {(currentUser?.id === c.userId || currentUser?.role === 'super_admin') && (
                                                 <div className="flex items-center gap-1 ml-1">
                                                     <button
                                                         onClick={() => {

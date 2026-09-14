@@ -43,55 +43,75 @@ export default function VoteListPage() {
     const [endDate, setEndDate] = useState("");
     const [activePreset, setActivePreset] = useState<DatePresetType>("custom");
     const [userRole, setUserRole] = useState<string | null>(null);
+    const [userBranch, setUserBranch] = useState<string | null>(null);
+    const [userId, setUserId] = useState<string | null>(null);
+    const [userLoaded, setUserLoaded] = useState(false);
 
-    // Helper to map DB row to Vote object
-    const mapPollRow = (dbPoll: any): Vote => ({
-        id: dbPoll.id,
-        type: dbPoll.type as VoteType,
-        branch: dbPoll.branch,
-        status: dbPoll.status as VoteStatus,
-        title: dbPoll.title,
-        description: dbPoll.description,
-        options: dbPoll.options,
-        startDate: dbPoll.start_date,
-        endDate: dbPoll.end_date,
-        author: dbPoll.users?.name || "알 수 없음",
-        authorId: dbPoll.author_id,
-        isImportant: dbPoll.is_important,
-        isRecurring: dbPoll.is_recurring,
-        totalParticipants: dbPoll.total_participants,
-        createdAt: dbPoll.created_at
-    });
-
+    // Helper removed, using formatPollFromDb from lib/vote-sync instead
     useEffect(() => {
         const loadInitial = async () => {
             const supabase = createClient();
             const { data: { user } } = await supabase.auth.getUser();
+            let currentRole = null;
+            let currentBranch = null;
+            let currentUserId = null;
+
             if (user) {
-                const { data } = await supabase.from("users").select("role").eq("id", user.id).maybeSingle();
-                if (data) setUserRole(data.role);
+                const { data } = await supabase.from("users").select("role, branch").eq("id", user.id).maybeSingle();
+                if (data) {
+                    currentRole = data.role;
+                    currentBranch = data.branch;
+                    currentUserId = user.id;
+                    setUserRole(currentRole);
+                    setUserBranch(currentBranch);
+                    setUserId(currentUserId);
+                }
             }
+            setUserLoaded(true);
+
+            const applyPermissions = (q: any) => {
+                const isMasterBranch = currentBranch === '오피스' || currentBranch === '총괄';
+                if (currentRole !== 'admin' && !isMasterBranch) {
+                    const branchFilter = `branch.ilike.%전체%,branch.ilike.%${currentBranch || ''}%,author_id.eq.${currentUserId || ''}`;
+                    let nextQ = q.or(branchFilter);
+                    
+                    if (currentRole !== 'coach') {
+                        const roleFilter = `type.ilike.%all%,type.ilike.%${currentRole || ''}%,author_id.eq.${currentUserId || ''}`;
+                        nextQ = nextQ.or(roleFilter);
+                    }
+                    return nextQ;
+                }
+                return q;
+            };
 
             // Fetch recent featured vote
-            let { data: recentVoteData } = await supabase
+            let recentQuery = supabase
                 .from("polls")
                 .select(`*, users!polls_author_id_fkey(name)`)
                 .eq("is_important", true)
                 .eq("status", "ongoing")
                 .order("created_at", { ascending: false })
                 .limit(1);
+            
+            recentQuery = applyPermissions(recentQuery);
+            let { data: recentVoteData } = await recentQuery;
 
             if (!recentVoteData || recentVoteData.length === 0) {
-                const { data: fallbackData } = await supabase
+                let fallbackQuery = supabase
                     .from("polls")
                     .select(`*, users!polls_author_id_fkey(name)`)
                     .order("created_at", { ascending: false })
                     .limit(1);
+                fallbackQuery = applyPermissions(fallbackQuery);
+                const { data: fallbackData } = await fallbackQuery;
                 recentVoteData = fallbackData;
             }
 
             if (recentVoteData && recentVoteData.length > 0) {
-                setRecentVote(mapPollRow(recentVoteData[0]));
+                const { overrideWithTodayVotes, formatPollFromDb } = await import("@/lib/vote-sync");
+                const formatted = [formatPollFromDb(recentVoteData[0])];
+                const overridden = await overrideWithTodayVotes(formatted);
+                setRecentVote(overridden[0]);
             }
         };
         
@@ -100,6 +120,8 @@ export default function VoteListPage() {
 
     // Server-side Pagination & Filtering
     useEffect(() => {
+        if (!userLoaded) return;
+
         const fetchFilteredPolls = async () => {
             setLoading(true);
             const supabase = createClient();
@@ -107,12 +129,22 @@ export default function VoteListPage() {
                 .from("polls")
                 .select(`*, users!polls_author_id_fkey(name)`, { count: 'exact' });
 
+            const isMasterBranch = userBranch === '오피스' || userBranch === '총괄';
+            if (userRole !== 'admin' && !isMasterBranch) {
+                const branchFilter = `branch.ilike.%전체%,branch.ilike.%${userBranch || ''}%,author_id.eq.${userId || ''}`;
+                query = query.or(branchFilter);
+                
+                if (userRole !== 'coach') {
+                    const roleFilter = `type.ilike.%all%,type.ilike.%${userRole || ''}%,author_id.eq.${userId || ''}`;
+                    query = query.or(roleFilter);
+                }
+            }
+
             if (activeFilter !== "all") {
                 query = query.ilike("type", `%${activeFilter}%`);
             }
 
             if (searchTerm) {
-                // author search requires a different approach if using joined table, but simple title search:
                 query = query.or(`title.ilike.%${searchTerm}%`);
             }
 
@@ -129,8 +161,12 @@ export default function VoteListPage() {
                 return;
             }
 
+            const { overrideWithTodayVotes, formatPollFromDb } = await import("@/lib/vote-sync");
+            const formatted = data.map(formatPollFromDb);
+            const overridden = await overrideWithTodayVotes(formatted);
+
             setTotalPollCount(count || 0);
-            setPolls(data.map(mapPollRow));
+            setPolls(overridden);
             setLoading(false);
         };
 
@@ -139,9 +175,17 @@ export default function VoteListPage() {
         }, 300);
 
         return () => clearTimeout(debounceTimer);
-    }, [activeFilter, searchTerm, startDate, endDate, displayLimit]);
+    }, [activeFilter, searchTerm, startDate, endDate, displayLimit, userLoaded, userRole, userBranch, userId]);
 
     // Client side filtering is now replaced by server-side filtering
+
+    const todayStr = useMemo(() => {
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        return `${yyyy}-${mm}-${dd}`;
+    }, []);
 
     // Calculate top 3 options for the featured card
     const top3Options = recentVote ? [...recentVote.options]
@@ -222,6 +266,22 @@ export default function VoteListPage() {
                     >
                         <div className="flex-1 w-full space-y-3">
                             <div className="flex items-center gap-2">
+                                <span className={cn(
+                                    "text-[10px] font-bold px-2 py-0.5 rounded-sm flex items-center gap-1",
+                                    recentVote.status === "ongoing" ? "bg-emerald-50 text-emerald-600" : "bg-zinc-100 text-zinc-500"
+                                )}>
+                                    {recentVote.status === "ongoing" ? "진행 중" : "종료됨"}
+                                </span>
+                                {recentVote.isImportant && (
+                                    <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-sm">
+                                        중요
+                                    </span>
+                                )}
+                                {recentVote.branch.split(',').map(b => (
+                                    <span key={b} className="text-[10px] font-bold px-2 py-0.5 rounded-sm flex items-center gap-1 bg-zinc-100 text-zinc-500">
+                                        {b}
+                                    </span>
+                                ))}
                                 {recentVote.type.split(',').map(t => {
                                     const styles = VOTE_TYPE_COLORS[t as VoteType] || VOTE_TYPE_COLORS['all'];
                                     return (
@@ -234,22 +294,6 @@ export default function VoteListPage() {
                                         </span>
                                     );
                                 })}
-                                {recentVote.branch.split(',').map(b => (
-                                    <span key={b} className="text-[10px] font-bold px-2 py-0.5 rounded-sm flex items-center gap-1 bg-zinc-100 text-zinc-500">
-                                        {b}
-                                    </span>
-                                ))}
-                                {recentVote.isImportant && (
-                                    <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-sm">
-                                        중요
-                                    </span>
-                                )}
-                                <span className={cn(
-                                    "text-[10px] font-bold px-2 py-0.5 rounded-sm flex items-center gap-1",
-                                    recentVote.status === "ongoing" ? "bg-emerald-50 text-emerald-600" : "bg-zinc-100 text-zinc-500"
-                                )}>
-                                    {recentVote.status === "ongoing" ? "진행 중" : "종료됨"}
-                                </span>
                             </div>
 
                             <h3 className="text-lg font-bold text-zinc-900 dark:text-white leading-tight group-hover:text-brand-navy transition-colors">
@@ -387,31 +431,29 @@ export default function VoteListPage() {
                                                 cardStyles.border
                                             )}
                                         >
-                                            <div className="flex items-center justify-between mb-2">
-                                                <div className="flex items-center gap-2">
-                                                    {v.type.split(',').map(t => {
-                                                        const styles = VOTE_TYPE_COLORS[t as VoteType] || VOTE_TYPE_COLORS['all'];
-                                                        return (
-                                                            <span key={t} className={cn("shrink-0 inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide", styles.bg, styles.text)}>
-                                                                {VOTE_TYPE_LABELS[t as VoteType]}
-                                                            </span>
-                                                        );
-                                                    })}
-                                                    {v.branch.split(',').map(b => (
-                                                        <span key={b} className="shrink-0 inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide bg-zinc-100 text-zinc-500">
-                                                            {b}
-                                                        </span>
-                                                    ))}
-                                                    {v.isImportant && (
-                                                        <span className="text-[10px] font-bold text-red-500 border border-red-200 px-1.5 py-0.5 rounded bg-red-50">중요</span>
-                                                    )}
-                                                </div>
+                                            <div className="flex items-center gap-2 mb-2 flex-wrap">
                                                 <span className={cn(
                                                     "text-[10px] font-bold px-2 py-0.5 rounded-sm",
                                                     v.status === "ongoing" ? "bg-emerald-50 text-emerald-600" : "bg-zinc-100 text-zinc-500"
                                                 )}>
                                                     {v.status === "ongoing" ? "진행 중" : "종료됨"}
                                                 </span>
+                                                {v.isImportant && (
+                                                    <span className="text-[10px] font-bold text-red-500 border border-red-200 px-1.5 py-0.5 rounded bg-red-50">중요</span>
+                                                )}
+                                                {v.branch.split(',').map(b => (
+                                                    <span key={b} className="shrink-0 inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide bg-zinc-100 text-zinc-500">
+                                                        {b}
+                                                    </span>
+                                                ))}
+                                                {v.type.split(',').map(t => {
+                                                    const styles = VOTE_TYPE_COLORS[t as VoteType] || VOTE_TYPE_COLORS['all'];
+                                                    return (
+                                                        <span key={t} className={cn("shrink-0 inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide", styles.bg, styles.text)}>
+                                                            {VOTE_TYPE_LABELS[t as VoteType]}
+                                                        </span>
+                                                    );
+                                                })}
                                             </div>
                                             <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-3 truncate text-left">
                                                 {v.title}
@@ -420,7 +462,7 @@ export default function VoteListPage() {
                                                 <span className="text-[11px] font-medium">{v.author}</span>
                                                 <span className="text-[10px] opacity-30">|</span>
                                                 <span className="text-[11px] font-medium">
-                                                    마감: {v.endDate?.replace(/-/g, ".")}
+                                                    마감: {v.endDate === todayStr && v.endTime ? v.endTime : v.endDate?.replace(/-/g, ".")}
                                                 </span>
                                             </div>
                                         </button>
@@ -495,7 +537,7 @@ export default function VoteListPage() {
                                                             "inline-flex items-center justify-center px-3 py-1 rounded-full text-[11px] font-semibold tracking-wide",
                                                             v.status === "ongoing" ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800/50 dark:text-zinc-400"
                                                         )}>
-                                                            {v.endDate?.replace(/-/g, ".")}
+                                                            {v.endDate === todayStr && v.endTime ? v.endTime : v.endDate?.replace(/-/g, ".")}
                                                         </span>
                                                     </td>
                                                 </tr>

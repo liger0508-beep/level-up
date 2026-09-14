@@ -55,7 +55,7 @@ export default function PlanDetailPage() {
     const [isSubmittingComment, setIsSubmittingComment] = useState(false);
     const [commentFile, setCommentFile] = useState<File | null>(null);
     const [commentPreviewUrl, setCommentPreviewUrl] = useState<string | null>(null);
-    const [currentUser, setCurrentUser] = useState<{ id: string; name: string } | null>(null);
+    const [currentUser, setCurrentUser] = useState<{ id: string; name: string; role?: string } | null>(null);
     const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
     const [editingCommentText, setEditingCommentText] = useState("");
     const [isUpdatingComment, setIsUpdatingComment] = useState(false);
@@ -93,8 +93,8 @@ export default function PlanDetailPage() {
                 const supabase = createClient();
                 const { data: { user } } = await supabase.auth.getUser();
                 if (user) {
-                    const { data: profile } = await supabase.from('users').select('name').eq('id', user.id).single();
-                    setCurrentUser({ id: user.id, name: profile?.name || "알 수 없음" });
+                    const { data: profile } = await supabase.from('users').select('name, role').eq('id', user.id).single();
+                    setCurrentUser({ id: user.id, name: profile?.name || "알 수 없음", role: profile?.role });
                 }
             } catch (error) {
                 console.error("Error loading plan details:", error);
@@ -365,7 +365,7 @@ export default function PlanDetailPage() {
                                             <span className="text-[10px] text-zinc-400 font-medium">
                                                 {c.time}
                                             </span>
-                                            {currentUser?.id === c.userId && (
+                                            {(currentUser?.id === c.userId || currentUser?.role === 'super_admin') && (
                                                 <div className="flex items-center gap-1 ml-1">
                                                     <button
                                                         onClick={() => {

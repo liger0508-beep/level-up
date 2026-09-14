@@ -73,7 +73,7 @@ export default function TrainingPlanPage() {
 
             // Fetch Athletes for filter
             if (['coach', 'admin', 'office', 'total', 'superadmin'].includes(currentRole)) {
-                const { data: athletesData } = await supabase.from("users").select("name").eq("role", "athlete").order("name");
+                const { data: athletesData } = await supabase.from("users").select("name").in("role", ["athlete", "coach", "admin"]).order("name");
                 if (athletesData) {
                     const athleteNames = athletesData.map(a => a.name);
                     setAllAthletes(athleteNames);

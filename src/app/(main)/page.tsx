@@ -347,6 +347,19 @@ export default function Home() {
         const allPolls = await getPolls(10);
         const ongoingUnvoted = allPolls.filter(p => {
           const isOngoing = p.status === "ongoing" && todayStr >= p.startDate && todayStr <= p.endDate;
+          
+          if (!isOngoing) return false;
+
+          // Permission check: Branch & Role
+          const isMasterBranch = profile && (profile.branch === '오피스' || profile.branch === '총괄');
+          
+          const pollTypes = p.type.split(',').map(t => t.trim());
+          const hasRolePermission = isMasterBranch || pollTypes.includes("all") || (profile && pollTypes.includes(profile.role));
+
+          const pollBranches = p.branch.split(',').map(b => b.trim());
+          const hasBranchPermission = isMasterBranch || pollBranches.includes("전체") || (profile && profile.branch && pollBranches.includes(profile.branch));
+
+          if (!hasRolePermission || !hasBranchPermission) return false;
 
           let hasNotVoted = true;
           if (p.isRecurring) {
@@ -363,7 +376,7 @@ export default function Home() {
             hasNotVoted = !pollResponses?.some(pr => pr.poll_id === p.id);
           }
 
-          return isOngoing && hasNotVoted;
+          return hasNotVoted;
         });
         setPendingPolls(ongoingUnvoted);
         const allNotices = await getNotices(5);
