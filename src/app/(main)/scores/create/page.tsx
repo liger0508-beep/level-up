@@ -1197,7 +1197,7 @@ function ScoreCreateContent() {
             // 8.1 제안 1번: 통계 미리 계산 및 저장 (scorecard_summary)
             try {
                 const { generateAndSaveScorecardSummary } = await import("@/lib/score-calculations");
-                await generateAndSaveScorecardSummary(scorecardId);
+                await generateAndSaveScorecardSummary(scorecardId as string);
             } catch (err) {
                 console.error("통계 요약 저장 실패:", err);
             }

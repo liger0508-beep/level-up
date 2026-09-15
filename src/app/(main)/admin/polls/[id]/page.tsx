@@ -642,9 +642,8 @@ export default function PollDetailPage() {
                                             </div>
                                         );
                                     }
-
                                     return (
-                                        <div key={opt.id} className="space-y-2 group">
+                                        <div key={`${opt.id}_${i}`} className="space-y-2 group">
                                             <div className="flex justify-between items-end text-sm">
                                                 <div className="flex items-center gap-2">
                                                     {isTop && <Trophy size={16} className="text-amber-500 mb-0.5" />}

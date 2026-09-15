@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
     Search,
@@ -34,7 +34,9 @@ export default function VoteListPage() {
     const router = useRouter();
     const [polls, setPolls] = useState<Vote[]>([]);
     const [totalPollCount, setTotalPollCount] = useState(0);
-    const [recentVote, setRecentVote] = useState<Vote | null>(null);
+    const [ongoingVotes, setOngoingVotes] = useState<Vote[]>([]);
+    const [activeOngoingIndex, setActiveOngoingIndex] = useState(0);
+    const ongoingScrollRef = useRef<HTMLDivElement>(null);
     const [displayLimit, setDisplayLimit] = useState(20);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
@@ -72,46 +74,40 @@ export default function VoteListPage() {
             const applyPermissions = (q: any) => {
                 const isMasterBranch = currentBranch === '오피스' || currentBranch === '총괄';
                 if (currentRole !== 'admin' && !isMasterBranch) {
-                    const branchFilter = `branch.ilike.%전체%,branch.ilike.%${currentBranch || ''}%,author_id.eq.${currentUserId || ''}`;
-                    let nextQ = q.or(branchFilter);
+                    const branchCond = `or(branch.ilike.*전체*,branch.ilike.*${currentBranch || ''}*)`;
+                    let filterStr = branchCond;
                     
                     if (currentRole !== 'coach') {
-                        const roleFilter = `type.ilike.%all%,type.ilike.%${currentRole || ''}%,author_id.eq.${currentUserId || ''}`;
-                        nextQ = nextQ.or(roleFilter);
+                        const roleCond = `or(type.ilike.*all*,type.ilike.*${currentRole || ''}*)`;
+                        filterStr = `and(${branchCond},${roleCond})`;
                     }
-                    return nextQ;
+                    
+                    if (currentUserId) {
+                        filterStr = `${filterStr},author_id.eq.${currentUserId}`;
+                    }
+                    
+                    return q.or(filterStr);
                 }
                 return q;
             };
 
-            // Fetch recent featured vote
-            let recentQuery = supabase
+            // Fetch ongoing votes
+            let ongoingQuery = supabase
                 .from("polls")
                 .select(`*, users!polls_author_id_fkey(name)`)
-                .eq("is_important", true)
                 .eq("status", "ongoing")
                 .order("created_at", { ascending: false })
-                .limit(1);
+                .limit(20);
             
-            recentQuery = applyPermissions(recentQuery);
-            let { data: recentVoteData } = await recentQuery;
+            ongoingQuery = applyPermissions(ongoingQuery);
+            let { data: ongoingVoteData } = await ongoingQuery;
 
-            if (!recentVoteData || recentVoteData.length === 0) {
-                let fallbackQuery = supabase
-                    .from("polls")
-                    .select(`*, users!polls_author_id_fkey(name)`)
-                    .order("created_at", { ascending: false })
-                    .limit(1);
-                fallbackQuery = applyPermissions(fallbackQuery);
-                const { data: fallbackData } = await fallbackQuery;
-                recentVoteData = fallbackData;
-            }
-
-            if (recentVoteData && recentVoteData.length > 0) {
+            if (ongoingVoteData && ongoingVoteData.length > 0) {
                 const { overrideWithTodayVotes, formatPollFromDb } = await import("@/lib/vote-sync");
-                const formatted = [formatPollFromDb(recentVoteData[0])];
+                const formatted = ongoingVoteData.map(formatPollFromDb);
                 const overridden = await overrideWithTodayVotes(formatted);
-                setRecentVote(overridden[0]);
+                const trulyOngoing = overridden.filter(p => p.status === "ongoing");
+                setOngoingVotes(trulyOngoing.slice(0, 5));
             }
         };
         
@@ -187,10 +183,7 @@ export default function VoteListPage() {
         return `${yyyy}-${mm}-${dd}`;
     }, []);
 
-    // Calculate top 3 options for the featured card
-    const top3Options = recentVote ? [...recentVote.options]
-        .sort((a, b) => b.votes - a.votes)
-        .slice(0, 3) : [];
+
 
     if (loading) {
         return (
@@ -221,128 +214,145 @@ export default function VoteListPage() {
                 )}
             </div>
 
-            {/* ── Type Filters ── */}
-            <div className="flex flex-nowrap gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
-                <button
-                    onClick={() => setActiveFilter("all")}
-                    className={cn(
-                        "whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all border",
-                        activeFilter === "all"
-                            ? "bg-brand-navy text-white border-brand-navy shadow-md"
-                            : "bg-white dark:bg-zinc-900 text-zinc-500 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50"
-                    )}
-                >
-                    전체
-                </button>
-                {(Object.entries(VOTE_TYPE_LABELS) as [VoteType, string][])
-                    .filter(([key]) => key !== "all")
-                    .map(([key, label]) => (
-                        <button
-                            key={key}
-                            onClick={() => setActiveFilter(key)}
-                            className={cn(
-                                "whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all border",
-                                activeFilter === key
-                                    ? "bg-brand-navy text-white border-brand-navy shadow-md"
-                                    : "bg-white dark:bg-zinc-900 text-zinc-500 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50"
-                            )}
-                        >
-                            {label}
-                        </button>
-                    ))}
-            </div>
 
-            {/* ── Recently Vote (Featured) ── */}
-            {recentVote && (
+
+            {/* ── Ongoing Votes Carousel ── */}
+            {ongoingVotes.length > 0 && (
                 <section className="space-y-3">
                     <div className="flex items-center gap-2 px-1">
                         <Clock size={16} className="text-zinc-500" />
-                        <h2 className="text-base font-bold text-zinc-800 dark:text-zinc-100">최근 투표 현황</h2>
+                        <h2 className="text-base font-bold text-zinc-800 dark:text-zinc-100">진행중 투표 현황</h2>
                     </div>
 
-                    <div
-                        onClick={() => router.push(`/admin/polls/${recentVote.id}`)}
-                        className="group relative bg-white dark:bg-zinc-900 rounded-2xl p-5 cursor-pointer active:scale-[0.99] transition-all border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-md hover:border-brand-navy/30 flex flex-col md:flex-row gap-6 items-center"
-                    >
-                        <div className="flex-1 w-full space-y-3">
-                            <div className="flex items-center gap-2">
-                                <span className={cn(
-                                    "text-[10px] font-bold px-2 py-0.5 rounded-sm flex items-center gap-1",
-                                    recentVote.status === "ongoing" ? "bg-emerald-50 text-emerald-600" : "bg-zinc-100 text-zinc-500"
-                                )}>
-                                    {recentVote.status === "ongoing" ? "진행 중" : "종료됨"}
-                                </span>
-                                {recentVote.isImportant && (
-                                    <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-sm">
-                                        중요
-                                    </span>
-                                )}
-                                {recentVote.branch.split(',').map(b => (
-                                    <span key={b} className="text-[10px] font-bold px-2 py-0.5 rounded-sm flex items-center gap-1 bg-zinc-100 text-zinc-500">
-                                        {b}
-                                    </span>
-                                ))}
-                                {recentVote.type.split(',').map(t => {
-                                    const styles = VOTE_TYPE_COLORS[t as VoteType] || VOTE_TYPE_COLORS['all'];
-                                    return (
-                                        <span key={t} className={cn(
-                                            "text-[10px] font-bold px-2 py-0.5 rounded-sm uppercase flex items-center gap-1",
-                                            styles.bg,
-                                            styles.text
-                                        )}>
-                                            {VOTE_TYPE_LABELS[t as VoteType]}
-                                        </span>
-                                    );
-                                })}
-                            </div>
+                    <div className="relative">
+                        <div
+                            ref={ongoingScrollRef}
+                            className="flex overflow-x-auto snap-x snap-mandatory gap-4 pb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+                            onScroll={(e) => {
+                                const scrollLeft = e.currentTarget.scrollLeft;
+                                const width = e.currentTarget.clientWidth;
+                                const index = Math.round(scrollLeft / width);
+                                setActiveOngoingIndex(index);
+                            }}
+                        >
+                            {ongoingVotes.map((vote) => {
+                                const top3Options = [...vote.options].slice(0, 3);
+                                const optionsSortedByVotes = [...vote.options].sort((a, b) => b.votes - a.votes);
 
-                            <h3 className="text-lg font-bold text-zinc-900 dark:text-white leading-tight group-hover:text-brand-navy transition-colors">
-                                {recentVote.title} <span className="text-zinc-500 font-medium">({recentVote.totalParticipants}명)</span>
-                            </h3>
-
-                            {/* Top 3 Results Preview (Compact) */}
-                            <div className="space-y-2 mt-4">
-                                {top3Options.map((opt, i) => {
-                                    const percentage = Math.round((opt.votes / Math.max(recentVote.totalParticipants, 1)) * 100);
-                                    return (
-                                        <div key={opt.id} className="space-y-1">
-                                            <div className="flex justify-between items-center text-xs">
-                                                <span className="font-semibold text-zinc-600 dark:text-zinc-300 flex items-center gap-2">
-                                                    <span className={cn(
-                                                        "w-4 h-4 rounded-full flex items-center justify-center text-[9px] text-white font-bold",
-                                                        i === 0 ? "bg-indigo-300" : i === 1 ? "bg-slate-300" : "bg-orange-200"
-                                                    )}>{i + 1}</span>
-                                                    <span className="truncate max-w-[150px] sm:max-w-xs">{opt.text}</span>
+                                return (
+                                    <div
+                                        key={vote.id}
+                                        onClick={() => router.push(`/admin/polls/${vote.id}`)}
+                                        className="w-full min-w-full snap-center shrink-0 group relative bg-white dark:bg-zinc-900 rounded-2xl p-5 cursor-pointer active:scale-[0.99] transition-all border border-zinc-200 dark:border-zinc-800 shadow-sm hover:shadow-md hover:border-brand-navy/30 flex flex-col md:flex-row gap-6 items-center"
+                                    >
+                                        <div className="flex-1 w-full space-y-3">
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <span className={cn(
+                                                    "text-[10px] font-bold px-2 py-0.5 rounded-sm flex items-center gap-1",
+                                                    vote.status === "ongoing" ? "bg-emerald-50 text-emerald-600" : "bg-zinc-100 text-zinc-500"
+                                                )}>
+                                                    {vote.status === "ongoing" ? "진행 중" : "종료됨"}
                                                 </span>
+                                                {vote.isImportant && (
+                                                    <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-sm">
+                                                        중요
+                                                    </span>
+                                                )}
+                                                {vote.branch.split(',').map(b => (
+                                                    <span key={b} className="text-[10px] font-bold px-2 py-0.5 rounded-sm flex items-center gap-1 bg-zinc-100 text-zinc-500">
+                                                        {b}
+                                                    </span>
+                                                ))}
+                                                {vote.type.split(',').map(t => {
+                                                    const styles = VOTE_TYPE_COLORS[t as VoteType] || VOTE_TYPE_COLORS['all'];
+                                                    return (
+                                                        <span key={t} className={cn(
+                                                            "text-[10px] font-bold px-2 py-0.5 rounded-sm uppercase flex items-center gap-1",
+                                                            styles.bg,
+                                                            styles.text
+                                                        )}>
+                                                            {VOTE_TYPE_LABELS[t as VoteType]}
+                                                        </span>
+                                                    );
+                                                })}
                                             </div>
-                                            <div className="relative h-5 w-full bg-zinc-100 dark:bg-zinc-800/80 rounded-full overflow-hidden flex items-center">
-                                                <div
-                                                    className={cn(
-                                                        "absolute left-0 top-0 h-full rounded-full transition-all duration-1000",
-                                                        i === 0 ? "bg-indigo-300" : i === 1 ? "bg-slate-300" : "bg-orange-200"
-                                                    )}
-                                                    style={{ width: `${percentage}%` }}
-                                                />
-                                                <span className="absolute right-3 z-10 font-bold text-zinc-700 dark:text-zinc-200 text-[10px]">
-                                                    {opt.votes}표 ({percentage}%)
-                                                </span>
+
+                                            <h3 className="text-lg font-bold text-zinc-900 dark:text-white leading-tight group-hover:text-brand-navy transition-colors">
+                                                {vote.title} <span className="text-zinc-500 font-medium text-base">({vote.totalParticipants}명)</span>
+                                            </h3>
+
+                                            {/* Top 3 Results Preview (Compact) */}
+                                            <div className="space-y-2 mt-4">
+                                                {top3Options.map((opt, i) => {
+                                                    const percentage = Math.round((opt.votes / Math.max(vote.totalParticipants, 1)) * 100);
+                                                    const rank = optionsSortedByVotes.findIndex(o => o.id === opt.id);
+                                                    return (
+                                                        <div key={opt.id} className={cn(
+                                                            "flex justify-between items-center text-sm py-2 px-3 rounded-xl border transition-colors",
+                                                            rank === 0 ? "bg-indigo-50/50 dark:bg-indigo-900/10 border-indigo-100 dark:border-indigo-800/30" : 
+                                                            rank === 1 ? "bg-zinc-50/80 dark:bg-zinc-800/30 border-zinc-100 dark:border-zinc-800/50" : 
+                                                            "bg-transparent border-transparent"
+                                                        )}>
+                                                            <span className="font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-2.5 truncate pr-2">
+                                                                <span className={cn(
+                                                                    "w-5 h-5 shrink-0 flex items-center justify-center rounded-full text-[10px] font-black",
+                                                                    rank === 0 ? "bg-indigo-500 text-white shadow-sm" : 
+                                                                    rank === 1 ? "bg-slate-400 text-white" : 
+                                                                    "bg-zinc-200 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400"
+                                                                )}>{i + 1}</span>
+                                                                <span className={cn("truncate", rank === 0 && "text-indigo-900 dark:text-indigo-300 font-extrabold")}>{opt.text}</span>
+                                                            </span>
+                                                            <div className={cn(
+                                                                "flex items-center justify-end gap-1 shrink-0 tabular-nums",
+                                                                rank === 0 ? "text-indigo-600 dark:text-indigo-400" : "text-zinc-600 dark:text-zinc-400"
+                                                            )}>
+                                                                <span className="font-black text-[13px] w-9 text-right">
+                                                                    {opt.votes}표
+                                                                </span>
+                                                                <span className="opacity-70 font-semibold text-[11px] w-10 text-right whitespace-pre">
+                                                                    ({percentage < 10 ? ' ' : ''}{percentage}%)
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            <div className="flex items-center justify-end gap-5 text-[11px] text-zinc-500 pt-3 border-t border-zinc-100 dark:border-zinc-800/50 mt-2 w-full">
+                                                <div className="flex items-center gap-1.5">
+                                                    <CalendarIcon size={12} />
+                                                    <span>{vote.startDate?.replace(/-/g, ".")} ~ {vote.endDate?.replace(/-/g, ".")}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1.5">
+                                                    <User size={12} />
+                                                    <span>{vote.author}</span>
+                                                </div>
                                             </div>
                                         </div>
-                                    );
-                                })}
-                            </div>
-
-                            <div className="flex items-center justify-end gap-5 text-[11px] text-zinc-500 pt-3 border-t border-zinc-100 dark:border-zinc-800/50 mt-2 w-full">
-                                <div className="flex items-center gap-1.5">
-                                    <CalendarIcon size={12} />
-                                    <span>{recentVote.startDate?.replace(/-/g, ".")} ~ {recentVote.endDate?.replace(/-/g, ".")}</span>
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                    <User size={12} />
-                                    <span>{recentVote.author}</span>
-                                </div>
-                            </div>
+                                    </div>
+                                );
+                            })}
                         </div>
+                        
+                        {ongoingVotes.length > 1 && (
+                            <div className="flex justify-center gap-1.5 mt-3">
+                                {ongoingVotes.map((_, idx) => (
+                                    <button
+                                        key={idx}
+                                        onClick={() => {
+                                            setActiveOngoingIndex(idx);
+                                            if (ongoingScrollRef.current) {
+                                                ongoingScrollRef.current.scrollTo({ left: ongoingScrollRef.current.clientWidth * idx, behavior: 'smooth' });
+                                            }
+                                        }}
+                                        className={cn(
+                                            "w-1.5 h-1.5 rounded-full transition-colors",
+                                            activeOngoingIndex === idx ? "bg-zinc-400 dark:bg-zinc-500" : "bg-zinc-200 dark:bg-zinc-700"
+                                        )}
+                                    />
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </section>
             )}
@@ -414,6 +424,37 @@ export default function VoteListPage() {
                     />
                 </div>
 
+                {/* ── Type Filters (Moved to Search Results) ── */}
+                <div className="flex flex-nowrap gap-2 mb-4 overflow-x-auto pb-2 scrollbar-hide px-1">
+                    <button
+                        onClick={() => setActiveFilter("all")}
+                        className={cn(
+                            "whitespace-nowrap shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold transition-all border",
+                            activeFilter === "all"
+                                ? "bg-brand-navy text-white border-brand-navy shadow-md"
+                                : "bg-white dark:bg-zinc-900 text-zinc-500 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50"
+                        )}
+                    >
+                        전체
+                    </button>
+                    {(Object.entries(VOTE_TYPE_LABELS) as [VoteType, string][])
+                        .filter(([key]) => key !== "all")
+                        .map(([key, label]) => (
+                            <button
+                                key={key}
+                                onClick={() => setActiveFilter(key)}
+                                className={cn(
+                                    "whitespace-nowrap shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold transition-all border",
+                                    activeFilter === key
+                                        ? "bg-brand-navy text-white border-brand-navy shadow-md"
+                                        : "bg-white dark:bg-zinc-900 text-zinc-500 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50"
+                                )}
+                            >
+                                {label}
+                            </button>
+                        ))}
+                </div>
+
                 <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
                     {polls.length > 0 ? (
                         <>
@@ -428,7 +469,7 @@ export default function VoteListPage() {
                                             onClick={() => router.push(`/admin/polls/${v.id}`)}
                                             className={cn(
                                                 "w-full text-left bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 border-l-4 rounded-xl px-4 py-3.5 hover:shadow-sm active:scale-[0.99] transition-all",
-                                                cardStyles.border
+                                                v.status === "ongoing" ? cardStyles.border : "border-l-zinc-300 dark:border-l-zinc-700"
                                             )}
                                         >
                                             <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -439,7 +480,10 @@ export default function VoteListPage() {
                                                     {v.status === "ongoing" ? "진행 중" : "종료됨"}
                                                 </span>
                                                 {v.isImportant && (
-                                                    <span className="text-[10px] font-bold text-red-500 border border-red-200 px-1.5 py-0.5 rounded bg-red-50">중요</span>
+                                                    <span className={cn(
+                                                        "text-[10px] font-bold px-1.5 py-0.5 rounded border",
+                                                        v.status === "ongoing" ? "text-red-500 border-red-200 bg-red-50" : "text-zinc-500 border-zinc-200 bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700"
+                                                    )}>중요</span>
                                                 )}
                                                 {v.branch.split(',').map(b => (
                                                     <span key={b} className="shrink-0 inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide bg-zinc-100 text-zinc-500">
@@ -449,7 +493,10 @@ export default function VoteListPage() {
                                                 {v.type.split(',').map(t => {
                                                     const styles = VOTE_TYPE_COLORS[t as VoteType] || VOTE_TYPE_COLORS['all'];
                                                     return (
-                                                        <span key={t} className={cn("shrink-0 inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide", styles.bg, styles.text)}>
+                                                        <span key={t} className={cn(
+                                                            "shrink-0 inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide",
+                                                            v.status === "ongoing" ? cn(styles.bg, styles.text) : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                                                        )}>
                                                             {VOTE_TYPE_LABELS[t as VoteType]}
                                                         </span>
                                                     );
@@ -499,7 +546,10 @@ export default function VoteListPage() {
                                                             {v.type.split(',').map(t => {
                                                                 const styles = VOTE_TYPE_COLORS[t as VoteType] || VOTE_TYPE_COLORS['all'];
                                                                 return (
-                                                                    <span key={t} className={cn("inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide", styles.bg, styles.text)}>
+                                                                    <span key={t} className={cn(
+                                                                        "inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide",
+                                                                        v.status === "ongoing" ? cn(styles.bg, styles.text) : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                                                                    )}>
                                                                         {VOTE_TYPE_LABELS[t as VoteType]}
                                                                     </span>
                                                                 );
@@ -518,7 +568,10 @@ export default function VoteListPage() {
                                                     <td className="py-3.5 px-4 text-center">
                                                         <div className="flex items-center justify-center gap-2">
                                                             {v.isImportant && (
-                                                                <span className="shrink-0 text-[10px] font-bold text-red-500 border border-red-200 px-1.5 py-0.5 rounded bg-red-50">중요</span>
+                                                                <span className={cn(
+                                                                    "shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded border",
+                                                                    v.status === "ongoing" ? "text-red-500 border-red-200 bg-red-50" : "text-zinc-500 border-zinc-200 bg-zinc-50 dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700"
+                                                                )}>중요</span>
                                                             )}
                                                             <span className="text-zinc-700 dark:text-zinc-300 font-medium truncate max-w-sm">
                                                                 {v.title}

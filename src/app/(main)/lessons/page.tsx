@@ -458,89 +458,20 @@ export default function LessonsPage() {
         return Array.from(new Set([...selectedArr, ...queryMatches]));
     }, [searchQuery, selectedPlayers, selectAll, allAthletes]);
 
-    // Group lessons (Thread View)
+    // Flat lessons (No Thread View)
     const groupedLessons = useMemo(() => {
-        // 1. Build a map of all lessons for quick lookup
-        const lessonMap = new Map<string, LessonData>();
-        realLessons.forEach(l => lessonMap.set(l.id, { ...l, subLessons: [] }));
+        const filtered = realLessons.filter(l => {
+            const typeMatch = activeFilter === "all" || l.type === activeFilter;
+            const playerMatch = selectedPlayers.has(l.playerName) || selectedPlayers.size === 0;
+            const dateMatch = (!startDate || l.date >= startDate) && (!endDate || l.date <= endDate);
 
-        // 2. Resolve roots and descendants
-        const rootLessons: LessonData[] = [];
-
-        const getRootId = (id: string): string => {
-            let current = lessonMap.get(id);
-            const visited = new Set<string>();
-            while (current?.connected_lesson_id) {
-                if (visited.has(current.id)) break; // Prevent infinite loops
-                visited.add(current.id);
-                const parent = lessonMap.get(current.connected_lesson_id);
-                if (!parent) break;
-                current = parent;
-            }
-            return current?.id || id;
-        };
-
-        const treeMap = new Map<string, LessonData[]>();
-
-        realLessons.forEach(l => {
-            const rootId = getRootId(l.id);
-            if (rootId === l.id) {
-                if (!treeMap.has(rootId)) treeMap.set(rootId, []);
-            } else {
-                if (!treeMap.has(rootId)) treeMap.set(rootId, []);
-                treeMap.get(rootId)!.push(lessonMap.get(l.id)!);
-            }
+            return typeMatch && playerMatch && dateMatch;
         });
 
-        // 3. Assemble roots and apply core badge
-        Array.from(treeMap.keys()).forEach(rootId => {
-            const root = lessonMap.get(rootId);
-            if (root) {
-                const descendants = treeMap.get(rootId)!;
-                descendants.sort((a, b) => {
-                    const dateA = new Date(a.created_at || a.date).getTime();
-                    const dateB = new Date(b.created_at || b.date).getTime();
-                    return dateB - dateA;
-                });
-
-                root.subLessons = descendants;
-
-                if (descendants.length >= 2) {
-                    root.is_core_lesson = true;
-                }
-
-                rootLessons.push(root);
-            }
-        });
-
-        rootLessons.sort((a, b) => {
-            let maxDateA = new Date(a.created_at || a.date).getTime();
-            if (a.subLessons && a.subLessons.length > 0) {
-                const latestSubA = new Date(a.subLessons[0].created_at || a.subLessons[0].date).getTime();
-                if (latestSubA > maxDateA) maxDateA = latestSubA;
-            }
-
-            let maxDateB = new Date(b.created_at || b.date).getTime();
-            if (b.subLessons && b.subLessons.length > 0) {
-                const latestSubB = new Date(b.subLessons[0].created_at || b.subLessons[0].date).getTime();
-                if (latestSubB > maxDateB) maxDateB = latestSubB;
-            }
-
-            return maxDateB - maxDateA;
-        });
-
-        // 4. Apply filters
-        return rootLessons.filter(root => {
-            const typeMatch = (l: LessonData) => activeFilter === "all" || l.type === activeFilter;
-            const playerMatch = (l: LessonData) => selectedPlayers.has(l.playerName);
-            const dateMatch = (l: LessonData) => (!startDate || l.date >= startDate) && (!endDate || l.date <= endDate);
-
-            const isMatch = (l: LessonData) => typeMatch(l) && playerMatch(l) && dateMatch(l);
-
-            if (isMatch(root)) return true;
-            if (root.subLessons?.some(sub => isMatch(sub))) return true;
-
-            return false;
+        return filtered.map(l => ({ ...l, subLessons: [] })).sort((a, b) => {
+            const dateA = new Date(a.created_at || a.date).getTime();
+            const dateB = new Date(b.created_at || b.date).getTime();
+            return dateB - dateA;
         });
     }, [realLessons, activeFilter, selectedPlayers, startDate, endDate]);
 

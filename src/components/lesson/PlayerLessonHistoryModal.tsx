@@ -1,15 +1,29 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { X, CornerDownRight } from "lucide-react";
+import { X, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { LessonRecord } from "@/lib/lesson-sync";
-import { createClient } from "@/lib/supabase/client";
 import { AthleteSearch } from "@/components/ui/AthleteSearch";
-import { CategoryTabs } from "@/components/ui/CategoryTabs";
 
-const partOptions: { key: string; label: string }[] = [
+// Imports for the 4 cards and modals
+import { LinkedPlanCard } from "@/components/training-plan/LinkedPlanCard";
+import { LinkedJournalCard } from "@/components/training-plan/LinkedJournalCard";
+import { LinkedScoreCard } from "@/components/lesson/LinkedScoreCard";
+import { LinkedLessonCard } from "@/components/training-plan/LinkedLessonCard";
+
+import { PlanHistoryModal } from "@/components/training-plan/PlanHistoryModal";
+import { JournalHistoryModal } from "@/components/training-plan/JournalHistoryModal";
+import { LessonHistoryModal } from "@/components/lesson/LessonHistoryModal";
+import ReferenceDataModal from "@/components/lesson/ReferenceDataModal";
+
+// Data fetching functions
+import { fetchPlansByAthlete, Plan } from "@/lib/plan-sync";
+import { fetchJournalsByAthlete, Journal } from "@/lib/journal-sync";
+import { fetchLatestScoreByPlayer, ScoreData } from "@/lib/score-sync";
+import { fetchRecentLessonsByPlayer, fetchAllLessonsByPlayer, LessonRecord } from "@/lib/lesson-sync";
+
+const partOptions = [
     { key: "all", label: "ALL" },
     { key: "shot", label: "Shot" },
     { key: "pitch", label: "Pitch" },
@@ -20,11 +34,6 @@ const partOptions: { key: string; label: string }[] = [
     { key: "field", label: "Field" },
     { key: "etc", label: "Etc" },
 ];
-
-interface GroupedLesson extends LessonRecord {
-    subLessons?: GroupedLesson[];
-    is_core_lesson?: boolean;
-}
 
 interface PlayerLessonHistoryModalProps {
     isOpen: boolean;
@@ -48,16 +57,30 @@ export function PlayerLessonHistoryModal({ isOpen, onClose, allAthletes }: Playe
         }
         return null;
     });
-    const [playerLessons, setPlayerLessons] = useState<LessonRecord[]>([]);
-    const [historyDisplayLimit, setHistoryDisplayLimit] = useState(10);
+
+    // Data States
+    const [recentPlan, setRecentPlan] = useState<Plan | null>(null);
+    const [allPlans, setAllPlans] = useState<Plan[]>([]);
+    const [recentJournal, setRecentJournal] = useState<Journal | null>(null);
+    const [allJournals, setAllJournals] = useState<Journal[]>([]);
+    const [recentScore, setRecentScore] = useState<ScoreData | null>(null);
+    const [recentLessons, setRecentLessons] = useState<LessonRecord[]>([]);
+    const [allLessons, setAllLessons] = useState<LessonRecord[]>([]);
     const [isLoading, setIsLoading] = useState(false);
-    const [activePart, setActivePart] = useState(() => {
-        if (typeof window !== 'undefined') {
-            return sessionStorage.getItem('playerLessonHistoryModal_activePart') || "all";
-        }
-        return "all";
-    });
-    const [totalLessonCount, setTotalLessonCount] = useState(0);
+
+    // Modal States
+    const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+    const [isJournalHistoryModalOpen, setIsJournalHistoryModalOpen] = useState(false);
+    const [isReferenceModalOpen, setIsReferenceModalOpen] = useState(false);
+    const [isLessonHistoryModalOpen, setIsLessonHistoryModalOpen] = useState(false);
+
+    // Filter/Search States for Modals
+    const [historySelectedPart, setHistorySelectedPart] = useState("all");
+    const [historySearchQuery, setHistorySearchQuery] = useState("");
+    const [historyDisplayLimit, setHistoryDisplayLimit] = useState(10);
+    const [selectedJournalId, setSelectedJournalId] = useState<string | null>(null);
+    const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+    const [connectedLessonId, setConnectedLessonId] = useState<string | null>(null);
 
     useEffect(() => {
         sessionStorage.setItem('playerLessonHistoryModal_registeredPlayers', JSON.stringify(registeredPlayers));
@@ -71,120 +94,54 @@ export function PlayerLessonHistoryModal({ isOpen, onClose, allAthletes }: Playe
         }
     }, [activePlayer]);
 
-    useEffect(() => {
-        sessionStorage.setItem('playerLessonHistoryModal_activePart', activePart);
-        // 탭이 바뀔 때 리미트 초기화 (2번 렌더링 방지를 위해 아래 useEffect에서 함께 처리해도 되지만 안전하게)
-        setHistoryDisplayLimit(10);
-    }, [activePart, activePlayer]);
-
-    // Fetch lessons when active player, part, or limit changes
+    // Fetch all 4 sets of data when activePlayer changes
     useEffect(() => {
         if (isOpen && activePlayer) {
             setIsLoading(true);
-            
-            const fetchPaginated = async () => {
-                const supabase = createClient();
-                
-                // 1. Get user_id by name
-                const { data: userRes } = await supabase
-                    .from("users")
-                    .select("id")
-                    .eq("name", activePlayer)
-                    .maybeSingle();
-
-                if (!userRes) {
-                    setPlayerLessons([]);
-                    setTotalLessonCount(0);
-                    setIsLoading(false);
-                    return;
-                }
-
-                // 2. Query lessons
-                let query = supabase
-                    .from("records")
-                    .select(`
-                        id, type, category, title, content, is_corrected, created_at, connected_lesson_id, user_id,
-                        users!records_user_id_fkey(name),
-                        coach:users!records_coach_id_fkey(name)
-                    `, { count: 'exact' })
-                    .eq("type", "lesson")
-                    .eq("user_id", userRes.id)
-                    .order("created_at", { ascending: false });
-
-                if (activePart !== "all") {
-                    query = query.eq("category", activePart);
-                }
-
-                query = query.limit(historyDisplayLimit);
-
-                const { data: lessonsData, count } = await query;
-                
-                if (!lessonsData) {
-                    setPlayerLessons([]);
-                    setTotalLessonCount(0);
-                    setIsLoading(false);
-                    return;
-                }
-
-                setTotalLessonCount(count || 0);
-
-                // 3. Fetch missing parents for proper grouping
-                const parentIdsToFetch = new Set<string>();
-                lessonsData.forEach((item: any) => {
-                    if (item.connected_lesson_id) {
-                        const parentExists = lessonsData.some((l: any) => l.id === item.connected_lesson_id);
-                        if (!parentExists) {
-                            parentIdsToFetch.add(item.connected_lesson_id);
-                        }
-                    }
-                });
-
-                let finalLessonsData = [...lessonsData];
-
-                if (parentIdsToFetch.size > 0) {
-                    const { data: parentData } = await supabase.from("records").select(`
-                        id, type, category, title, content, is_corrected, created_at, connected_lesson_id, user_id,
-                        users!records_user_id_fkey(name),
-                        coach:users!records_coach_id_fkey(name)
-                    `).in("id", Array.from(parentIdsToFetch));
+            const loadData = async () => {
+                try {
+                    const [plans, journals, score, lessons, allL] = await Promise.all([
+                        fetchPlansByAthlete(activePlayer),
+                        fetchJournalsByAthlete(activePlayer),
+                        fetchLatestScoreByPlayer(activePlayer),
+                        fetchRecentLessonsByPlayer(activePlayer),
+                        fetchAllLessonsByPlayer(activePlayer)
+                    ]);
                     
-                    if (parentData) {
-                        finalLessonsData = [...finalLessonsData, ...parentData];
-                    }
+                    setAllPlans(plans);
+                    setRecentPlan(plans.length > 0 ? plans[0] : null);
+                    
+                    setAllJournals(journals);
+                    setRecentJournal(journals.length > 0 ? journals[0] : null);
+                    
+                    setRecentScore(score);
+                    
+                    setRecentLessons(lessons);
+                    setAllLessons(allL);
+                } catch (error) {
+                    console.error("Error fetching player data:", error);
+                } finally {
+                    setIsLoading(false);
                 }
-
-                const formatted: LessonRecord[] = finalLessonsData.map((item: any) => ({
-                    id: item.id,
-                    type: item.type,
-                    category: item.category as any,
-                    title: item.title || "",
-                    content: item.content || "",
-                    created_at: item.created_at,
-                    playerName: item.users?.name || "Unknown",
-                    coachName: item.coach?.name || "Unknown",
-                    connected_lesson_id: item.connected_lesson_id
-                }));
-
-                // Deduplicate
-                const uniqueFormatted = Array.from(new Map(formatted.map(item => [item.id, item])).values());
-                
-                setPlayerLessons(uniqueFormatted);
-                setIsLoading(false);
             };
-            
-            fetchPaginated();
+            loadData();
         } else {
-            setPlayerLessons([]);
-            setTotalLessonCount(0);
+            // Reset state
+            setRecentPlan(null);
+            setAllPlans([]);
+            setRecentJournal(null);
+            setAllJournals([]);
+            setRecentScore(null);
+            setRecentLessons([]);
+            setAllLessons([]);
         }
-    }, [activePlayer, isOpen, historyDisplayLimit, activePart]);
+    }, [activePlayer, isOpen]);
 
     const handleAddPlayer = (playerName: string) => {
         if (!playerName.trim()) return;
         const name = playerName.trim();
-        // Check if player exists in allAthletes
         const exactMatch = allAthletes.find(a => a.toLowerCase() === name.toLowerCase());
-        const finalName = exactMatch || name; // Allow adding even if not exact match just in case
+        const finalName = exactMatch || name;
 
         if (!registeredPlayers.includes(finalName)) {
             const newPlayers = [finalName, ...registeredPlayers];
@@ -204,125 +161,6 @@ export function PlayerLessonHistoryModal({ isOpen, onClose, allAthletes }: Playe
         }
     };
 
-    const groupedLessons = useMemo(() => {
-        const lessonMap = new Map<string, GroupedLesson>();
-        playerLessons.forEach(l => lessonMap.set(l.id, { ...l, subLessons: [] }));
-
-        const rootLessons: GroupedLesson[] = [];
-        const treeMap = new Map<string, GroupedLesson[]>();
-
-        const getRootId = (id: string): string => {
-            let current = lessonMap.get(id);
-            const visited = new Set<string>();
-            while (current?.connected_lesson_id) {
-                if (visited.has(current.id)) break;
-                visited.add(current.id);
-                const parent = lessonMap.get(current.connected_lesson_id);
-                if (!parent) break;
-                current = parent;
-            }
-            return current?.id || id;
-        };
-
-        playerLessons.forEach(l => {
-            const rootId = getRootId(l.id);
-            if (rootId === l.id) {
-                if (!treeMap.has(rootId)) treeMap.set(rootId, []);
-            } else {
-                if (!treeMap.has(rootId)) treeMap.set(rootId, []);
-                treeMap.get(rootId)!.push(lessonMap.get(l.id)!);
-            }
-        });
-
-        Array.from(treeMap.keys()).forEach(rootId => {
-            const root = lessonMap.get(rootId);
-            if (root) {
-                const descendants = treeMap.get(rootId)!;
-                descendants.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-                root.subLessons = descendants;
-                if (descendants.length >= 2) {
-                    root.is_core_lesson = true;
-                }
-                rootLessons.push(root);
-            }
-        });
-
-        rootLessons.sort((a, b) => {
-            let maxDateA = new Date(a.created_at).getTime();
-            if (a.subLessons && a.subLessons.length > 0) {
-                const latestSubA = new Date(a.subLessons[0].created_at).getTime();
-                if (latestSubA > maxDateA) maxDateA = latestSubA;
-            }
-            let maxDateB = new Date(b.created_at).getTime();
-            if (b.subLessons && b.subLessons.length > 0) {
-                const latestSubB = new Date(b.subLessons[0].created_at).getTime();
-                if (latestSubB > maxDateB) maxDateB = latestSubB;
-            }
-            return maxDateB - maxDateA;
-        });
-
-        if (activePart === "all") return rootLessons;
-        return rootLessons.filter(root => {
-            if (root.category === activePart) return true;
-            if (root.subLessons?.some(sub => sub.category === activePart)) return true;
-            return false;
-        });
-    }, [playerLessons, activePart]);
-
-    const displayedHistory = groupedLessons.slice(0, historyDisplayLimit);
-
-    const renderLessonCard = (lesson: GroupedLesson, isSub = false) => {
-        const cardContent = (
-            <div
-                className={cn(
-                    "bg-white dark:bg-zinc-900 border rounded-[1.25rem] overflow-hidden shadow-sm px-5 py-4 transition-all relative flex-1 group",
-                    "border-zinc-200 dark:border-zinc-700 hover:border-brand-navy/50 cursor-pointer"
-                )}
-                onClick={() => {
-                    sessionStorage.setItem('openPlayerLessonHistoryModal', 'true');
-                    router.push(`/lessons/${lesson.id}`);
-                }}
-            >
-                <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-bold text-brand-navy dark:text-brand-navy-light uppercase px-2 py-1 bg-brand-navy/5 dark:bg-brand-navy/20 rounded-md">
-                            {partOptions.find(p => p.key === lesson.category)?.label || lesson.category}
-                        </span>
-                        {lesson.is_core_lesson && (
-                            <span className="text-[11px] font-bold text-white bg-red-500 px-1.5 py-0.5 rounded-md shrink-0">
-                                핵심 레슨
-                            </span>
-                        )}
-                        {lesson.coachName && (
-                            <span className="text-[12px] font-medium text-zinc-500">
-                                {lesson.coachName}
-                            </span>
-                        )}
-                        <span className="text-[12px] text-zinc-400">
-                            {new Date(lesson.created_at).toLocaleDateString()}
-                        </span>
-                    </div>
-                </div>
-                <div className="text-[14px] text-zinc-600 dark:text-zinc-400 mt-1 mb-2 whitespace-pre-wrap">
-                    {lesson.content}
-                </div>
-            </div>
-        );
-
-        if (isSub) {
-            return (
-                <div key={lesson.id} className="flex items-start gap-2 mr-2">
-                    <div className="mt-5 shrink-0 text-zinc-300 dark:text-zinc-600 pl-3">
-                        <CornerDownRight size={16} />
-                    </div>
-                    {cardContent}
-                </div>
-            );
-        }
-
-        return <React.Fragment key={lesson.id}>{cardContent}</React.Fragment>;
-    };
-
     if (!isOpen) return null;
 
     return (
@@ -330,16 +168,15 @@ export function PlayerLessonHistoryModal({ isOpen, onClose, allAthletes }: Playe
             <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl w-full max-w-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col" style={{ height: '85vh' }}>
                 <div className="p-5 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-900/50 shrink-0">
                     <h2 className="font-bold text-base sm:text-lg text-zinc-900 dark:text-zinc-100 whitespace-nowrap tracking-tight">
-                        레슨 히스토리 (다중 선택 가능)
+                        선수 통합 정보 대시보드
                     </h2>
                     <button onClick={() => {
                         setRegisteredPlayers([]);
                         setActivePlayer(null);
-                        setActivePart("all");
                         if (typeof window !== 'undefined') {
                             sessionStorage.removeItem('playerLessonHistoryModal_registeredPlayers');
                             sessionStorage.removeItem('playerLessonHistoryModal_activePlayer');
-                            sessionStorage.removeItem('playerLessonHistoryModal_activePart');
+                            sessionStorage.removeItem('openPlayerLessonHistoryModal');
                         }
                         onClose();
                     }} className="p-1.5 text-zinc-400 hover:text-zinc-900 bg-white rounded-lg border border-zinc-200">
@@ -386,7 +223,7 @@ export function PlayerLessonHistoryModal({ isOpen, onClose, allAthletes }: Playe
                     </div>
 
                     {/* Search Input */}
-                    <div className="relative w-full z-10">
+                    <div className="relative w-full z-10 mb-2">
                         <AthleteSearch
                             onSelect={(name) => handleAddPlayer(name)}
                             selectedNames={[]}
@@ -396,53 +233,185 @@ export function PlayerLessonHistoryModal({ isOpen, onClose, allAthletes }: Playe
                             multi={true}
                         />
                     </div>
-
-                    {/* Category Tabs */}
-                    <CategoryTabs
-                        options={partOptions}
-                        value={activePart}
-                        onChange={setActivePart}
-                        className="mb-0 pb-0"
-                    />
                 </div>
 
-                <div className="p-4 space-y-3 overflow-y-auto flex-1 bg-zinc-50/50 dark:bg-zinc-900 min-h-[300px]">
+                <div className="p-4 space-y-5 overflow-y-auto flex-1 bg-zinc-50/50 dark:bg-zinc-900 min-h-[300px]">
                     {!activePlayer ? (
                         <div className="py-12 text-center text-zinc-500 text-sm">
-                            선수를 등록하고 탭을 선택하면 레슨 기록이 나타납니다.
+                            선수를 선택하면 최근 정보가 나타납니다.
                         </div>
                     ) : isLoading ? (
                         <div className="py-12 text-center text-zinc-500 text-sm">
                             {activePlayer} 선수의 데이터를 불러오는 중...
                         </div>
                     ) : (
-                        <>
-                            {displayedHistory.map(root => (
-                                <div key={root.id} className="space-y-2 relative">
-                                    {renderLessonCard(root, false)}
-                                    {root.subLessons?.map(sub => renderLessonCard(sub, true))}
-                                </div>
-                            ))}
-                            {displayedHistory.length === 0 && (
-                                <div className="py-8 text-center text-zinc-500 text-sm">
-                                    해당 선수의 레슨 기록이 없습니다.
-                                </div>
-                            )}
-                            {totalLessonCount > historyDisplayLimit && (
-                                <div className="pt-2 text-center pb-4">
+                        <div className="space-y-4">
+                            {/* 1. 훈련 계획 */}
+                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+                                <div className="flex items-center justify-between mb-2">
+                                    <h3 className="font-bold text-sm text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                                        🗓️ 훈련 계획
+                                    </h3>
                                     <button
                                         type="button"
-                                        onClick={() => setHistoryDisplayLimit(prev => prev + 10)}
-                                        className="px-4 py-2 text-sm font-medium text-brand-navy dark:text-brand-navy-light bg-brand-navy/5 dark:bg-brand-navy/20 hover:bg-brand-navy/10 dark:hover:bg-brand-navy/30 rounded-xl transition-colors"
+                                        onClick={() => setIsPlanModalOpen(true)}
+                                        className="text-xs font-bold text-zinc-500 hover:text-brand-navy flex items-center gap-1 transition-colors"
                                     >
-                                        더보기 ({totalLessonCount - historyDisplayLimit > 0 ? totalLessonCount - historyDisplayLimit : 0}건 남음)
+                                        더보기 {'>'}
                                     </button>
                                 </div>
-                            )}
-                        </>
+                                <div 
+                                    className={cn("transition-all rounded-2xl relative", recentPlan && "cursor-pointer group hover:ring-2 hover:ring-brand-navy/30")}
+                                    onClick={() => {
+                                        if (recentPlan) {
+                                            sessionStorage.setItem('openPlayerLessonHistoryModal', 'true');
+                                            router.push(recentPlan.type === 'field' ? `/scores/field-notes/${recentPlan.id}` : `/admin/training-plan/${recentPlan.id}`);
+                                        }
+                                    }}
+                                >
+                                    <div className="absolute inset-0 bg-transparent group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/50 transition-colors z-10 rounded-2xl pointer-events-none" />
+                                    <LinkedPlanCard 
+                                        plan={recentPlan} 
+                                        readOnly={true} 
+                                    />
+                                </div>
+                            </section>
+
+                            {/* 2. 훈련 일지 */}
+                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+                                <div className="flex items-center justify-between mb-2">
+                                    <h3 className="font-bold text-sm text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                                        📝 훈련 일지
+                                    </h3>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsJournalHistoryModalOpen(true)}
+                                        className="text-xs font-bold text-zinc-500 hover:text-brand-navy flex items-center gap-1 transition-colors"
+                                    >
+                                        더보기 {'>'}
+                                    </button>
+                                </div>
+                                <div 
+                                    className={cn("transition-all rounded-2xl relative", recentJournal && "cursor-pointer group hover:ring-2 hover:ring-brand-navy/30")}
+                                    onClick={() => {
+                                        if (recentJournal) {
+                                            sessionStorage.setItem('openPlayerLessonHistoryModal', 'true');
+                                            router.push(recentJournal.type === 'field' ? `/scores/field-notes/${recentJournal.id}` : `/admin/training-journal/${recentJournal.id}`);
+                                        }
+                                    }}
+                                >
+                                    <div className="absolute inset-0 bg-transparent group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/50 transition-colors z-10 rounded-2xl pointer-events-none" />
+                                    <LinkedJournalCard 
+                                        journal={recentJournal} 
+                                        readOnly={true} 
+                                    />
+                                </div>
+                            </section>
+
+                            {/* 3. 최근 라운드 정보 */}
+                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+                                <div className="flex items-center justify-between mb-2">
+                                    <h3 className="font-bold text-sm text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                                        ⛳ 최근 라운드 정보
+                                    </h3>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsReferenceModalOpen(true)}
+                                        className="text-xs font-bold text-zinc-500 hover:text-brand-navy flex items-center gap-1 transition-colors"
+                                    >
+                                        더보기 {'>'}
+                                    </button>
+                                </div>
+                                <LinkedScoreCard 
+                                    recentScore={recentScore} 
+                                />
+                            </section>
+
+                            {/* 4. 레슨 히스토리 */}
+                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+                                <div className="flex items-center justify-between mb-2">
+                                    <h3 className="font-bold text-sm text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                                        🏌️‍♂️ 레슨 히스토리
+                                    </h3>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsLessonHistoryModalOpen(true)}
+                                        className="text-xs font-bold text-zinc-500 hover:text-brand-navy flex items-center gap-1 transition-colors"
+                                    >
+                                        더보기 {'>'}
+                                    </button>
+                                </div>
+                                <div 
+                                    className={cn("transition-all rounded-2xl relative", recentLessons[0] && "cursor-pointer group hover:ring-2 hover:ring-brand-navy/30")}
+                                    onClick={() => {
+                                        if (recentLessons[0]) {
+                                            sessionStorage.setItem('openPlayerLessonHistoryModal', 'true');
+                                            router.push(`/lessons/${recentLessons[0].id}`);
+                                        }
+                                    }}
+                                >
+                                    <div className="absolute inset-0 bg-transparent group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/50 transition-colors z-10 rounded-2xl pointer-events-none" />
+                                    <LinkedLessonCard
+                                        part={"all"}
+                                        lesson={recentLessons[0] || null}
+                                        readOnly={true}
+                                    />
+                                </div>
+                            </section>
+                        </div>
                     )}
                 </div>
             </div>
+
+            {/* Modals */}
+            <PlanHistoryModal
+                isOpen={isPlanModalOpen}
+                onClose={() => setIsPlanModalOpen(false)}
+                allPlans={allPlans}
+                readOnly={true}
+                onSelectPlan={(planId) => {
+                    const plan = allPlans.find(p => p.id === planId);
+                    if (plan) setRecentPlan(plan);
+                    setIsPlanModalOpen(false);
+                }}
+                connectedPlanId={recentPlan?.id}
+            />
+
+            <JournalHistoryModal
+                key={activePlayer || "none"}
+                isOpen={isJournalHistoryModalOpen}
+                onClose={() => setIsJournalHistoryModalOpen(false)}
+                allJournals={allJournals}
+                readOnly={true}
+                onSelectJournal={(journalId) => {
+                    const journal = allJournals.find(j => j.id === journalId);
+                    if (journal) setRecentJournal(journal);
+                    setIsJournalHistoryModalOpen(false);
+                }}
+                connectedJournalId={recentJournal?.id}
+            />
+
+            <ReferenceDataModal
+                isOpen={isReferenceModalOpen}
+                onClose={() => setIsReferenceModalOpen(false)}
+                playerName={activePlayer || ""}
+            />
+
+            <LessonHistoryModal
+                isOpen={isLessonHistoryModalOpen}
+                onClose={() => setIsLessonHistoryModalOpen(false)}
+                allLessons={allLessons}
+                historySelectedPart={historySelectedPart}
+                setHistorySelectedPart={setHistorySelectedPart}
+                historySearchQuery={historySearchQuery}
+                setHistorySearchQuery={setHistorySearchQuery}
+                historyDisplayLimit={historyDisplayLimit}
+                setHistoryDisplayLimit={setHistoryDisplayLimit}
+                connectedLessonId={connectedLessonId}
+                setConnectedLessonId={setConnectedLessonId}
+                partOptions={partOptions}
+                readOnly={true}
+            />
         </div>
     );
 }

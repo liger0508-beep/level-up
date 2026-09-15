@@ -54,10 +54,9 @@ interface AthleteStats {
 }
 
 export default function CategoryStatsPage() {
-    const todayStr = new Date().toISOString().split('T')[0];
-    const firstDayOfMonth = new Date();
-    firstDayOfMonth.setDate(1);
-    const firstDayOfMonthStr = firstDayOfMonth.toISOString().split('T')[0];
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const firstDayOfMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
 
     const [startDate, setStartDate] = useState(firstDayOfMonthStr);
     const [endDate, setEndDate] = useState(todayStr);
@@ -338,7 +337,10 @@ export default function CategoryStatsPage() {
                                             <th className="px-1 sm:px-4 py-3 text-xs font-black text-zinc-400 uppercase text-center w-12 sm:w-16 whitespace-nowrap">라운드</th>
                                             
                                             {selectedCategories.map(cat => (
-                                                <th key={cat} className="px-3 sm:px-6 py-3 text-xs font-black text-brand-navy uppercase text-center min-w-[100px] whitespace-nowrap">
+                                                <th key={cat} className={cn(
+                                                    "px-3 sm:px-6 py-3 text-xs font-black text-brand-navy uppercase text-center min-w-[100px] whitespace-nowrap",
+                                                    sortCategory === cat && "bg-red-50/90 dark:bg-red-900/90"
+                                                )}>
                                                     <div className="flex items-center justify-center gap-1.5">
                                                         <button 
                                                             onClick={() => {
@@ -390,16 +392,23 @@ export default function CategoryStatsPage() {
                                                     {selectedCategories.map(cat => {
                                                         const rawValue = (stat as any)[cat] || 0;
                                                         let valueColorClass = "text-zinc-900 dark:text-zinc-100";
-                                                        if (cat === "score") {
+                                                        if (cat === "score" || cat === "playContent") {
                                                             if (rawValue < 72) valueColorClass = "text-red-500";
                                                             else if (rawValue > 72) valueColorClass = "text-blue-500";
+                                                        } else if (cat === "birdieOrBetter") {
+                                                            if (rawValue > 0) valueColorClass = "text-red-500";
+                                                        } else if (cat === "fairwayHitRate" || cat === "girRate" || cat === "parSaveRate" || cat === "putts" || cat === "bounceBack") {
+                                                            valueColorClass = "text-zinc-900 dark:text-zinc-100";
                                                         } else {
                                                             if (rawValue < 0) valueColorClass = "text-red-500";
                                                             else if (rawValue > 0) valueColorClass = "text-blue-500";
                                                         }
                                                         
                                                         return (
-                                                            <td key={cat} className="px-3 sm:px-6 py-3 sm:py-4 text-center">
+                                                            <td key={cat} className={cn(
+                                                                "px-3 sm:px-6 py-3 sm:py-4 text-center transition-colors",
+                                                                sortCategory === cat && "bg-red-50/90 dark:bg-red-900/90"
+                                                            )}>
                                                                 <span className={cn("text-base sm:text-lg font-black whitespace-nowrap", valueColorClass)}>
                                                                     {formatValue(rawValue, cat)}
                                                                 </span>

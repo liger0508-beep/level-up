@@ -66,7 +66,9 @@ export default function EditVotePage() {
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
     const [endTime, setEndTime] = useState("23:59");
-    const [options, setOptions] = useState<string[]>([""]);
+    const [options, setOptions] = useState<{id: string, text: string, votes: number}[]>([
+        { id: `opt_${Date.now()}_0`, text: "", votes: 0 }
+    ]);
     const [allowMultiple, setAllowMultiple] = useState(false);
 
     useEffect(() => {
@@ -82,7 +84,17 @@ export default function EditVotePage() {
                     setStartDate(vote.startDate);
                     setEndDate(vote.endDate);
                     setEndTime(vote.endTime || "23:59");
-                    setOptions(vote.options.map(opt => opt.text));
+                    
+                    const seenIds = new Set<string>();
+                    const fixedOptions = vote.options.map((opt, idx) => {
+                        let optId = opt.id;
+                        if (seenIds.has(optId)) {
+                            optId = `opt_${Date.now()}_${idx}_fixed`;
+                        }
+                        seenIds.add(optId);
+                        return { id: optId, text: opt.text, votes: opt.votes };
+                    });
+                    setOptions(fixedOptions);
                     setAllowMultiple(vote.allowMultiple || false);
                 }
             })
@@ -91,7 +103,7 @@ export default function EditVotePage() {
     }, [id]);
 
     const addOption = () => {
-        setOptions([...options, ""]);
+        setOptions([...options, { id: `opt_${Date.now()}_${options.length}`, text: "", votes: 0 }]);
     };
 
     const removeOption = (index: number) => {
@@ -104,7 +116,7 @@ export default function EditVotePage() {
 
     const updateOption = (index: number, value: string) => {
         const newOptions = [...options];
-        newOptions[index] = value;
+        newOptions[index].text = value;
         setOptions(newOptions);
     };
 
@@ -115,7 +127,7 @@ export default function EditVotePage() {
             alert("투표 제목을 입력해 주세요.");
             return;
         }
-        if (options.some(opt => !opt.trim())) {
+        if (options.some(opt => !opt.text.trim())) {
             alert("모든 선택지 내용을 입력해 주세요.");
             return;
         }
@@ -123,15 +135,11 @@ export default function EditVotePage() {
         try {
             setIsSubmitting(true);
 
-            // Re-map options while preserving existing IDs and votes if possible
-            const updatedOptions = options.map((text, idx) => {
-                const existing = originalPoll?.options.find(opt => opt.text === text.trim());
-                return {
-                    id: existing?.id || `opt_${Date.now()}_${idx}`,
-                    text: text.trim(),
-                    votes: existing?.votes || 0
-                };
-            });
+            const updatedOptions = options.map(opt => ({
+                id: opt.id,
+                text: opt.text.trim(),
+                votes: opt.votes
+            }));
 
             await updatePoll(id, {
                 type,
@@ -336,7 +344,7 @@ export default function EditVotePage() {
                                         </div>
                                         <input
                                             type="text"
-                                            value={option}
+                                            value={option.text}
                                             onChange={(e) => updateOption(index, e.target.value)}
                                             placeholder={`선택지 ${index + 1} 입력...`}
                                             className="w-full pl-8 pr-4 py-3 rounded-xl border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-800/50 text-sm font-medium text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/20 focus:border-brand-navy/30 transition-all"

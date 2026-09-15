@@ -17,20 +17,12 @@ import { AthleteSearch } from "@/components/ui/AthleteSearch";
 import { createClient } from "@/lib/supabase/client";
 import { LessonTemplate, fetchLessonTemplates } from "@/lib/lesson-template-sync";
 import { fetchRecentLessonsByPlayer, fetchAllLessonsByPlayer, saveLessonRecord, LessonRecord } from "@/lib/lesson-sync";
-import { fetchLatestScoreByPlayer, ScoreData } from "@/lib/score-sync";
+import { LessonHistoryModal } from "@/components/lesson/LessonHistoryModal";
+import { LinkedLessonCard } from "@/components/training-plan/LinkedLessonCard";
 import { uploadFiles } from "@/lib/storage-sync";
 import { saveCompletedItem, saveEvent } from "@/lib/schedule-sync";
 import { formatLocalDate } from "@/lib/utils";
-import { Trophy, AlertTriangle, TrendingDown, TrendingUp, ChevronRight as ChevronRight2, Activity, Target } from "lucide-react";
 import { CustomVideoPlayer } from "@/components/ui/CustomVideoPlayer";
-import ReferenceDataModal from "@/components/lesson/ReferenceDataModal";
-import { LinkedJournalCard } from "@/components/training-plan/LinkedJournalCard";
-import { LinkedLessonCard } from "@/components/training-plan/LinkedLessonCard";
-import { JournalHistoryModal } from "@/components/training-plan/JournalHistoryModal";
-import { fetchJournalsByAthlete, Journal } from "@/lib/journal-sync";
-import { fetchPlansByAthlete, Plan } from "@/lib/plan-sync";
-import { LinkedPlanCard } from "@/components/training-plan/LinkedPlanCard";
-import { PlanHistoryModal } from "@/components/training-plan/PlanHistoryModal";
 
 const ALL_SLOTS = [
     "07:00", "07:30", "08:00", "08:30", "09:00", "09:30",
@@ -56,11 +48,6 @@ const mockRecentLessons: { id: string; date: string; type: LessonType; title: st
     { id: "3", date: "2026-02-28", type: "approach", title: "[복습] 30m 어프로치" },
     { id: "4", date: "2026-02-20", type: "field", title: "[기본기] 실전 코스 매니지먼트" },
 ];
-
-interface GroupedLesson extends LessonRecord {
-    subLessons?: GroupedLesson[];
-    is_core_lesson?: boolean;
-}
 
 const partOptions: { key: string; label: string }[] = [
     { key: "all", label: "ALL" },
@@ -115,7 +102,6 @@ function CreateLessonContent() {
     const [isPlayerDropdownOpen, setIsPlayerDropdownOpen] = useState(false);
     const [currentCoachName, setCurrentCoachName] = useState("코치");
     const [isAborting, setIsAborting] = useState(false);
-    const [isReferenceModalOpen, setIsReferenceModalOpen] = useState(false);
     const [isLoaded, setIsLoaded] = useState(false);
     const [currentCoachId, setCurrentCoachId] = useState<string | null>(null);
     const [isTimeModified, setIsTimeModified] = useState(false);
@@ -129,10 +115,7 @@ function CreateLessonContent() {
             setIsLessonHistoryModalOpen(true);
             sessionStorage.removeItem('openLessonHistoryModal');
         }
-        if (sessionStorage.getItem('openJournalHistoryModal') === 'true') {
-            setIsJournalHistoryModalOpen(true);
-            sessionStorage.removeItem('openJournalHistoryModal');
-        }
+
 
         // Load Draft from SessionStorage
         const draft = sessionStorage.getItem(DRAFT_KEY);
@@ -284,18 +267,6 @@ function CreateLessonContent() {
 
     const [recentLessons, setRecentLessons] = useState<LessonRecord[]>([]);
     const [allLessons, setAllLessons] = useState<LessonRecord[]>([]);
-    const [recentScore, setRecentScore] = useState<ScoreData | null>(null);
-
-    // Journal State
-    const [allJournals, setAllJournals] = useState<Journal[]>([]);
-    const [selectedJournalId, setSelectedJournalId] = useState<string | null>(null);
-    const [isJournalHistoryModalOpen, setIsJournalHistoryModalOpen] = useState(false);
-    const selectedJournal = useMemo(() => allJournals.find(j => j.id === selectedJournalId) || null, [allJournals, selectedJournalId]);
-
-    // Plan State
-    const [allPlans, setAllPlans] = useState<Plan[]>([]);
-    const [recentPlan, setRecentPlan] = useState<Plan | null>(null);
-    const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
 
     // No Goal Editing State Needed
 
@@ -343,34 +314,12 @@ function CreateLessonContent() {
     useEffect(() => {
         if (lastSelectedPlayer) {
             Promise.all([
-                fetchRecentLessonsByPlayer(lastSelectedPlayer, selectedPart === "all" ? undefined : selectedPart),
-                fetchLatestScoreByPlayer(lastSelectedPlayer),
-                fetchJournalsByAthlete(lastSelectedPlayer)
-            ]).then(([lessons, scorecard, journals]) => {
+                fetchRecentLessonsByPlayer(lastSelectedPlayer, selectedPart === "all" ? undefined : selectedPart)
+            ]).then(([lessons]) => {
                 setRecentLessons(lessons);
-                setRecentScore(scorecard);
-                setAllJournals(journals);
-                if (journals.length > 0) {
-                    setSelectedJournalId(journals[0].id);
-                } else {
-                    setSelectedJournalId(null);
-                }
-            });
-            fetchPlansByAthlete(lastSelectedPlayer, 10).then(plans => {
-                setAllPlans(plans);
-                if (plans.length > 0) {
-                    setRecentPlan(plans[0]);
-                } else {
-                    setRecentPlan(null);
-                }
             });
         } else {
             setRecentLessons([]);
-            setRecentScore(null);
-            setAllJournals([]);
-            setSelectedJournalId(null);
-            setAllPlans([]);
-            setRecentPlan(null);
         }
     }, [lastSelectedPlayer, selectedPart]);
 
@@ -641,144 +590,7 @@ function CreateLessonContent() {
                     {selectedPlayers.length > 0 && selectedPart && (
                         <div className="space-y-6">
 
-                            {/* Training Plan Box */}
-                            {recentPlan && (
-                                <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
-                                    <div className="flex items-center justify-between mb-2">
-                                        <SectionTitle>
-                                            <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" /> 훈련 계획
-                                        </SectionTitle>
-                                    </div>
-                                    <LinkedPlanCard
-                                        plan={recentPlan}
-                                        onMoreClick={() => setIsPlanModalOpen(true)}
-                                        readOnly={false}
-                                        onRemove={() => setRecentPlan(null)}
-                                    />
-                                </section>
-                            )}
 
-                            {/* Training Journal Box */}
-                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
-                                <div className="flex items-center justify-between mb-2">
-                                    <SectionTitle>
-                                        <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" /> 훈련 일지
-                                    </SectionTitle>
-                                </div>
-                                <LinkedJournalCard
-                                    journal={selectedJournal}
-                                    onMoreClick={() => setIsJournalHistoryModalOpen(true)}
-                                    readOnly={false}
-                                />
-                            </section>
-
-                            {/* Lesson Reference Data Box */}
-                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
-                                <div className="flex items-center justify-between mb-2">
-                                    <SectionTitle>
-                                        <BookOpen size={18} className="text-brand-navy dark:text-brand-navy-light" /> 최근 라운드 정보
-                                    </SectionTitle>
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsReferenceModalOpen(true)}
-                                        className="text-xs font-bold text-zinc-500 hover:text-brand-navy flex items-center gap-1 transition-colors"
-                                    >
-                                        <FileText size={12} /> 더보기 <ChevronRight2 size={12} />
-                                    </button>
-                                </div>
-                                {recentScore ? (
-                                    <div className="space-y-4">
-                                        <div className="flex items-center gap-1.5 text-[11px] sm:text-xs font-semibold text-zinc-500 pl-[26px]">
-                                            <Calendar size={12} />
-                                            <span>{recentScore.date.substring(5)}</span>
-                                            <div className="w-1 h-1 rounded-full bg-zinc-300 dark:bg-zinc-600"></div>
-                                            <MapPin size={12} />
-                                            <span>{recentScore.courseName}</span>
-                                        </div>
-                                        {/* SCORE Banner */}
-                                        {(() => {
-                                            const scoreDiff = recentScore.score - (recentScore.totalPar || 72);
-                                            const scoreDiffStr = scoreDiff > 0 ? `+${scoreDiff}` : scoreDiff === 0 ? "E" : `${scoreDiff}`;
-                                            const isUnderPar = scoreDiff < 0;
-                                            const isOverPar = scoreDiff > 0;
-                                            const scoreBgClass = isUnderPar ? "bg-red-50 border-red-100" : isOverPar ? "bg-blue-50 border-blue-100" : "bg-zinc-100 border-zinc-200";
-                                            const scoreTextClass = isUnderPar ? "text-red-500" : isOverPar ? "text-blue-500" : "text-zinc-900";
-
-                                            return (
-                                                <section className={cn("border rounded-[3rem] p-6 sm:p-10 flex flex-col items-center justify-center relative overflow-hidden shadow-sm", scoreBgClass)}>
-                                                    <div className={cn("absolute right-0 top-0 opacity-[0.03] pointer-events-none transform translate-x-1/4 -translate-y-1/4", scoreTextClass)}>
-                                                        <Activity size={240} strokeWidth={1} />
-                                                    </div>
-
-                                                    <div className={cn("flex items-center gap-2 mb-2 font-bold text-sm tracking-widest relative z-10 uppercase self-start sm:self-center", scoreTextClass)}>
-                                                        <Activity size={18} /> SCORE
-                                                    </div>
-
-                                                    <div className="flex flex-row items-baseline gap-1.5 sm:gap-2 relative z-10 text-brand-navy mt-1 sm:mt-2 whitespace-nowrap">
-                                                        <div className="flex items-baseline gap-1.5 sm:gap-2">
-                                                            <span className={cn("text-2xl font-black tracking-tighter", scoreTextClass)}>{recentScore.score}</span>
-                                                            <span className={cn("text-lg font-bold", scoreTextClass)}>
-                                                                ({scoreDiffStr})
-                                                            </span>
-                                                        </div>
-                                                        <span className="text-sm font-bold text-zinc-500 ml-1 sm:ml-2">/ par {recentScore.totalPar || 72}</span>
-                                                    </div>
-
-                                                </section>
-                                            );
-                                        })()}
-
-                                        {/* 부문별 스코어 */}
-                                        {recentScore.sectorChanges && (
-                                            <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60">
-                                                <div className="flex items-center justify-between mb-4">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-400">
-                                                            <Target size={18} />
-                                                        </div>
-                                                        <SectionTitle>부문별 스코어</SectionTitle>
-                                                    </div>
-                                                </div>
-                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                                                    {recentScore.sectorChanges.map((sc: any, idx: number) => {
-                                                        const isPositive = parseFloat(sc.value) > 0;
-                                                        return (
-                                                            <div key={idx} className={cn(
-                                                                "p-3 sm:p-4 rounded-[1.5rem] sm:rounded-[2rem] border flex flex-col gap-2 sm:gap-3 transition-all",
-                                                                isPositive ? "bg-blue-50/30 border-blue-100" : "bg-red-50/30 border-red-100"
-                                                            )}>
-                                                                <div className="flex flex-col">
-                                                                    <p className="text-[13px] font-black text-zinc-400 uppercase tracking-tight">{sc.type}</p>
-                                                                    <p className={cn("text-2xl font-black tracking-tighter text-right mt-1", isPositive ? "text-blue-500" : "text-red-500")}>
-                                                                        {sc.value}
-                                                                    </p>
-                                                                </div>
-                                                                <div className="space-y-1.5 pt-3 mt-1 border-t border-zinc-100/50">
-                                                                    {sc.items.map((item: any, iIdx: number) => {
-                                                                        const isItemPos = parseFloat(item.sg) > 0;
-                                                                        return (
-                                                                            <div key={iIdx} className="flex justify-between items-center text-[12px] sm:text-[13px] font-bold tracking-tight">
-                                                                                <span className="text-zinc-500 whitespace-nowrap">{item.name}</span>
-                                                                                <span className={isItemPos ? "text-blue-500" : "text-red-500"}>
-                                                                                    {isItemPos ? "+" : ""}{item.sg.toFixed(1)}
-                                                                                </span>
-                                                                            </div>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </section>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <div className="text-sm text-zinc-400 py-8 text-center border-2 border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl">
-                                        최근 라운드 정보가 없습니다.
-                                    </div>
-                                )}
-                            </section>
 
                             {/* Swing Error / Lesson History Box */}
                             <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
@@ -1040,261 +852,24 @@ function CreateLessonContent() {
                 </form>
             </div>
 
-            {/* Journal History Modal */}
-            <JournalHistoryModal
-                key={lastSelectedPlayer || "none"}
-                isOpen={isJournalHistoryModalOpen}
-                onClose={() => setIsJournalHistoryModalOpen(false)}
-                allJournals={allJournals}
-                onSelectJournal={(journalId) => {
-                    setSelectedJournalId(journalId);
-                    setIsJournalHistoryModalOpen(false);
-                }}
-                connectedJournalId={selectedJournalId}
-            />
-
             {/* Lesson History Modal */}
-            {isLessonHistoryModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setIsLessonHistoryModalOpen(false)}>
-                    <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl w-full max-w-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col" style={{ height: '85vh' }} onClick={(e) => e.stopPropagation()}>
-                        <div className="p-5 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-900/50 shrink-0">
-                            <SectionTitle>
-                                레슨 히스토리 찾아보기
-                            </SectionTitle>
-                            <button onClick={() => setIsLessonHistoryModalOpen(false)} className="p-1.5 text-zinc-400 hover:text-zinc-900 bg-white rounded-lg border border-zinc-200">
-                                <X size={20} />
-                            </button>
-                        </div>
-                        <div className="p-4 shrink-0 border-b border-zinc-200 dark:border-zinc-800">
-                            <CategoryTabs options={partOptions} value={historySelectedPart} onChange={setHistorySelectedPart} />
-                            <div className="relative w-full mt-2">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                                <input
-                                    type="text"
-                                    placeholder="레슨 내용 검색..."
-                                    value={historySearchQuery}
-                                    onChange={(e) => setHistorySearchQuery(e.target.value)}
-                                    className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all"
-                                />
-                            </div>
-                        </div>
-                        <div className="p-4 space-y-3 overflow-y-auto flex-1 bg-zinc-50/50 dark:bg-zinc-900 min-h-[300px]">
-                            {(() => {
-                                const effectivePart = historySelectedPart;
-
-                                const lessonMap = new Map<string, GroupedLesson>();
-                                allLessons.forEach(l => lessonMap.set(l.id, { ...l, subLessons: [] }));
-
-                                const rootLessons: GroupedLesson[] = [];
-                                const treeMap = new Map<string, GroupedLesson[]>();
-
-                                const getRootId = (id: string): string => {
-                                    let current = lessonMap.get(id);
-                                    const visited = new Set<string>();
-                                    while (current?.connected_lesson_id) {
-                                        if (visited.has(current.id)) break;
-                                        visited.add(current.id);
-                                        const parent = lessonMap.get(current.connected_lesson_id);
-                                        if (!parent) break;
-                                        current = parent;
-                                    }
-                                    return current?.id || id;
-                                };
-
-                                allLessons.forEach(l => {
-                                    const rootId = getRootId(l.id);
-                                    if (rootId === l.id) {
-                                        if (!treeMap.has(rootId)) treeMap.set(rootId, []);
-                                    } else {
-                                        if (!treeMap.has(rootId)) treeMap.set(rootId, []);
-                                        treeMap.get(rootId)!.push(lessonMap.get(l.id)!);
-                                    }
-                                });
-
-                                Array.from(treeMap.keys()).forEach(rootId => {
-                                    const root = lessonMap.get(rootId);
-                                    if (root) {
-                                        const descendants = treeMap.get(rootId)!;
-                                        descendants.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-                                        root.subLessons = descendants;
-                                        if (descendants.length >= 2) {
-                                            root.is_core_lesson = true;
-                                        }
-                                        rootLessons.push(root);
-                                    }
-                                });
-
-                                rootLessons.sort((a, b) => {
-                                    let maxDateA = new Date(a.created_at).getTime();
-                                    if (a.subLessons && a.subLessons.length > 0) {
-                                        const latestSubA = new Date(a.subLessons[0].created_at).getTime();
-                                        if (latestSubA > maxDateA) maxDateA = latestSubA;
-                                    }
-                                    let maxDateB = new Date(b.created_at).getTime();
-                                    if (b.subLessons && b.subLessons.length > 0) {
-                                        const latestSubB = new Date(b.subLessons[0].created_at).getTime();
-                                        if (latestSubB > maxDateB) maxDateB = latestSubB;
-                                    }
-                                    return maxDateB - maxDateA;
-                                });
-
-                                const groupedLessons = rootLessons.filter(root => {
-                                    const typeMatch = (l: GroupedLesson) => effectivePart === "all" || l.category === effectivePart;
-                                    const searchMatch = (l: GroupedLesson) => !historySearchQuery || l.content.toLowerCase().includes(historySearchQuery.toLowerCase());
-
-                                    const isMatch = (l: GroupedLesson) => typeMatch(l) && searchMatch(l);
-
-                                    if (isMatch(root)) return true;
-                                    if (root.subLessons?.some(sub => isMatch(sub))) return true;
-
-                                    return false;
-                                });
-
-                                const displayedHistory = groupedLessons;
-
-                                const renderLessonCard = (lesson: GroupedLesson, isSub = false) => {
-                                    const isConnected = connectedLessonId === lesson.id;
-                                    const cardContent = (
-                                        <div
-                                            className={cn(
-                                                "bg-white dark:bg-zinc-900 border rounded-[1.25rem] overflow-hidden shadow-sm px-5 py-4 transition-all relative flex-1 group",
-                                                isConnected
-                                                    ? "border-brand-navy dark:border-brand-navy-light shadow-brand-navy/10 ring-1 ring-brand-navy"
-                                                    : "border-zinc-200 dark:border-zinc-700 hover:border-brand-navy/50 cursor-pointer"
-                                            )}
-                                            onClick={() => {
-                                                sessionStorage.setItem('openLessonHistoryModal', 'true');
-                                                router.push(`/lessons/${lesson.id}`);
-                                            }}
-                                        >
-                                            <div className="flex items-center justify-between mb-2">
-                                                <div className="flex items-center gap-2">
-                                                    {!isSub && (
-                                                        <span className="text-[11px] font-bold text-brand-navy dark:text-brand-navy-light uppercase px-2 py-1 bg-brand-navy/5 dark:bg-brand-navy/20 rounded-md">
-                                                            {partOptions.find(p => p.key === lesson.category)?.label || lesson.category}
-                                                        </span>
-                                                    )}
-                                                    {lesson.is_core_lesson && (
-                                                        <span className="text-[10px] font-bold text-white bg-red-500 px-1.5 py-0.5 rounded-md shrink-0">
-                                                            핵심 레슨
-                                                        </span>
-                                                    )}
-
-                                                    {lesson.coachName && (
-                                                        <span className="text-[12px] font-medium text-zinc-500">
-                                                            {lesson.coachName}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className="text-[12px] text-zinc-400 font-medium">
-                                                        {lesson.created_at ? new Date(lesson.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }).slice(5).replace(/-/g, ".") : ""}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                            <p className="text-[13px] text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap leading-relaxed mt-1 mb-8">
-                                                {lesson.content}
-                                            </p>
-                                            {/* Connect button */}
-                                            {!isSub && (
-                                                <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        if (isConnected) {
-                                                            setConnectedLessonId(null);
-                                                        } else {
-                                                            setConnectedLessonId(lesson.id);
-                                                            setIsLessonHistoryModalOpen(false);
-                                                            setTimeout(() => {
-                                                                const el = document.getElementById('before-correction-section');
-                                                                if (el) {
-                                                                    const y = el.getBoundingClientRect().top + window.scrollY - (window.innerHeight / 3);
-                                                                    window.scrollTo({ top: y, behavior: 'smooth' });
-                                                                }
-                                                            }, 100);
-                                                        }
-                                                    }}
-                                                    className={cn(
-                                                        "absolute bottom-4 right-4 flex items-center gap-1 text-[11px] font-bold transition-colors px-2 py-1 rounded-md",
-                                                        isConnected
-                                                            ? "text-red-500 bg-red-50 hover:bg-red-100"
-                                                            : "text-brand-navy bg-brand-navy/5 hover:bg-brand-navy/10"
-                                                    )}
-                                                >
-                                                    {isConnected ? <CheckCircle2 size={12} /> : <Circle size={12} />}
-                                                    {isConnected ? "연결 해제" : "레슨 연결"}
-                                                </button>
-                                            )}
-                                        </div>
-                                    );
-
-                                    if (isSub) {
-                                        return (
-                                            <div key={lesson.id} className="flex items-start gap-2 mr-2 mt-2">
-                                                <div className="mt-5 shrink-0 text-zinc-300 dark:text-zinc-600 pl-3">
-                                                    <CornerDownRight size={16} />
-                                                </div>
-                                                {cardContent}
-                                            </div>
-                                        );
-                                    }
-
-                                    return <React.Fragment key={lesson.id}>{cardContent}</React.Fragment>;
-                                };
-
-                                return (
-                                    <>
-                                        {displayedHistory.map(root => (
-                                            <div key={root.id} className="space-y-0 relative mb-3">
-                                                {renderLessonCard(root, false)}
-                                                {root.subLessons?.map(sub => renderLessonCard(sub, true))}
-                                            </div>
-                                        ))}
-                                        {displayedHistory.length === 0 && (
-                                            <div className="py-8 text-center text-zinc-500 text-sm">
-                                                검색된 레슨 기록이 없습니다.
-                                            </div>
-                                        )}
-                                        {allLessons.length >= historyDisplayLimit && (
-                                            <div className="py-4 flex justify-center">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setHistoryDisplayLimit(prev => prev + 10)}
-                                                    className="px-6 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-sm rounded-xl text-sm font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
-                                                >
-                                                    더 보기 ▼
-                                                </button>
-                                            </div>
-                                        )}
-                                    </>
-                                );
-                            })()}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            <PlanHistoryModal
-                isOpen={isPlanModalOpen}
-                onClose={() => setIsPlanModalOpen(false)}
-                allPlans={allPlans}
+            <LessonHistoryModal
+                isOpen={isLessonHistoryModalOpen}
+                onClose={() => setIsLessonHistoryModalOpen(false)}
+                allLessons={allLessons}
+                historySelectedPart={historySelectedPart}
+                setHistorySelectedPart={setHistorySelectedPart}
+                historySearchQuery={historySearchQuery}
+                setHistorySearchQuery={setHistorySearchQuery}
+                historyDisplayLimit={historyDisplayLimit}
+                setHistoryDisplayLimit={setHistoryDisplayLimit}
+                connectedLessonId={connectedLessonId}
+                setConnectedLessonId={setConnectedLessonId}
+                partOptions={partOptions}
                 readOnly={false}
-                onSelectPlan={(planId) => {
-                    const plan = allPlans.find(p => p.id === planId);
-                    if (plan) {
-                        setRecentPlan(plan);
-                    }
-                    setIsPlanModalOpen(false);
-                }}
-                connectedPlanId={recentPlan?.id}
             />
 
-            <ReferenceDataModal
-                isOpen={isReferenceModalOpen}
-                onClose={() => setIsReferenceModalOpen(false)}
-                playerName={selectedPlayers[0]}
-            />
+
         </div>
     );
 }

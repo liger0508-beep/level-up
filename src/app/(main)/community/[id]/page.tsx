@@ -199,33 +199,36 @@ export default function NoticeDetailPage() {
                         </div>
                     </div>
 
-                    <div className="relative" ref={menuRef}>
-                        <button
-                            onClick={() => setIsMenuOpen(!isMenuOpen)}
-                            className="p-2 -mr-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
-                        >
-                            <MoreVertical size={20} />
-                        </button>
+                    {/* Only show menu if author or admin */}
+                    {(currentUser?.id === notice.authorId || currentUser?.role === 'admin') && (
+                        <div className="relative" ref={menuRef}>
+                            <button
+                                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                                className="p-2 -mr-2 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
+                            >
+                                <MoreVertical size={20} />
+                            </button>
 
-                        {isMenuOpen && (
-                            <div className="absolute right-0 mt-2 w-36 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-lg overflow-hidden z-50 animate-in fade-in zoom-in-95 origin-top-right duration-100">
-                                <Link
-                                    href={`/community/${id}/edit`}
-                                    className="w-full text-left px-4 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 flex items-center gap-2 transition-colors"
-                                >
-                                    <Edit2 size={16} className="text-zinc-400" />
-                                    수정
-                                </Link>
-                                <button
-                                    onClick={handleDelete}
-                                    className="w-full text-left px-4 py-3 text-sm font-medium text-brand-red hover:bg-brand-red/5 flex items-center gap-2 transition-colors border-t border-zinc-100 dark:border-zinc-800"
-                                >
-                                    <Trash2 size={16} className="text-brand-red/70" />
-                                    삭제
-                                </button>
-                            </div>
-                        )}
-                    </div>
+                            {isMenuOpen && (
+                                <div className="absolute right-0 mt-2 w-36 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-lg overflow-hidden z-50 animate-in fade-in zoom-in-95 origin-top-right duration-100">
+                                    <Link
+                                        href={`/community/${id}/edit`}
+                                        className="w-full text-left px-4 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 flex items-center gap-2 transition-colors"
+                                    >
+                                        <Edit2 size={16} className="text-zinc-400" />
+                                        수정
+                                    </Link>
+                                    <button
+                                        onClick={handleDelete}
+                                        className="w-full text-left px-4 py-3 text-sm font-medium text-brand-red hover:bg-brand-red/5 flex items-center gap-2 transition-colors border-t border-zinc-100 dark:border-zinc-800"
+                                    >
+                                        <Trash2 size={16} className="text-brand-red/70" />
+                                        삭제
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </header>
 

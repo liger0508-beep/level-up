@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Search, X } from "lucide-react";
+import { Search, ChevronLeft } from "lucide-react";
 import { CategoryTabs } from "@/components/ui/CategoryTabs";
 import { cn } from "@/lib/utils";
 import { Plan, PlanType, PLAN_TYPE_LABELS, PLAN_TYPE_COLORS } from "@/lib/plan-sync";
@@ -34,13 +34,13 @@ export function PlanHistoryModal({ isOpen, onClose, allPlans, onSelectPlan, conn
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={onClose}>
             <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl w-full max-w-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col" style={{ height: '85vh' }} onClick={(e) => e.stopPropagation()}>
-                <div className="p-5 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-900/50 shrink-0">
+                <div className="p-5 border-b border-zinc-200 dark:border-zinc-800 flex justify-start items-center gap-3 bg-zinc-50 dark:bg-zinc-900/50 shrink-0">
+                    <button onClick={onClose} className="p-1.5 text-zinc-400 hover:text-zinc-900 bg-white rounded-lg border border-zinc-200 transition-colors">
+                        <ChevronLeft size={20} />
+                    </button>
                     <h2 className="font-bold text-lg text-zinc-900 dark:text-zinc-100">
                         훈련 계획 찾아보기
                     </h2>
-                    <button onClick={onClose} className="p-1.5 text-zinc-400 hover:text-zinc-900 bg-white rounded-lg border border-zinc-200">
-                        <X size={20} />
-                    </button>
                 </div>
                 <div className="p-4 shrink-0 border-b border-zinc-200 dark:border-zinc-800">
                     <div className="relative w-full mt-2">

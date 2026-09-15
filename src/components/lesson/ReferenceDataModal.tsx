@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
-import { Trophy, AlertTriangle, TrendingDown, TrendingUp, ChevronRight as ChevronRight2, BookOpen, Layers, X, Calendar, Activity, Flag, Zap, Target, Book, ChevronUp, ChevronDown, MessageSquare } from "lucide-react";
+import { Trophy, AlertTriangle, TrendingDown, TrendingUp, ChevronRight as ChevronRight2, BookOpen, Layers, X, Calendar, Activity, Flag, Zap, Target, Book, ChevronUp, ChevronDown, MessageSquare, ChevronLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { calculateScorecardAnalysis, HoleAnalysis } from "@/lib/score-calculations";
 import { cn } from "@/lib/utils";
@@ -494,14 +494,14 @@ export default function ReferenceDataModal({ isOpen, onClose, playerName }: { is
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 sm:p-6 lg:p-8 animate-in fade-in duration-200">
             <div className="bg-[#F8F9FC] dark:bg-zinc-950 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] md:max-h-[85vh] h-full flex flex-col overflow-hidden border border-zinc-200/50 dark:border-zinc-800/50 relative">
-                <div className="flex items-center justify-between p-4 px-6 border-b border-zinc-200/60 dark:border-zinc-800/60 bg-white dark:bg-zinc-900 shrink-0">
+                <div className="flex items-center justify-start p-4 px-6 border-b border-zinc-200/60 dark:border-zinc-800/60 bg-white dark:bg-zinc-900 shrink-0 gap-3">
+                    <button onClick={onClose} className="p-1.5 text-zinc-400 hover:text-zinc-900 bg-zinc-50 rounded-lg border border-zinc-200 transition-colors">
+                        <ChevronLeft size={20} />
+                    </button>
                     <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
                         <BookOpen size={20} className="text-brand-navy dark:text-brand-navy-light" />
                         최근 라운드 정보 ({playerName})
                     </h2>
-                    <button onClick={onClose} className="p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
-                        <X size={20} className="text-zinc-500" />
-                    </button>
                 </div>
                 <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-8 custom-scrollbar">
                     {loading ? (

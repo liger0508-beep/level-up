@@ -35,26 +35,61 @@ export default function CommunityPage() {
     const [activePreset, setActivePreset] = useState<DatePresetType>("custom");
     const [hasMounted, setHasMounted] = useState(false);
     const [userRole, setUserRole] = useState<string | null>(null);
+    const [userBranch, setUserBranch] = useState<string | null>(null);
+    const [userId, setUserId] = useState<string | null>(null);
+    const [userLoaded, setUserLoaded] = useState(false);
 
     const scrollRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         setHasMounted(true);
+        const applyPermissions = (q: any, role: string | null, branch: string | null, uid: string | null) => {
+            const isMasterBranch = branch === '오피스' || branch === '총괄';
+            if (role !== 'admin' && !isMasterBranch) {
+                const baseBranch = branch ? branch.replace('점', '') : '';
+                let filterStr = `branch.in.(전체,${baseBranch})`;
+                
+                if (role !== 'coach') {
+                    filterStr = `and(branch.in.(전체,${baseBranch}),type.in.(all,${role}))`;
+                }
+                
+                if (uid) {
+                    filterStr = `${filterStr},author_id.eq.${uid}`;
+                }
+                return q.or(filterStr);
+            }
+            return q;
+        };
+
         const loadInitial = async () => {
             const supabase = createClient();
             const { data: { user } } = await supabase.auth.getUser();
+            let currentRole = null;
+            let currentBranch = null;
+            let currentUserId = null;
+
             if (user) {
-                const { data } = await supabase.from("users").select("role").eq("id", user.id).maybeSingle();
-                if (data) setUserRole(data.role);
+                const { data } = await supabase.from("users").select("role, branch").eq("id", user.id).maybeSingle();
+                if (data) {
+                    currentRole = data.role;
+                    currentBranch = data.branch;
+                    currentUserId = user.id;
+                    setUserRole(currentRole);
+                    setUserBranch(currentBranch);
+                    setUserId(currentUserId);
+                }
             }
 
-            // Recent 3 notices (always top 3 globally)
-            const { data: recentData } = await supabase
+            // Recent 3 notices (always top 3 globally based on permissions)
+            let recentQuery = supabase
                 .from("notices")
                 .select(`*, users!notices_author_id_fkey (name)`)
                 .neq("type", "course_info")
                 .order("created_at", { ascending: false })
                 .limit(3);
+            
+            recentQuery = applyPermissions(recentQuery, currentRole, currentBranch, currentUserId);
+            const { data: recentData } = await recentQuery;
                 
             if (recentData) {
                 setRecentNotices(recentData.map(d => ({
@@ -71,6 +106,7 @@ export default function CommunityPage() {
                     endDate: d.end_date,
                 })));
             }
+            setUserLoaded(true);
         };
 
         loadInitial();
@@ -134,15 +170,36 @@ export default function CommunityPage() {
     useEffect(() => {
         if (!hasMounted) return;
 
+        const applyPermissions = (q: any, role: string | null, branch: string | null, uid: string | null) => {
+            const isMasterBranch = branch === '오피스' || branch === '총괄';
+            if (role !== 'admin' && !isMasterBranch) {
+                const baseBranch = branch ? branch.replace('점', '') : '';
+                let filterStr = `branch.in.(전체,${baseBranch})`;
+                
+                if (role !== 'coach') {
+                    filterStr = `and(branch.in.(전체,${baseBranch}),type.in.(all,${role}))`;
+                }
+                
+                if (uid) {
+                    filterStr = `${filterStr},author_id.eq.${uid}`;
+                }
+                return q.or(filterStr);
+            }
+            return q;
+        };
+
         const fetchFilteredNotices = async () => {
+            if (!userLoaded) return;
             const supabase = createClient();
             let query = supabase
                 .from("notices")
                 .select(`*, users!notices_author_id_fkey (name)`, { count: 'exact' })
                 .neq("type", "course_info");
 
+            query = applyPermissions(query, userRole, userBranch, userId);
+
             if (activeType !== "all") {
-                query = query.eq("type", activeType);
+                query = query.in("type", [activeType, "all"]);
             }
 
             if (searchQuery) {
@@ -183,7 +240,7 @@ export default function CommunityPage() {
         }, 300); // 300ms debounce for search query
 
         return () => clearTimeout(debounceTimer);
-    }, [hasMounted, activeType, searchQuery, startDate, endDate, displayLimit]);
+    }, [hasMounted, activeType, searchQuery, startDate, endDate, displayLimit, userLoaded, userRole, userBranch, userId]);
 
     const scroll = (direction: "left" | "right") => {
         if (scrollRef.current) {

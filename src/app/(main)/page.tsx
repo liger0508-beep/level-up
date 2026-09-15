@@ -379,9 +379,20 @@ export default function Home() {
           return hasNotVoted;
         });
         setPendingPolls(ongoingUnvoted);
-        const allNotices = await getNotices(5);
-        if (allNotices.length > 0) {
-          setRecentNotice(allNotices.sort((a, b) => b.date.localeCompare(a.date))[0]);
+        const allNotices = await getNotices(10);
+        const filteredNotices = allNotices.filter(n => {
+          const isMasterBranch = profile && (profile.branch === '오피스' || profile.branch === '총괄');
+          if (profile && profile.role === 'admin' || isMasterBranch) return true;
+          
+          const baseBranch = profile?.branch ? profile.branch.replace('점', '') : '';
+          const hasBranch = n.branch === '전체' || n.branch.includes(baseBranch) || n.authorId === user.id;
+          const hasRole = n.type === 'all' || (profile && profile.role === 'coach') || (profile && profile.role === n.type) || n.authorId === user.id;
+          
+          return hasBranch && hasRole;
+        });
+        
+        if (filteredNotices.length > 0) {
+          setRecentNotice(filteredNotices.sort((a, b) => b.date.localeCompare(a.date))[0]);
         }
 
 
@@ -640,8 +651,14 @@ export default function Home() {
       </section>
 
       {/* ─── Highlights Banner ─── */}
-      {(pendingPolls.length > 0 || recentNotice) && (
-        <section className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-[2rem] p-6 shadow-sm overflow-hidden relative">
+      {(isLoading || pendingPolls.length > 0 || recentNotice) && (
+        <section className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-[2rem] p-6 shadow-sm overflow-hidden relative min-h-[110px]">
+          {isLoading ? (
+            <div className="w-full flex items-center justify-center min-h-[62px]">
+              <div className="w-6 h-6 border-2 border-brand-navy border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : (
+            <>
           <div
             ref={bannerScrollRef}
             className="flex overflow-x-auto snap-x snap-mandatory gap-8 pb-3 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
@@ -652,21 +669,18 @@ export default function Home() {
               setActiveBannerIndex(index);
             }}
           >
-            {pendingPolls.length > 0 && (
-              <Link href={`/admin/polls/${pendingPolls[0].id}`} className="w-full min-w-full snap-center shrink-0 flex justify-between items-center group">
-                <div className="space-y-2 max-w-[75%] pr-4">
-                  <h3 className="text-lg font-black text-zinc-900 dark:text-zinc-50 tracking-tight line-clamp-1 group-hover:text-brand-navy transition-colors">
-                    {getPlainText(pendingPolls[0].title)}
+            {pendingPolls.map((poll) => (
+              <Link key={poll.id} href={`/admin/polls/${poll.id}`} className="w-full min-w-full snap-center shrink-0 flex justify-between items-center group">
+                <div className="space-y-2 max-w-[75%] pr-4 overflow-hidden">
+                  <h3 className="text-lg font-black text-zinc-900 dark:text-zinc-50 tracking-tight truncate group-hover:text-brand-navy transition-colors">
+                    {getPlainText(poll.title)}
                   </h3>
-                  <p className="text-[13px] font-bold text-zinc-500 leading-relaxed line-clamp-2">
-                    {getPlainText(pendingPolls[0].description) || "새로운 투표가 진행 중입니다. 소중한 의견을 내주세요."}
-                  </p>
                 </div>
                 <div className="w-14 h-14 flex items-center justify-center bg-blue-50 dark:bg-blue-900/20 text-blue-500 rounded-2xl shrink-0 group-hover:scale-110 transition-transform">
                   <BarChart3 size={28} />
                 </div>
               </Link>
-            )}
+            ))}
 
             {recentNotice && (
               <Link href={`/community/${recentNotice.id}`} className="w-full min-w-full snap-center shrink-0 flex justify-between items-center group">
@@ -683,27 +697,36 @@ export default function Home() {
           </div>
 
           {/* Dots Indicator */}
-          {(pendingPolls.length > 0 && recentNotice) && (
-            <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 cursor-pointer">
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  bannerScrollRef.current?.scrollTo({ left: 0, behavior: 'smooth' });
-                  setActiveBannerIndex(0);
-                }}
-                className={cn("w-1.5 h-1.5 rounded-full transition-colors", activeBannerIndex === 0 ? "bg-zinc-400 dark:bg-zinc-500" : "bg-zinc-200 dark:bg-zinc-800")}
-              />
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  if (bannerScrollRef.current) {
-                    bannerScrollRef.current.scrollTo({ left: bannerScrollRef.current.clientWidth, behavior: 'smooth' });
-                    setActiveBannerIndex(1);
-                  }
-                }}
-                className={cn("w-1.5 h-1.5 rounded-full transition-colors", activeBannerIndex === 1 ? "bg-zinc-400 dark:bg-zinc-500" : "bg-zinc-200 dark:bg-zinc-800")}
-              />
-            </div>
+          {(() => {
+            const totalSlides = pendingPolls.length + (recentNotice ? 1 : 0);
+            if (totalSlides <= 1) return null;
+
+            return (
+              <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 cursor-pointer">
+                {Array.from({ length: totalSlides }).map((_, idx) => (
+                  <button
+                    key={idx}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      if (bannerScrollRef.current) {
+                        const container = bannerScrollRef.current;
+                        const child = container.children[idx] as HTMLElement;
+                        if (child) {
+                          container.scrollTo({ left: child.offsetLeft - container.offsetLeft, behavior: 'smooth' });
+                          setActiveBannerIndex(idx);
+                        }
+                      }
+                    }}
+                    className={cn(
+                      "w-1.5 h-1.5 rounded-full transition-colors",
+                      activeBannerIndex === idx ? "bg-zinc-400 dark:bg-zinc-500" : "bg-zinc-200 dark:bg-zinc-800"
+                    )}
+                  />
+                ))}
+              </div>
+            );
+          })()}
+            </>
           )}
         </section>
       )}
@@ -868,31 +891,25 @@ export default function Home() {
                 <span className="text-xs font-bold text-violet-500 uppercase tracking-wider">참여하지 않은 투표 ({pendingPolls.length}건)</span>
               </div>
 
-              <div className="space-y-3 max-h-[25vh] overflow-y-auto">
-                {pendingPolls.slice(0, 2).map((poll, index) => (
+              <div className="space-y-3 max-h-[30vh] overflow-y-auto pr-2 pb-1">
+                {pendingPolls.map((poll, index) => (
                   <Link
                     key={poll.id}
                     href={`/admin/polls/${poll.id}`}
                     onClick={() => setIsPollSheetOpen(false)}
                     className={cn(
-                      "block rounded-2xl p-4 active:scale-[0.98] transition-all border",
-                      index === 0
+                      "block rounded-2xl p-4 active:scale-[0.98] transition-all border shrink-0",
+                      index % 2 === 0
                         ? "bg-violet-50/50 dark:bg-violet-900/10 border-violet-100/50 dark:border-violet-800/20"
                         : "bg-blue-50/50 dark:bg-blue-900/10 border-blue-100/50 dark:border-blue-800/20"
                     )}
                   >
-                    <h4 className="text-sm font-black text-zinc-900 dark:text-zinc-50 line-clamp-1 mb-1">
-                      {getPlainText(poll.title)}
-                    </h4>
-                    <p className="text-xs text-zinc-500 line-clamp-2 mb-2">
-                      {getPlainText(poll.description) || "투표에 참여해주세요."}
-                    </p>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-zinc-400">
-                        ~ {poll.endDate}
-                      </span>
-                      <span className="text-xs font-bold text-brand-navy dark:text-blue-400 flex items-center gap-1">
-                        투표하기 <ArrowUpRight size={12} />
+                    <div className="flex items-center justify-between gap-4">
+                      <h4 className="text-lg font-black text-zinc-900 dark:text-zinc-50 truncate flex-1">
+                        {getPlainText(poll.title)}
+                      </h4>
+                      <span className="shrink-0 text-[13px] font-bold text-brand-navy dark:text-blue-400 flex items-center gap-1 bg-white/60 dark:bg-black/20 px-3 py-1.5 rounded-full shadow-sm">
+                        투표하기 <ArrowUpRight size={14} />
                       </span>
                     </div>
                   </Link>
