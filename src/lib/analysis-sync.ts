@@ -1,4 +1,5 @@
 import { createClient } from "./supabase/client";
+import { getKstDateStr } from "./utils";
 
 export interface AnalysisComment {
     id: string;
@@ -137,5 +138,5 @@ function formatCommentTime(dateStr: string): string {
     const days = Math.floor(hours / 24);
     if (days < 7) return `${days}일 전`;
 
-    return date.toISOString().split("T")[0];
+    return getKstDateStr(date);
 }

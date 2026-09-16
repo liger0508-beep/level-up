@@ -45,6 +45,13 @@ export function LessonHistoryModal({
     readOnly = false,
 }: LessonHistoryModalProps) {
     const router = useRouter();
+    const scrollRef = React.useRef<HTMLDivElement>(null);
+
+    React.useEffect(() => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollTop = 0;
+        }
+    }, [historySelectedPart]);
 
     if (!isOpen) return null;
 
@@ -72,7 +79,7 @@ export function LessonHistoryModal({
                         />
                     </div>
                 </div>
-                <div className="p-4 space-y-3 overflow-y-auto flex-1 bg-zinc-50/50 dark:bg-zinc-900 min-h-[300px]">
+                <div className="p-4 space-y-3 overflow-y-auto flex-1 bg-zinc-50/50 dark:bg-zinc-900 min-h-[300px]" ref={scrollRef}>
                     {(() => {
                         const effectivePart = historySelectedPart;
 

@@ -7,6 +7,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
+
+import { MarkerSubmitSignatureModal } from "@/components/ui/MarkerSubmitSignatureModal";
 import { AthleteSearch } from "@/components/ui/AthleteSearch";
 import { BottomSheetPicker } from "@/components/ui/bottom-sheet-picker";
 import { SignaturePad } from "@/components/ui/SignaturePad";
@@ -172,7 +174,7 @@ function ScoreCreateContent() {
     // Form fields
     const [distanceUnit, setDistanceUnit] = useState("미터 (m)");
     const [roundDate, setRoundDate] = useState(() => formatLocalDate(new Date()));
-    const [category, setCategory] = useState("연습");
+    const [category, setCategory] = useState(searchParams.get("tournament_id") ? "대회" : "연습");
     const [golfCourse, setGolfCourse] = useState("");
     const [tournamentId, setTournamentId] = useState<string | null>(searchParams.get("tournament_id"));
     const [selectedMarker, setSelectedMarker] = useState("");
@@ -580,7 +582,10 @@ function ScoreCreateContent() {
     };
 
     const [showSgTable, setShowSgTable] = useState(false);
-    const [holeAnalyses, setHoleAnalyses] = useState<HoleAnalysis[]>([]);
+    const [holeAnalyses, setHoleAnalyses] = useState<any[]>([]);
+    
+    // Maker Submit Modal State
+    const [submitModalScorecardId, setSubmitModalScorecardId] = useState<string | null>(null);
 
     const isAllHolesCompleted = useMemo(() => {
         return holes.every(h => {
@@ -675,17 +680,6 @@ function ScoreCreateContent() {
         if (isInvalid30mOver) {
             setValidationError("그린, 그린주변 어프로치 혹은 그린주변 벙커는 30미터 이내로 작성해 주세요");
             return;
-        }
-
-        if (tournamentId && forced) {
-            if (!currentHoleData.markerScore || currentHoleData.markerScore.trim() === "") {
-                setValidationError("마커(동반자)의 스코어(타수)를 입력해주세요.");
-                return;
-            }
-            if (!currentHoleData.markerPutts || currentHoleData.markerPutts.trim() === "") {
-                setValidationError("마커(동반자)의 퍼팅 수를 입력해주세요.");
-                return;
-            }
         }
 
         setValidationError(null);
@@ -1162,11 +1156,12 @@ function ScoreCreateContent() {
                 
                 const markerScoresToInsert: any[] = [];
                 holes.forEach((h, hIdx) => {
-                    if (h.par > 0 && h.markerScore) {
+                    if (h.par > 0) {
+                        const finalMarkerScore = (h.markerScore && h.markerScore.trim() !== "") ? parseInt(h.markerScore, 10) : h.par;
                         markerScoresToInsert.push({
                             scorecard_id: scorecardId,
                             hole_number: hIdx + 1,
-                            score: parseInt(h.markerScore, 10) || 0,
+                            score: finalMarkerScore || 0,
                             putts: h.markerPutts ? parseInt(h.markerPutts, 10) : 0
                         });
                     }
@@ -1178,17 +1173,20 @@ function ScoreCreateContent() {
                 }
 
                 // 리더보드 업데이트 (Upsert)
-                // 기본적으로 1라운드로 취급 (이후 대회 상세에 맞춰 다중 라운드 개선 가능)
-                const { error: tbErr } = await supabase.from("tournament_leaderboards").upsert({
-                    tournament_id: tournamentId,
-                    athlete_id: athleteId,
-                    round_number: 1,
-                    thru_hole: completedCount,
-                    total_score: computedTotalScore,
-                    updated_at: new Date().toISOString()
-                }, { onConflict: "tournament_id,athlete_id,round_number" });
-                if (tbErr) console.error("리더보드 업데이트 오류:", tbErr);
-            }
+                // LIVE 리더보드는 마커가 적어주는 점수(상대방의 점수)로 업데이트됩니다.
+                if (markerId) {
+                    const markerTotalScore = markerScoresToInsert.reduce((sum, curr) => sum + curr.score, 0);
+                    const { error: tbErr } = await supabase.from("tournament_leaderboards").upsert({
+                        tournament_id: tournamentId,
+                        athlete_id: markerId,
+                        round_number: 1,
+                        thru_hole: completedCount,
+                        total_score: markerTotalScore,
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: "tournament_id,athlete_id,round_number" });
+                    if (tbErr) console.error("리더보드 업데이트 오류:", tbErr);
+                }
+            } // Close if (tournamentId)
 
             // 8. 기록(records) 테이블에 활동 로그 추가 (최근 업데이트 연동)
             // (사용자 요청으로 스코어 작성 시 측정/분석 자동 생성 기능 제거됨)
@@ -1276,6 +1274,10 @@ function ScoreCreateContent() {
             localStorage.removeItem("gla_scorecard_draft");
 
             hasFinalized.current = true;
+            if (tournamentId) {
+                setSubmitModalScorecardId(scorecardId as string);
+                return;
+            }
             alert("스코어카드가 등록되었습니다.");
             router.replace(`/scores/${scorecardId}`);
 
@@ -1403,7 +1405,7 @@ function ScoreCreateContent() {
                                             <select
                                                 value={category}
                                                 onChange={(e) => setCategory(e.target.value)}
-                                                disabled={isEditMode}
+                                                disabled={isEditMode || !!tournamentId}
                                                 className="w-full pl-4 pr-9 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all appearance-none disabled:opacity-60 disabled:bg-zinc-50 dark:disabled:bg-zinc-800/50"
                                             >
                                                 <option value="연습">연습</option>
@@ -1429,18 +1431,18 @@ function ScoreCreateContent() {
                                         />
                                     </div>
 
-                                    {/* 마커 선택 (토너먼트 모드일 때만 표시) */}
+                                    {/* Player 선택 (토너먼트 모드일 때만 표시) */}
                                     {tournamentId && (
                                         <div className="space-y-2 md:col-span-2">
                                             <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                                마커 선택 <span className="text-brand-red">*</span>
+                                                Player 선택 <span className="text-brand-red">*</span>
                                             </label>
                                             <AthleteSearch
                                                 multi={false}
                                                 selectedNames={selectedMarker ? [selectedMarker] : []}
                                                 onSelect={(name: string) => setSelectedMarker(name)}
                                                 onRemove={() => setSelectedMarker("")}
-                                                placeholder="마커(동반자) 이름을 검색하여 선택하세요..."
+                                                placeholder="Player 이름을 검색하여 선택하세요..."
                                             />
                                         </div>
                                     )}
@@ -1452,7 +1454,7 @@ function ScoreCreateContent() {
                                         type="button"
                                         onClick={() => {
                                             if (tournamentId && !selectedMarker) {
-                                                alert("토너먼트 참가 시 마커(동반자)를 반드시 선택해야 합니다.");
+                                                alert("토너먼트 참가 시 Player를 반드시 선택해야 합니다.");
                                                 return;
                                             }
                                             handleConfirmBasicInfo();
@@ -1675,38 +1677,45 @@ function ScoreCreateContent() {
                             <div className="mt-2 mb-4 pt-6 border-t border-zinc-100 dark:border-zinc-800">
                                 <h3 className="text-sm font-bold text-zinc-800 dark:text-zinc-200 mb-4 flex items-center gap-2">
                                     <div className="w-1.5 h-1.5 rounded-full bg-brand-red"></div>
-                                    마커 기록 ({selectedMarker || '동반자'})
+                                    Player 기록 ({selectedMarker || 'Player'})
                                 </h3>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-1.5">
-                                        <label className="block text-xs font-semibold text-zinc-500">스코어 (타수)</label>
-                                        <div className="relative">
+                                <div className="space-y-1.5">
+                                    <label className="block text-xs font-semibold text-zinc-500">스코어 (타수)</label>
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const currentVal = (holeData.markerScore !== undefined && holeData.markerScore !== "") ? parseInt(holeData.markerScore, 10) : holeData.par;
+                                                if (!isNaN(currentVal) && currentVal > 1) {
+                                                    updateMarkerScore((currentVal - 1).toString());
+                                                }
+                                            }}
+                                            className="w-12 h-12 flex-shrink-0 flex items-center justify-center rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors shadow-sm"
+                                        >
+                                            <span className="text-2xl font-light leading-none mb-0.5">-</span>
+                                        </button>
+                                        <div className="relative flex-1">
                                             <input
                                                 type="number"
                                                 min="1"
                                                 max="20"
-                                                value={holeData.markerScore || ""}
+                                                value={holeData.markerScore ?? (holeData.par || "")}
                                                 onChange={(e) => updateMarkerScore(e.target.value)}
-                                                placeholder="예: 4"
-                                                className="w-full pl-4 pr-10 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-red/40 transition-all font-bold text-center"
+                                                className="w-full px-4 py-2.5 h-12 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-lg text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-red/40 transition-all font-bold text-center shadow-inner"
                                             />
-                                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 text-xs font-semibold pointer-events-none">타</span>
                                         </div>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="block text-xs font-semibold text-zinc-500">퍼팅 수</label>
-                                        <div className="relative">
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                max="10"
-                                                value={holeData.markerPutts || ""}
-                                                onChange={(e) => updateMarkerPutts(e.target.value)}
-                                                placeholder="예: 2"
-                                                className="w-full pl-4 pr-10 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-red/40 transition-all font-bold text-center"
-                                            />
-                                            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-zinc-400 text-xs font-semibold pointer-events-none">펏</span>
-                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const currentVal = (holeData.markerScore !== undefined && holeData.markerScore !== "") ? parseInt(holeData.markerScore, 10) : holeData.par;
+                                                if (!isNaN(currentVal) && currentVal < 20) {
+                                                    updateMarkerScore((currentVal + 1).toString());
+                                                }
+                                            }}
+                                            className="w-12 h-12 flex-shrink-0 flex items-center justify-center rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors shadow-sm"
+                                        >
+                                            <span className="text-2xl font-light leading-none mb-0.5">+</span>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -1987,6 +1996,22 @@ function ScoreCreateContent() {
                         </div>
                     </div>
                 </div>
+            )}
+            {/* ── Marker Submit Signature Modal ── */}
+            {submitModalScorecardId && (
+                <MarkerSubmitSignatureModal
+                    isOpen={!!submitModalScorecardId}
+                    scorecardId={submitModalScorecardId}
+                    onClose={() => {
+                        setSubmitModalScorecardId(null);
+                        router.replace(`/scores/tournaments/${tournamentId}`);
+                    }}
+                    onSignatureComplete={() => {
+                        setSubmitModalScorecardId(null);
+                        alert("스코어카드가 성공적으로 제출되고 서명되었습니다.");
+                        router.replace(`/scores/tournaments/${tournamentId}`);
+                    }}
+                />
             )}
         </div>
     );

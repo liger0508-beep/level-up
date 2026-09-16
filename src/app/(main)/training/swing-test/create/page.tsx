@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ChevronLeft, Calendar, ChevronDown } from 'lucide-react';
 import { DatePickerInput } from '@/components/ui/DatePickerInput';
 import { AthleteSearch } from '@/components/ui/AthleteSearch';
-import { formatLocalDate } from '@/lib/utils';
+import { formatLocalDate, getKstDateStr } from '@/lib/utils';
 
 const TRAINING_TYPES = [
   "티샷 비거리", "티샷 정확도", "180m 이상", "150~179m", "120~149m", "90~119m", 
@@ -22,8 +22,7 @@ export default function CreateSwingTestPage() {
     const [termEnd, setTermEnd] = useState(() => {
         const d = new Date();
         d.setDate(d.getDate() + 6);
-        const offset = d.getTimezoneOffset() * 60000;
-        return new Date(d.getTime() - offset).toISOString().split('T')[0];
+        return getKstDateStr(d);
     });
     
     const [goal, setGoal] = useState('');

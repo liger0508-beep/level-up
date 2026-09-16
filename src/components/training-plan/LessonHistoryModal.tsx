@@ -50,6 +50,13 @@ export function LessonHistoryModal({ isOpen, onClose, allLessons, initialPart, o
     }, [historySelectedPart]);
     const [historySearchQuery, setHistorySearchQuery] = useState("");
     const [historyDisplayLimit, setHistoryDisplayLimit] = useState(10);
+    const scrollRef = React.useRef<HTMLDivElement>(null);
+
+    React.useEffect(() => {
+        if (scrollRef.current) {
+            scrollRef.current.scrollTop = 0;
+        }
+    }, [historySelectedPart]);
 
     const effectivePart = historySelectedPart;
 
@@ -203,7 +210,7 @@ export function LessonHistoryModal({ isOpen, onClose, allLessons, initialPart, o
                         />
                     </div>
                 </div>
-                <div className="p-4 space-y-3 overflow-y-auto flex-1 bg-zinc-50/50 dark:bg-zinc-900 min-h-[300px]">
+                <div className="p-4 space-y-3 overflow-y-auto flex-1 bg-zinc-50/50 dark:bg-zinc-900 min-h-[300px]" ref={scrollRef}>
                     {displayedHistory.map(root => (
                         <div key={root.id} className="space-y-2 relative">
                             {renderLessonCard(root, false)}

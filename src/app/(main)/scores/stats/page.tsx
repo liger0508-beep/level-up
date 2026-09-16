@@ -27,7 +27,7 @@ import {
     Info,
     Trophy as TrophyIcon
 } from "lucide-react";
-import { cn, formatScore } from "@/lib/utils";
+import { cn, formatScore, getKstDateStr } from "@/lib/utils";
 import { 
     ResponsiveContainer, 
     LineChart, 
@@ -96,10 +96,10 @@ export default function ScoreStatsPage() {
     const [activePreset, setActivePreset] = useState<DatePresetType>("custom");
     const [selectedPlayers, setSelectedPlayers] = useState<Set<string>>(new Set());
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getKstDateStr();
     const monthAgo = new Date();
     monthAgo.setMonth(monthAgo.getMonth() - 1);
-    const monthAgoStr = monthAgo.toISOString().split('T')[0];
+    const monthAgoStr = getKstDateStr(monthAgo);
 
     const [startDate, setStartDate] = useState(monthAgoStr);
     const [endDate, setEndDate] = useState(todayStr);

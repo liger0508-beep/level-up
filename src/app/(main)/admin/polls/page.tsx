@@ -96,6 +96,7 @@ export default function VoteListPage() {
                 .from("polls")
                 .select(`*, users!polls_author_id_fkey(name)`)
                 .eq("status", "ongoing")
+                .order("is_important", { ascending: false, nullsFirst: false })
                 .order("created_at", { ascending: false })
                 .limit(20);
             
@@ -148,6 +149,8 @@ export default function VoteListPage() {
             if (endDate) query = query.lte("end_date", endDate);
 
             query = query
+                .order("is_important", { ascending: false, nullsFirst: false })
+                .order("status", { ascending: false })
                 .order("created_at", { ascending: false })
                 .limit(displayLimit);
 
@@ -160,6 +163,21 @@ export default function VoteListPage() {
             const { overrideWithTodayVotes, formatPollFromDb } = await import("@/lib/vote-sync");
             const formatted = data.map(formatPollFromDb);
             const overridden = await overrideWithTodayVotes(formatted);
+
+            overridden.sort((a, b) => {
+                // 1. 진행중 여부 우선 (진행중 > 종료)
+                if (a.status === "ongoing" && b.status !== "ongoing") return -1;
+                if (a.status !== "ongoing" && b.status === "ongoing") return 1;
+                
+                // 2. 그 다음 중요 표시 여부 (중요 > 일반)
+                if (a.isImportant && !b.isImportant) return -1;
+                if (!a.isImportant && b.isImportant) return 1;
+                
+                // 3. 마지막으로 최신순
+                const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                return dateB - dateA;
+            });
 
             setTotalPollCount(count || 0);
             setPolls(overridden);

@@ -27,7 +27,7 @@ import {
     COURSE_CAT_COLORS 
 } from "@/lib/course-management-sync";
 import { fetchComments, saveComment, AnalysisComment } from "@/lib/analysis-sync";
-import { cn, getYoutubeEmbedUrl } from "@/lib/utils";
+import { cn, getYoutubeEmbedUrl, getKstDateStr } from "@/lib/utils";
 
 export default function CourseManagementDetailPage() {
     const router = useRouter();
@@ -144,7 +144,7 @@ export default function CourseManagementDetailPage() {
             if (userError || !users) throw new Error("사용자 조회 실패");
 
             // 2. Prepare Todo Inserts
-            const todayStr = new Date().toISOString().split('T')[0];
+            const todayStr = getKstDateStr();
             const contentPreview = record?.content ? (record.content.length > 50 ? record.content.substring(0, 50) + '...' : record.content) : '';
             const inserts = users.map(u => ({
                 user_id: u.id,

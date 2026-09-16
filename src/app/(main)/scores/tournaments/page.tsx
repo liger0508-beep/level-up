@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Trophy, Calendar, MapPin, Lock, ChevronRight, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -16,15 +17,18 @@ interface Tournament {
 }
 
 export default function TournamentsListPage() {
+    const router = useRouter();
     const [tournaments, setTournaments] = useState<Tournament[]>([]);
     const [loading, setLoading] = useState(true);
     const [userRole, setUserRole] = useState<string | null>(null);
+    const [userId, setUserId] = useState<string | null>(null);
 
     useEffect(() => {
         const load = async () => {
             const supabase = createClient();
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
+                setUserId(user.id);
                 const { data: profile } = await supabase.from("users").select("role").eq("id", user.id).single();
                 setUserRole(profile?.role || null);
             }
@@ -39,6 +43,24 @@ export default function TournamentsListPage() {
         };
         load();
     }, []);
+
+    const handleDelete = async (id: string, e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (!window.confirm("정말 이 대회를 삭제하시겠습니까? 관련 데이터가 모두 삭제될 수 있습니다.")) return;
+        
+        const supabase = createClient();
+        const { error } = await supabase.from("score_tournaments").delete().eq("id", id);
+        
+        if (error) {
+            alert("삭제 중 오류가 발생했습니다.");
+            console.error(error);
+        } else {
+            alert("대회가 삭제되었습니다.");
+            setTournaments(prev => prev.filter(t => t.id !== id));
+        }
+    };
 
     return (
         <div className="p-4 sm:p-8 max-w-4xl mx-auto pb-24">
@@ -97,16 +119,17 @@ export default function TournamentsListPage() {
                                         </div>
                                         <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md shrink-0 ${
                                             t.status === '진행중' ? 'bg-brand-red text-white' :
-                                            t.status === '준비중' ? 'bg-amber-500 text-white' :
                                             'bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400'
                                         }`}>
                                             {t.status || "준비중"}
                                         </span>
                                     </div>
                                     <div className="flex flex-col gap-1.5 ml-10">
-                                        <div className="flex items-center gap-2 text-xs font-medium text-zinc-500">
-                                            <Calendar size={13} className="text-zinc-400" />
-                                            <span>{t.start_date} ~ {t.end_date}</span>
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2 text-xs font-medium text-zinc-500">
+                                                <Calendar size={13} className="text-zinc-400" />
+                                                <span>{t.start_date} ~ {t.end_date}</span>
+                                            </div>
                                         </div>
                                         <div className="flex items-center gap-2 text-xs font-medium text-zinc-500">
                                             <MapPin size={13} className="text-zinc-400" />

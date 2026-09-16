@@ -269,7 +269,6 @@ export function PlayerLessonHistoryModal({ isOpen, onClose, allAthletes }: Playe
                                         }
                                     }}
                                 >
-                                    <div className="absolute inset-0 bg-transparent group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/50 transition-colors z-10 rounded-2xl pointer-events-none" />
                                     <LinkedPlanCard 
                                         plan={recentPlan} 
                                         readOnly={true} 
@@ -300,7 +299,6 @@ export function PlayerLessonHistoryModal({ isOpen, onClose, allAthletes }: Playe
                                         }
                                     }}
                                 >
-                                    <div className="absolute inset-0 bg-transparent group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/50 transition-colors z-10 rounded-2xl pointer-events-none" />
                                     <LinkedJournalCard 
                                         journal={recentJournal} 
                                         readOnly={true} 
@@ -350,7 +348,6 @@ export function PlayerLessonHistoryModal({ isOpen, onClose, allAthletes }: Playe
                                         }
                                     }}
                                 >
-                                    <div className="absolute inset-0 bg-transparent group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/50 transition-colors z-10 rounded-2xl pointer-events-none" />
                                     <LinkedLessonCard
                                         part={"all"}
                                         lesson={recentLessons[0] || null}

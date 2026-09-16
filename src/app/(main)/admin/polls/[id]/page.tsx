@@ -34,7 +34,7 @@ import {
     VOTE_TYPE_COLORS 
 } from "@/lib/vote-sync";
 import { createClient } from "@/lib/supabase/client";
-import { cn } from "@/lib/utils";
+import { cn, getKstDateStr } from "@/lib/utils";
 
 export default function PollDetailPage() {
     const router = useRouter();
@@ -51,11 +51,7 @@ export default function PollDetailPage() {
     const [voters, setVoters] = useState<{ optionId: string; userName: string }[]>([]);
     const [recurringHistory, setRecurringHistory] = useState<any[]>([]);
     const [selectedHistoryDate, setSelectedHistoryDate] = useState(() => {
-        const now = new Date();
-        const yyyy = now.getFullYear();
-        const mm = String(now.getMonth() + 1).padStart(2, '0');
-        const dd = String(now.getDate()).padStart(2, '0');
-        return `${yyyy}-${mm}-${dd}`;
+        return getKstDateStr();
     });
     const [selectedHistoryOption, setSelectedHistoryOption] = useState<string>("all");
     const filterContainerRef = useRef<HTMLDivElement>(null);
@@ -307,7 +303,7 @@ export default function PollDetailPage() {
     const handleDateChange = (days: number) => {
         const current = new Date(selectedHistoryDate);
         current.setDate(current.getDate() + days);
-        setSelectedHistoryDate(current.toISOString().split('T')[0]);
+        setSelectedHistoryDate(getKstDateStr(current));
     };
 
     // Filter history based on UI selection

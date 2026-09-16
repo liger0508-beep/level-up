@@ -23,28 +23,42 @@ export function LiveScoreModal({ isOpen, onClose, tournamentId, athleteId, athle
             setLoading(true);
             const supabase = createClient();
             
-            // Fetch the most recent scorecard for this tournament and athlete
+            // Fetch the marker's scorecard for this athlete (official score)
             const { data: scData, error } = await supabase
                 .from("scorecards")
                 .select(`
                     id, total_score, hole_count, is_final,
-                    holes:scorecard_holes(
-                        id, hole_number, par, score,
-                        shots:scorecard_shots(shot_number, location_code, distance)
-                    )
+                    base_holes:scorecard_holes(hole_number, par),
+                    marker_scores:tournament_marker_scores(hole_number, score)
                 `)
                 .eq("tournament_id", tournamentId)
-                .eq("athlete_id", athleteId)
+                .eq("marker_id", athleteId)
                 .order("created_at", { ascending: false })
                 .limit(1)
                 .maybeSingle();
 
             if (scData) {
-                // Sort holes
-                if (scData.holes) {
-                    scData.holes.sort((a: any, b: any) => a.hole_number - b.hole_number);
-                }
-                setScorecard(scData);
+                // Map marker_scores and base_holes into a unified 'holes' array
+                const holesMap = new Map();
+                
+                scData.base_holes?.forEach((h: any) => {
+                    holesMap.set(h.hole_number, { hole_number: h.hole_number, par: h.par, score: 0 });
+                });
+                
+                scData.marker_scores?.forEach((m: any) => {
+                    if (holesMap.has(m.hole_number)) {
+                        holesMap.get(m.hole_number).score = m.score;
+                    } else {
+                        holesMap.set(m.hole_number, { hole_number: m.hole_number, par: 0, score: m.score });
+                    }
+                });
+
+                const unifiedHoles = Array.from(holesMap.values()).sort((a: any, b: any) => a.hole_number - b.hole_number);
+                
+                setScorecard({
+                    ...scData,
+                    holes: unifiedHoles
+                });
             }
             setLoading(false);
         };
@@ -86,116 +100,129 @@ export function LiveScoreModal({ isOpen, onClose, tournamentId, athleteId, athle
                     ) : (
                         <div className="space-y-6">
                             
-                            {/* Summary Card */}
-                            <div className="flex items-center justify-between bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl p-4 border border-zinc-100 dark:border-zinc-800">
-                                <div>
-                                    <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">상태</p>
-                                    <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                                        {scorecard.is_final ? "라운드 종료" : `${scorecard.hole_count}홀 진행 중`}
-                                    </p>
-                                </div>
-                                <div className="text-right">
-                                    <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-1">총 타수</p>
-                                    <p className="text-xl font-black text-brand-navy dark:text-brand-navy-light">
-                                        {scorecard.total_score > 0 ? `+${scorecard.total_score}` : scorecard.total_score === 0 ? "E" : scorecard.total_score}
-                                    </p>
-                                </div>
-                            </div>
+                            {/* Summary Card and Score Tables */}
+                            {(() => {
+                                const renderPar = (start: number, end: number) => {
+                                    const cells = [];
+                                    let sum = 0;
+                                    for (let i = start; i <= end; i++) {
+                                        const hole = scorecard.holes?.find((h: any) => h.hole_number === i);
+                                        const par = hole?.par || 0;
+                                        sum += par;
+                                        cells.push(<td key={i} className="px-1 sm:px-2 py-1.5 sm:py-2">{par || "-"}</td>);
+                                    }
+                                    return { cells, sum };
+                                };
+                                
+                                const renderScore = (start: number, end: number) => {
+                                    const cells = [];
+                                    let sum = 0;
+                                    for (let i = start; i <= end; i++) {
+                                        const hole = scorecard.holes?.find((h: any) => h.hole_number === i);
+                                        let scoreStr = "-";
+                                        let colorClass = "";
+                                        
+                                        if (hole && hole.score > 0 && hole.par > 0) {
+                                            const s = hole.score;
+                                            sum += s;
+                                            scoreStr = s.toString();
+                                            
+                                            const diff = s - hole.par;
+                                            if (diff < 0) colorClass = "text-red-500";
+                                            else if (diff > 0) colorClass = "text-blue-500";
+                                        }
+                                        
+                                        cells.push(<td key={i} className={`px-1 sm:px-2 py-2 sm:py-2.5 ${colorClass}`}>{scoreStr}</td>);
+                                    }
+                                    return { cells, sum };
+                                };
 
-                            {/* Score Table */}
-                            <div className="border border-zinc-200 dark:border-zinc-700 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm">
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-center text-sm">
-                                        <thead>
-                                            <tr className="bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-600 dark:text-zinc-300">
-                                                <th className="px-3 py-3 w-16 bg-zinc-100 dark:bg-zinc-900/50 border-r border-zinc-200 dark:border-zinc-700">HOLE</th>
-                                                {[1,2,3,4,5,6,7,8,9].map(h => (
-                                                    <th key={h} className="px-2 py-3 min-w-[36px]">{h}</th>
-                                                ))}
-                                                <th className="px-3 py-3 bg-zinc-100 dark:bg-zinc-900/50 border-l border-r border-zinc-200 dark:border-zinc-700 text-brand-navy">OUT</th>
-                                                {[10,11,12,13,14,15,16,17,18].map(h => (
-                                                    <th key={h} className="px-2 py-3 min-w-[36px]">{h}</th>
-                                                ))}
-                                                <th className="px-3 py-3 bg-zinc-100 dark:bg-zinc-900/50 border-l border-zinc-200 dark:border-zinc-700 text-brand-navy">IN</th>
-                                                <th className="px-3 py-3 bg-brand-navy/5 dark:bg-brand-navy/20 border-l border-brand-navy/20 text-brand-navy font-black">TOT</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {/* PAR Row */}
-                                            <tr className="border-b border-zinc-100 dark:border-zinc-800 text-zinc-500 font-semibold bg-white dark:bg-zinc-900">
-                                                <td className="px-3 py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700">PAR</td>
-                                                {(() => {
-                                                    const renderPar = (start: number, end: number) => {
-                                                        const cells = [];
-                                                        let sum = 0;
-                                                        for (let i = start; i <= end; i++) {
-                                                            const hole = scorecard.holes?.find((h: any) => h.hole_number === i);
-                                                            const par = hole?.par || 0;
-                                                            sum += par;
-                                                            cells.push(<td key={i} className="px-2 py-2">{par || "-"}</td>);
-                                                        }
-                                                        return { cells, sum };
-                                                    };
-                                                    
-                                                    const out = renderPar(1, 9);
-                                                    const in_ = renderPar(10, 18);
-                                                    
-                                                    return (
-                                                        <>
-                                                            {out.cells}
-                                                            <td className="px-3 py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-r border-zinc-200 dark:border-zinc-700">{out.sum || "-"}</td>
-                                                            {in_.cells}
-                                                            <td className="px-3 py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700">{in_.sum || "-"}</td>
-                                                            <td className="px-3 py-2 bg-brand-navy/5 dark:bg-brand-navy/20 border-l border-brand-navy/20 font-bold">{out.sum + in_.sum || "-"}</td>
-                                                        </>
-                                                    );
-                                                })()}
-                                            </tr>
-                                            {/* SCORE Row */}
-                                            <tr className="font-bold text-zinc-900 dark:text-zinc-100 bg-white dark:bg-zinc-900">
-                                                <td className="px-3 py-2.5 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700">SCORE</td>
-                                                {(() => {
-                                                    const renderScore = (start: number, end: number) => {
-                                                        const cells = [];
-                                                        let sum = 0;
-                                                        for (let i = start; i <= end; i++) {
-                                                            const hole = scorecard.holes?.find((h: any) => h.hole_number === i);
-                                                            let scoreStr = "-";
-                                                            let colorClass = "";
-                                                            
-                                                            if (hole && hole.score > 0 && hole.par > 0) {
-                                                                const s = hole.score;
-                                                                sum += s;
-                                                                scoreStr = s.toString();
-                                                                
-                                                                const diff = s - hole.par;
-                                                                if (diff < 0) colorClass = "text-red-500";
-                                                                else if (diff > 0) colorClass = "text-blue-500";
-                                                            }
-                                                            
-                                                            cells.push(<td key={i} className={`px-2 py-2.5 ${colorClass}`}>{scoreStr}</td>);
-                                                        }
-                                                        return { cells, sum };
-                                                    };
-                                                    
-                                                    const out = renderScore(1, 9);
-                                                    const in_ = renderScore(10, 18);
-                                                    
-                                                    return (
-                                                        <>
-                                                            {out.cells}
-                                                            <td className="px-3 py-2.5 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-r border-zinc-200 dark:border-zinc-700 text-brand-navy">{out.sum || "-"}</td>
-                                                            {in_.cells}
-                                                            <td className="px-3 py-2.5 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700 text-brand-navy">{in_.sum || "-"}</td>
-                                                            <td className="px-3 py-2.5 bg-brand-navy/5 dark:bg-brand-navy/20 border-l border-brand-navy/20 font-black text-brand-navy">{out.sum + in_.sum || "-"}</td>
-                                                        </>
-                                                    );
-                                                })()}
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
+                                const outPar = renderPar(1, 9);
+                                const inPar = renderPar(10, 18);
+                                const outScore = renderScore(1, 9);
+                                const inScore = renderScore(10, 18);
+                                const totalScoreSum = outScore.sum + inScore.sum;
+
+                                return (
+                                    <>
+                                        {/* Summary Card */}
+                                        <div className="flex items-center justify-between bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl p-4 border border-zinc-100 dark:border-zinc-800">
+                                            <div className="flex flex-col items-center flex-1 border-r border-zinc-200 dark:border-zinc-700">
+                                                <span className="text-[10px] font-bold text-zinc-400 mb-0.5">OUT</span>
+                                                <span className="text-sm font-black text-zinc-900 dark:text-white">{outScore.sum || "-"}</span>
+                                            </div>
+                                            <div className="flex flex-col items-center flex-1 border-r border-zinc-200 dark:border-zinc-700">
+                                                <span className="text-[10px] font-bold text-zinc-400 mb-0.5">IN</span>
+                                                <span className="text-sm font-black text-zinc-900 dark:text-white">{inScore.sum || "-"}</span>
+                                            </div>
+                                            <div className="flex flex-col items-center flex-1">
+                                                <span className="text-[10px] font-bold text-brand-navy mb-0.5">TOTAL</span>
+                                                <span className="text-sm font-black text-brand-navy">{totalScoreSum || "-"}</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            {/* OUT Course */}
+                                            <div className="border border-zinc-200 dark:border-zinc-700 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm">
+                                                <div className="overflow-x-auto">
+                                                    <table className="w-full text-center text-[10px] sm:text-sm min-w-full">
+                                                        <thead>
+                                                            <tr className="bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-600 dark:text-zinc-300">
+                                                                <th className="px-1 sm:px-3 py-2 sm:py-3 w-10 sm:w-16 bg-zinc-100 dark:bg-zinc-900/50 border-r border-zinc-200 dark:border-zinc-700 whitespace-nowrap">HOLE</th>
+                                                                {[1,2,3,4,5,6,7,8,9].map(h => (
+                                                                    <th key={h} className="px-1 sm:px-2 py-2 sm:py-3 min-w-[22px] sm:min-w-[36px]">{h}</th>
+                                                                ))}
+                                                                <th className="px-1 sm:px-3 py-2 sm:py-3 bg-zinc-100 dark:bg-zinc-900/50 border-l border-zinc-200 dark:border-zinc-700 text-brand-navy w-10 sm:w-16 whitespace-nowrap">OUT</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            <tr className="border-b border-zinc-100 dark:border-zinc-800 text-zinc-500 font-semibold bg-white dark:bg-zinc-900">
+                                                                <td className="px-1 sm:px-3 py-1.5 sm:py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700">PAR</td>
+                                                                {outPar.cells}
+                                                                <td className="px-1 sm:px-3 py-1.5 sm:py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700">{outPar.sum || "-"}</td>
+                                                            </tr>
+                                                            <tr className="font-bold text-zinc-900 dark:text-zinc-100 bg-white dark:bg-zinc-900">
+                                                                <td className="px-1 sm:px-3 py-2 sm:py-2.5 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700">SCORE</td>
+                                                                {outScore.cells}
+                                                                <td className="px-1 sm:px-3 py-2 sm:py-2.5 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700 text-brand-navy">{outScore.sum || "-"}</td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+
+                                            {/* IN Course */}
+                                            <div className="border border-zinc-200 dark:border-zinc-700 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm">
+                                                <div className="overflow-x-auto">
+                                                    <table className="w-full text-center text-[10px] sm:text-sm min-w-full">
+                                                        <thead>
+                                                            <tr className="bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-600 dark:text-zinc-300">
+                                                                <th className="px-1 sm:px-3 py-2 sm:py-3 w-10 sm:w-16 bg-zinc-100 dark:bg-zinc-900/50 border-r border-zinc-200 dark:border-zinc-700 whitespace-nowrap">HOLE</th>
+                                                                {[10,11,12,13,14,15,16,17,18].map(h => (
+                                                                    <th key={h} className="px-1 sm:px-2 py-2 sm:py-3 min-w-[22px] sm:min-w-[36px]">{h}</th>
+                                                                ))}
+                                                                <th className="px-1 sm:px-3 py-2 sm:py-3 bg-zinc-100 dark:bg-zinc-900/50 border-l border-zinc-200 dark:border-zinc-700 text-brand-navy w-10 sm:w-16 whitespace-nowrap">IN</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            <tr className="border-b border-zinc-100 dark:border-zinc-800 text-zinc-500 font-semibold bg-white dark:bg-zinc-900">
+                                                                <td className="px-1 sm:px-3 py-1.5 sm:py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700">PAR</td>
+                                                                {inPar.cells}
+                                                                <td className="px-1 sm:px-3 py-1.5 sm:py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700">{inPar.sum || "-"}</td>
+                                                            </tr>
+                                                            <tr className="font-bold text-zinc-900 dark:text-zinc-100 bg-white dark:bg-zinc-900">
+                                                                <td className="px-1 sm:px-3 py-2 sm:py-2.5 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700">SCORE</td>
+                                                                {inScore.cells}
+                                                                <td className="px-1 sm:px-3 py-2 sm:py-2.5 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700 text-brand-navy">{inScore.sum || "-"}</td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </>
+                                );
+                            })()}
 
                         </div>
                     )}

@@ -7,6 +7,7 @@ import { TournamentResult, getTournamentResults } from "@/lib/tournament-results
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
+import { getKstDateStr } from "@/lib/utils";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
 
 interface AthleteSummary {
@@ -61,8 +62,8 @@ export default function TournamentResultsViewPage() {
     const today = new Date();
     const defaultStart = new Date(today);
     defaultStart.setDate(today.getDate() - 7);
-    const [startDate, setStartDate] = useState(format(defaultStart, "yyyy-MM-dd"));
-    const [endDate, setEndDate] = useState(format(today, "yyyy-MM-dd"));
+    const [startDate, setStartDate] = useState(getKstDateStr(defaultStart));
+    const [endDate, setEndDate] = useState(getKstDateStr(today));
     const [activePreset, setActivePreset] = useState<ActivePreset>("weekly");
 
     const [categoryFilter, setCategoryFilter] = useState<TournamentCategory | "all">("all");
@@ -208,16 +209,16 @@ export default function TournamentResultsViewPage() {
 
     const applyPreset = (preset: "monthly" | "weekly" | "today") => {
         const now = new Date();
-        const endStr = format(now, "yyyy-MM-dd");
+        const endStr = getKstDateStr(now);
         if (preset === "monthly") {
             const past = new Date(now);
             past.setDate(now.getDate() - 30);
-            setStartDate(format(past, "yyyy-MM-dd"));
+            setStartDate(getKstDateStr(past));
             setEndDate(endStr);
         } else if (preset === "weekly") {
             const past = new Date(now);
             past.setDate(now.getDate() - 7);
-            setStartDate(format(past, "yyyy-MM-dd"));
+            setStartDate(getKstDateStr(past));
             setEndDate(endStr);
         } else {
             setStartDate(endStr);

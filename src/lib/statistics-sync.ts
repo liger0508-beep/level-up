@@ -1,5 +1,6 @@
 import { createClient } from "./supabase/client";
-import { format, endOfMonth } from "date-fns";
+import { endOfMonth } from "date-fns";
+import { getKstDateStr } from "./utils";
 
 export interface MonthlyStatistic {
     id: string; // user id
@@ -30,9 +31,9 @@ export async function fetchMonthlyStatistics(
     const supabase = createClient();
 
     // 1. Get dates
-    const startDate = format(new Date(year, month - 1, 1), "yyyy-MM-dd");
-    const endDate = format(endOfMonth(new Date(year, month - 1, 1)), "yyyy-MM-dd");
-    const monthString = format(new Date(year, month - 1, 1), "yyyy-MM");
+    const startDate = getKstDateStr(new Date(year, month - 1, 1));
+    const endDate = getKstDateStr(endOfMonth(new Date(year, month - 1, 1)));
+    const monthString = startDate.slice(0, 7);
 
     try {
         // 2. Fetch all athletes
@@ -93,8 +94,8 @@ export async function fetchMonthlyStatistics(
         const { data: records } = await supabase
             .from("records")
             .select("user_id, type, coach_id")
-            .gte("created_at", startDate + "T00:00:00.000Z")
-            .lte("created_at", endDate + "T23:59:59.999Z")
+            .gte("created_at", startDate + "T00:00:00+09:00")
+            .lte("created_at", endDate + "T23:59:59+09:00")
             .in("user_id", athleteIds);
 
         const recordsMap: Record<string, { lesson: number, lessonByCoach: number, training: number, trainingByCoach: number, measurement: number, score: number, journal: number, challenge: number }> = {};
@@ -148,8 +149,8 @@ export async function fetchMonthlyStatistics(
         const { data: activities } = await supabase
             .from("user_activity_logs")
             .select("user_id, activity_type")
-            .gte("created_at", startDate + "T00:00:00.000Z")
-            .lte("created_at", endDate + "T23:59:59.999Z")
+            .gte("created_at", startDate + "T00:00:00+09:00")
+            .lte("created_at", endDate + "T23:59:59+09:00")
             .in("user_id", athleteIds)
             // .catch() to silently ignore if table doesn't exist yet
             .then(res => res, err => ({ data: [] })); 

@@ -7,6 +7,7 @@ import { Trophy, Calendar, MapPin, Lock, ChevronLeft, Loader2, KeyRound, Plus, F
 import { createClient } from "@/lib/supabase/client";
 import { PageTitle } from "@/components/ui/Typography";
 import { LiveScoreModal } from "@/components/ui/LiveScoreModal";
+import { CrossCheckSignatureModal } from "@/components/ui/CrossCheckSignatureModal";
 import { SignaturePad } from "@/components/ui/SignaturePad";
 
 export default function TournamentDetailPage() {
@@ -26,10 +27,11 @@ export default function TournamentDetailPage() {
     const [draftId, setDraftId] = useState<string | null>(null);
     const [leaderboard, setLeaderboard] = useState<any[]>([]);
     const [scorecardsMap, setScorecardsMap] = useState<Record<string, any>>({});
+    const [leaderboardTab, setLeaderboardTab] = useState<'live' | 'pending'>('live');
 
     // Category & Live Score State
-    const [activeTab, setActiveTab] = useState<'total' | 'tee' | 'second' | 'around' | 'putting'>('total');
     const [selectedLiveScoreAthlete, setSelectedLiveScoreAthlete] = useState<{id: string, name: string} | null>(null);
+    const [selectedCrossCheckAthlete, setSelectedCrossCheckAthlete] = useState<{id: string, name: string, scorecardId: string} | null>(null);
 
     // Signature Modal State
     const [showSignatureModal, setShowSignatureModal] = useState(false);
@@ -121,14 +123,17 @@ export default function TournamentDetailPage() {
             // 6. Load Scorecards for Signature Status
             const { data: scData } = await supabase
                 .from("scorecards")
-                .select("id, athlete_id, marker_signature, player_signature, referee_signature")
+                .select("id, athlete_id, marker_id, marker_signature, player_signature, referee_signature")
                 .eq("tournament_id", tournamentId)
                 .eq("is_final", true);
                 
             if (scData) {
                 const map: Record<string, any> = {};
                 scData.forEach(sc => {
-                    map[sc.athlete_id] = sc;
+                    const targetId = sc.marker_id || sc.athlete_id;
+                    if (targetId) {
+                        map[targetId] = sc;
+                    }
                 });
                 setScorecardsMap(map);
             }
@@ -219,29 +224,65 @@ export default function TournamentDetailPage() {
         }
     };
 
-    // Sort leaderboard based on active tab
-    const sortedLeaderboard = [...leaderboard].sort((a, b) => {
-        if (activeTab === 'total') return a.total_score - b.total_score;
-        
-        // For SG tabs, higher is better (positive SG is good), so we sort descending.
-        // If values are null, we put them at the bottom.
-        const getVal = (item: any) => {
-            switch(activeTab) {
-                case 'tee': return item.rank_tee_shot;
-                case 'second': return item.rank_second_shot;
-                case 'around': return item.rank_around_green;
-                case 'putting': return item.rank_putting;
-                default: return null;
-            }
-        };
-        const valA = getVal(a);
-        const valB = getVal(b);
-        if (valA === null && valB === null) return 0;
-        if (valA === null) return 1;
-        if (valB === null) return -1;
-        return valB - valA; // Descending
-    });
+    const handleCancelPlayerSignature = async (scorecardId: string, athleteId: string) => {
+        try {
+            const supabase = createClient();
+            const { error } = await supabase
+                .from("scorecards")
+                .update({ 
+                    player_signature: null,
+                    player_signed_at: null
+                })
+                .eq("id", scorecardId);
 
+            if (error) {
+                console.error("선수 서명 취소 오류:", error);
+                alert("선수 서명 취소에 실패했습니다.");
+                return;
+            }
+
+            alert("선수 서명이 취소되었습니다.");
+            
+            setScorecardsMap(prev => ({
+                ...prev,
+                [athleteId]: {
+                    ...prev[athleteId],
+                    player_signature: null,
+                }
+            }));
+
+        } catch (err) {
+            console.error(err);
+            alert("오류가 발생했습니다.");
+        }
+    };
+
+    const handleDeleteTournament = async () => {
+        if (!window.confirm("정말 이 대회를 삭제하시겠습니까? 관련 데이터가 모두 삭제될 수 있습니다.")) return;
+        
+        const supabase = createClient();
+        const { error } = await supabase.from("score_tournaments").delete().eq("id", tournamentId);
+        
+        if (error) {
+            alert("삭제 중 오류가 발생했습니다.");
+            console.error(error);
+        } else {
+            alert("대회가 삭제되었습니다.");
+            router.push("/scores/tournaments");
+        }
+    };
+
+    // Filter and Sort leaderboard
+    const displayLeaderboard = [...leaderboard]
+        .filter(lb => {
+            if (leaderboardTab === 'live') return true;
+            // 'pending' 탭: 18홀을 마쳤으나 아직 선수 또는 경기위원 서명이 완료되지 않은 경우
+            const sc = scorecardsMap[lb.athlete?.id];
+            const hasPlayerSig = !!sc?.player_signature;
+            const hasRefereeSig = !!sc?.referee_signature;
+            return lb.thru_hole === 18 && (!hasPlayerSig || !hasRefereeSig);
+        })
+        .sort((a, b) => a.total_score - b.total_score);
     if (loading || checkingAccess) {
         return (
             <div className="flex flex-col justify-center items-center h-64 gap-4">
@@ -311,7 +352,26 @@ export default function TournamentDetailPage() {
                 대회 목록
             </button>
 
-            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 mb-8 shadow-sm">
+            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 mb-8 shadow-sm relative">
+                
+                {/* 우측 상단 수정/삭제 버튼 */}
+                {(userRole === 'admin' || userRole === 'superadmin' || tournament?.created_by === userId) && (
+                    <div className="absolute top-6 right-6 flex items-center gap-2">
+                        <Link
+                            href={`/scores/tournaments/${tournamentId}/edit`}
+                            className="px-3 py-1.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded-lg text-xs font-semibold transition-colors"
+                        >
+                            수정
+                        </Link>
+                        <button
+                            onClick={handleDeleteTournament}
+                            className="px-3 py-1.5 bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 rounded-lg text-xs font-semibold transition-colors"
+                        >
+                            삭제
+                        </button>
+                    </div>
+                )}
+
                 <div className="flex flex-wrap items-center gap-2 mb-3">
                     <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md ${
                         tournament?.status === '진행중' ? 'bg-brand-red text-white' :
@@ -325,7 +385,7 @@ export default function TournamentDetailPage() {
                     </span>
                 </div>
                 
-                <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-zinc-50 mb-4">
+                <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 dark:text-zinc-50 mb-4 pr-24">
                     {tournament?.name}
                 </h1>
                 
@@ -352,6 +412,30 @@ export default function TournamentDetailPage() {
                 </Link>
             </div>
 
+            {/* ── Tabs ── */}
+            <div className="flex overflow-x-auto scrollbar-hide gap-2 mb-4 pb-2">
+                <button
+                    onClick={() => setLeaderboardTab('live')}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors border shadow-sm ${
+                        leaderboardTab === 'live' 
+                            ? "bg-brand-navy border-brand-navy text-white" 
+                            : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                    }`}
+                >
+                    LIVE
+                </button>
+                <button
+                    onClick={() => setLeaderboardTab('pending')}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors border shadow-sm ${
+                        leaderboardTab === 'pending' 
+                            ? "bg-brand-navy border-brand-navy text-white" 
+                            : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                    }`}
+                >
+                    서명 대기
+                </button>
+            </div>
+
             {leaderboard.length === 0 ? (
                 <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-10 text-center text-zinc-500 shadow-sm">
                     <Trophy className="w-12 h-12 text-zinc-300 dark:text-zinc-700 mx-auto mb-4" />
@@ -360,60 +444,28 @@ export default function TournamentDetailPage() {
                 </div>
             ) : (
                 <div className="space-y-4">
-                    {/* ── Category Tabs ── */}
-                    <div className="flex overflow-x-auto scrollbar-hide gap-2 pb-2">
-                        {[
-                            { id: 'total', label: '종합' },
-                            { id: 'tee', label: '티샷' },
-                            { id: 'second', label: '세컨샷' },
-                            { id: 'around', label: '그린주변' },
-                            { id: 'putting', label: '퍼팅' }
-                        ].map(tab => (
-                            <button
-                                key={tab.id}
-                                onClick={() => setActiveTab(tab.id as any)}
-                                className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors border shadow-sm ${
-                                    activeTab === tab.id 
-                                        ? "bg-brand-navy border-brand-navy text-white" 
-                                        : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
-                                }`}
-                            >
-                                {tab.label}
-                            </button>
-                        ))}
-                    </div>
-
                     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl overflow-hidden shadow-sm">
                         <div className="overflow-x-auto">
-                            <table className="w-full text-left border-collapse min-w-[500px]">
+                            <table className="w-full text-left border-collapse min-w-full">
                                 <thead>
                                     <tr className="bg-zinc-50/50 dark:bg-zinc-800/50 border-b border-zinc-200 dark:border-zinc-800 text-[11px] uppercase tracking-wider text-zinc-500 dark:text-zinc-400 font-bold">
-                                        <th className="px-6 py-4 w-20 text-center">순위</th>
-                                        <th className="px-6 py-4">선수명</th>
-                                        <th className="px-6 py-4 text-center">Thru</th>
-                                        <th className="px-6 py-4 text-right">
-                                            {activeTab === 'total' ? 'Total' : 'SG'}
-                                        </th>
-                                        <th className="px-6 py-4 text-center">상태(서명)</th>
+                                        <th className="px-2 sm:px-6 py-4 w-12 sm:w-20 text-center whitespace-nowrap">순위</th>
+                                        <th className="px-2 sm:px-6 py-4 text-center whitespace-nowrap">선수명</th>
+                                        {leaderboardTab === 'live' && (
+                                            <th className="px-2 sm:px-6 py-4 text-center whitespace-nowrap">Thru</th>
+                                        )}
+                                        <th className="px-2 sm:px-6 py-4 text-center whitespace-nowrap">Total</th>
+                                        {leaderboardTab === 'pending' && (
+                                            <th className="px-2 sm:px-6 py-4 text-center whitespace-nowrap">상태</th>
+                                        )}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-                                    {sortedLeaderboard.map((lb, index) => {
+                                    {displayLeaderboard.map((lb, index) => {
                                         // Calculate relative score assuming Par 72 for 18 holes (temporary logic, can be refined based on actual course data)
                                         const par = lb.thru_hole === 9 ? 36 : 72;
                                         const relativeScore = lb.total_score - par;
                                         const relativeText = relativeScore > 0 ? `+${relativeScore}` : relativeScore === 0 ? "E" : `${relativeScore}`;
-                                        
-                                        // SG text
-                                        let sgVal = null;
-                                        switch(activeTab) {
-                                            case 'tee': sgVal = lb.rank_tee_shot; break;
-                                            case 'second': sgVal = lb.rank_second_shot; break;
-                                            case 'around': sgVal = lb.rank_around_green; break;
-                                            case 'putting': sgVal = lb.rank_putting; break;
-                                        }
-                                        const sgText = sgVal !== null ? (sgVal > 0 ? `+${Number(sgVal).toFixed(2)}` : Number(sgVal).toFixed(2)) : "-";
-                                        const sgColor = sgVal !== null ? (sgVal > 0 ? 'text-blue-500' : sgVal < 0 ? 'text-red-500' : 'text-zinc-600 dark:text-zinc-400') : 'text-zinc-300';
                                         
                                         // Signature Status
                                         const sc = scorecardsMap[lb.athlete?.id];
@@ -421,16 +473,16 @@ export default function TournamentDetailPage() {
                                         const hasPlayerSig = !!sc?.player_signature;
                                         const hasRefereeSig = !!sc?.referee_signature;
                                         const isFinalComplete = hasPlayerSig && hasRefereeSig;
-                                        const isCoachOrAdmin = userRole === 'coach' || userRole === 'superadmin';
+                                        const isCoachOrAdmin = userRole === 'coach' || userRole === 'admin' || userRole === 'superadmin';
                                         const isOwnRow = userId === lb.athlete?.id;
                                     
                                     return (
                                         <tr 
                                             key={lb.id} 
-                                            className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer group"
-                                            onClick={() => setSelectedLiveScoreAthlete({ id: lb.athlete?.id, name: lb.athlete?.name || '알 수 없음' })}
+                                            tabIndex={0}
+                                            className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50 transition-colors group relative outline-none"
                                         >
-                                            <td className="px-6 py-4">
+                                            <td className="px-2 sm:px-6 py-4">
                                                 <div className="flex justify-center items-center">
                                                     {index === 0 ? (
                                                         <div className="w-8 h-8 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-black flex items-center justify-center text-sm shadow-sm border border-amber-200 dark:border-amber-800/50">
@@ -451,65 +503,95 @@ export default function TournamentDetailPage() {
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4 font-semibold text-zinc-900 dark:text-zinc-100 text-[15px] cursor-pointer" onClick={() => setSelectedLiveScoreAthlete({ id: lb.athlete?.id, name: lb.athlete?.name || '알 수 없음' })}>
+                                            <td className="px-2 sm:px-6 py-4 font-semibold text-zinc-900 dark:text-zinc-100 text-[14px] sm:text-[15px] cursor-pointer text-center" onClick={() => setSelectedLiveScoreAthlete({ id: lb.athlete?.id, name: lb.athlete?.name || '알 수 없음' })}>
                                                 <span className="hover:underline">{lb.athlete?.name || "알 수 없음"}</span>
                                             </td>
-                                            <td className="px-6 py-4 text-center cursor-pointer" onClick={() => setSelectedLiveScoreAthlete({ id: lb.athlete?.id, name: lb.athlete?.name || '알 수 없음' })}>
-                                                {lb.thru_hole === 18 ? (
-                                                    <span className="text-[11px] font-bold text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded">F</span>
-                                                ) : (
-                                                    <span className="text-sm font-semibold text-brand-navy">{lb.thru_hole}</span>
-                                                )}
-                                            </td>
-                                            <td className="px-6 py-4 text-right">
-                                                {activeTab === 'total' ? (
-                                                    <div className="flex flex-col items-end">
-                                                        <span className={`text-lg font-black tracking-tight ${relativeScore < 0 ? 'text-red-500' : relativeScore > 0 ? 'text-blue-500' : 'text-zinc-900 dark:text-white'}`}>
-                                                            {relativeText}
-                                                        </span>
-                                                        <span className="text-[10px] text-zinc-400 font-semibold">{lb.total_score}타</span>
-                                                    </div>
-                                                ) : (
-                                                    <span className={`text-lg font-black tracking-tight ${sgColor}`}>
-                                                        {sgText}
+                                            {leaderboardTab === 'live' && (
+                                                <td className="px-2 sm:px-6 py-4 text-center cursor-pointer" onClick={() => setSelectedLiveScoreAthlete({ id: lb.athlete?.id, name: lb.athlete?.name || '알 수 없음' })}>
+                                                    {lb.thru_hole === 18 ? (
+                                                        <span className="text-[11px] font-bold text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-2 py-1 rounded">F</span>
+                                                    ) : (
+                                                        <span className="text-sm font-semibold text-brand-navy">{lb.thru_hole}</span>
+                                                    )}
+                                                </td>
+                                            )}
+                                            <td className="px-2 sm:px-6 py-4 text-center">
+                                                <div className="flex flex-col items-center">
+                                                    <span className={`text-lg font-black tracking-tight ${relativeScore < 0 ? 'text-red-500' : relativeScore > 0 ? 'text-blue-500' : 'text-zinc-900 dark:text-white'}`}>
+                                                        {relativeText}
                                                     </span>
-                                                )}
+                                                    <span className="text-[10px] text-zinc-400 font-semibold">{lb.total_score}타</span>
+                                                </div>
                                             </td>
-                                            <td className="px-6 py-4 text-center">
-                                                {!is18Completed ? (
-                                                    <span className="text-xs text-zinc-400 font-semibold">경기중</span>
-                                                ) : isFinalComplete ? (
-                                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 px-2.5 py-1.5 rounded-lg border border-green-200 dark:border-green-800/50">
-                                                        <CheckCircle2 size={14} /> 최종 완료
-                                                    </span>
-                                                ) : (
-                                                    <div className="flex flex-col items-center gap-1.5">
-                                                        {(!hasPlayerSig && isOwnRow) && (
-                                                            <button 
-                                                                onClick={(e) => { e.stopPropagation(); setTargetScorecardId(sc.id); setSignatureType('player'); setSignatureStep('marker'); setShowSignatureModal(true); }}
-                                                                className="text-[11px] font-semibold bg-brand-navy text-white px-2.5 py-1.5 rounded-lg hover:bg-brand-navy/90 transition-colors shadow-sm whitespace-nowrap"
-                                                            >
-                                                                마커/선수 서명하기
-                                                            </button>
-                                                        )}
-                                                        {(!hasPlayerSig && !isOwnRow) && (
-                                                            <span className="text-[11px] text-zinc-400 font-semibold border border-zinc-200 dark:border-zinc-700 px-2 py-1 rounded-md">선수 서명 대기중</span>
-                                                        )}
-                                                        
-                                                        {(hasPlayerSig && !hasRefereeSig && isCoachOrAdmin) && (
-                                                            <button 
-                                                                onClick={(e) => { e.stopPropagation(); setTargetScorecardId(sc.id); setSignatureType('referee'); setSignatureStep('referee'); setShowSignatureModal(true); }}
-                                                                className="text-[11px] font-semibold bg-amber-500 text-white px-2.5 py-1.5 rounded-lg hover:bg-amber-600 transition-colors shadow-sm whitespace-nowrap"
-                                                            >
-                                                                경기위원 서명하기
-                                                            </button>
-                                                        )}
-                                                        {(hasPlayerSig && !hasRefereeSig && !isCoachOrAdmin) && (
-                                                            <span className="text-[11px] text-zinc-400 font-semibold border border-zinc-200 dark:border-zinc-700 px-2 py-1 rounded-md">경기위원 서명 대기중</span>
+                                            {leaderboardTab === 'pending' && (
+                                                <td className="px-2 sm:px-6 py-4 text-center">
+                                                    <div className="flex flex-col gap-2 items-center justify-center">
+                                                        {hasPlayerSig ? (
+                                                            <>
+                                                                {/* 1. Player Signature (Top) */}
+                                                                {((isOwnRow || isCoachOrAdmin) && !hasRefereeSig) ? (
+                                                                    <button 
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (window.confirm("선수 서명을 취소하시겠습니까?")) {
+                                                                                handleCancelPlayerSignature(sc.id, lb.athlete?.id);
+                                                                            }
+                                                                        }}
+                                                                        className="text-[11px] font-semibold text-brand-navy bg-brand-navy/10 hover:bg-brand-navy/20 dark:text-brand-navy-light dark:bg-brand-navy/20 dark:hover:bg-brand-navy/30 transition-colors px-2 py-1.5 rounded-lg w-full max-w-[120px]"
+                                                                    >
+                                                                        선수 서명 완료 (취소)
+                                                                    </button>
+                                                                ) : (
+                                                                    <span className="text-[11px] font-semibold text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-1.5 rounded-lg w-full max-w-[120px]">선수 서명 완료</span>
+                                                                )}
+
+                                                                {/* 2. Referee Signature (Bottom) */}
+                                                                {hasRefereeSig ? (
+                                                                    <span className="text-[11px] font-semibold text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-1.5 rounded-lg w-full max-w-[120px]">경기위원 서명 완료</span>
+                                                                ) : isCoachOrAdmin ? (
+                                                                    <button 
+                                                                        onClick={(e) => { 
+                                                                            e.stopPropagation(); 
+                                                                            if (sc) {
+                                                                                setTargetScorecardId(sc.id); setSignatureType('referee'); setSignatureStep('referee'); setShowSignatureModal(true); 
+                                                                            }
+                                                                        }}
+                                                                        className="text-[11px] font-bold bg-amber-500 text-white px-2 py-1.5 rounded-lg shadow-sm hover:bg-amber-600 transition-colors w-full max-w-[120px]"
+                                                                    >
+                                                                        경기위원 서명
+                                                                    </button>
+                                                                ) : (
+                                                                    <span className="text-[11px] text-zinc-400 font-semibold border border-zinc-200 dark:border-zinc-700 px-2 py-1.5 rounded-lg bg-white dark:bg-zinc-800 w-full max-w-[120px]">경기위원 대기중</span>
+                                                                )}
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                {/* 1. Marker Signature (Top) */}
+                                                                <span className="text-[11px] font-semibold text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-1.5 rounded-lg w-full max-w-[120px]">마커 서명 완료</span>
+                                                                
+                                                                {/* 2. Player Signature (Bottom) */}
+                                                                {(isOwnRow || isCoachOrAdmin) ? (
+                                                                    <button 
+                                                                        onClick={(e) => { 
+                                                                            e.stopPropagation(); 
+                                                                            if (sc) {
+                                                                                setSelectedCrossCheckAthlete({ id: lb.athlete?.id, name: lb.athlete?.name || '알 수 없음', scorecardId: sc.id });
+                                                                            } else {
+                                                                                alert('공식 스코어카드를 찾을 수 없습니다.');
+                                                                            }
+                                                                        }}
+                                                                        className="text-[11px] font-bold bg-brand-navy text-white px-2 py-1.5 rounded-lg shadow-sm hover:bg-brand-navy/90 transition-colors w-full max-w-[120px]"
+                                                                    >
+                                                                        선수 서명 (체크)
+                                                                    </button>
+                                                                ) : (
+                                                                    <span className="text-[11px] text-zinc-400 font-semibold border border-zinc-200 dark:border-zinc-700 px-2 py-1.5 rounded-lg bg-white dark:bg-zinc-800 w-full max-w-[120px]">선수 대기중</span>
+                                                                )}
+                                                            </>
                                                         )}
                                                     </div>
-                                                )}
-                                            </td>
+                                                </td>
+                                            )}
                                         </tr>
                                     );
                                 })}
@@ -530,6 +612,32 @@ export default function TournamentDetailPage() {
                     athleteName={selectedLiveScoreAthlete.name}
                 />
             )}
+
+            {/* ── Cross Check Modal ── */}
+            {selectedCrossCheckAthlete && (
+                <CrossCheckSignatureModal
+                    isOpen={!!selectedCrossCheckAthlete}
+                    onClose={() => setSelectedCrossCheckAthlete(null)}
+                    tournamentId={tournamentId}
+                    athleteId={selectedCrossCheckAthlete.id}
+                    athleteName={selectedCrossCheckAthlete.name}
+                    scorecardId={selectedCrossCheckAthlete.scorecardId}
+                    hasPlayerSig={!!scorecardsMap[selectedCrossCheckAthlete.id]?.player_signature}
+                    hasMarkerSig={true}
+                    onSignAsPlayer={() => {
+                        setSelectedCrossCheckAthlete(null);
+                        setTargetScorecardId(selectedCrossCheckAthlete.scorecardId);
+                        setSignatureType('player');
+                        setSignatureStep('player'); // 마커 서명 스킵하고 선수 서명으로 직행
+                        setShowSignatureModal(true);
+                    }}
+                    onCancelMarkerSig={() => {
+                        setSelectedCrossCheckAthlete(null);
+                        router.push(`/scores/create?id=${selectedCrossCheckAthlete.scorecardId}&tournament_id=${tournamentId}`);
+                    }}
+                />
+            )}
+
             {/* ── Signature Modal ── */}
             {showSignatureModal && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">

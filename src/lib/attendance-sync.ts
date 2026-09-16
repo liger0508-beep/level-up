@@ -1,5 +1,6 @@
 import { createClient } from "./supabase/client";
 import { format } from "date-fns";
+import { getKstDateStr } from "./utils";
 
 export interface AttendanceRecord {
     id: string;
@@ -40,7 +41,7 @@ export async function fetchAttendance(date: string, branch: string = "all") {
 
 export async function checkInAthlete(athleteId: string, branch: string) {
     const supabase = createClient();
-    const date = format(new Date(), "yyyy-MM-dd");
+    const date = getKstDateStr();
     const now = new Date().toISOString();
 
     // Check if already checked in today at this branch
@@ -72,8 +73,8 @@ export async function checkInAthlete(athleteId: string, branch: string) {
 
 export async function fetchMonthlyAttendance(athleteId: string, year: number, month: number) {
     const supabase = createClient();
-    const startDate = format(new Date(year, month - 1, 1), "yyyy-MM-dd");
-    const endDate = format(new Date(year, month, 0), "yyyy-MM-dd");
+    const startDate = getKstDateStr(new Date(year, month - 1, 1));
+    const endDate = getKstDateStr(new Date(year, month, 0));
 
     const { data, error } = await supabase
         .from("attendance")

@@ -32,12 +32,13 @@ import {
 import { getStoredTournaments } from "@/lib/tournament-sync";
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, addMonths, subMonths } from "date-fns";
 import { ko } from "date-fns/locale";
+import { getKstDateStr } from "@/lib/utils";
 
 const BRANCHES = ["조이마루점", "구미점"];
 
 export default function AttendancePage() {
     const [activeTab, setActiveTab] = useState<"daily" | "stats">("daily");
-    const [selectedDate, setSelectedDate] = useState(() => format(new Date(), "yyyy-MM-dd"));
+    const [selectedDate, setSelectedDate] = useState(() => getKstDateStr());
     const [selectedBranch, setSelectedBranch] = useState("조이마루점");
     const [attendanceList, setAttendanceList] = useState<AttendanceRecord[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -140,8 +141,8 @@ export default function AttendancePage() {
     }
 
     async function fetchAllAttendanceForMonth(monthDate: Date) {
-        const start = format(startOfMonth(monthDate), "yyyy-MM-dd");
-        const end = format(endOfMonth(monthDate), "yyyy-MM-dd");
+        const start = getKstDateStr(startOfMonth(monthDate));
+        const end = getKstDateStr(endOfMonth(monthDate));
         const { data } = await supabase
             .from("attendance")
             .select("*")
@@ -348,7 +349,7 @@ export default function AttendancePage() {
                                                             <div className="flex items-center gap-1.5 mt-0.5">
                                                                 <Clock size={10} className="text-zinc-400" />
                                                                 <p className="text-[10px] font-bold text-brand-navy dark:text-brand-navy-light uppercase">
-                                                                    {format(new Date(item.check_in_at), "HH:mm:ss")} 출석
+                                                                    {new Date(item.check_in_at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit', second: '2-digit' })} 출석
                                                                 </p>
                                                             </div>
                                                         </div>

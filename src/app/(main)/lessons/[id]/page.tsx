@@ -11,7 +11,7 @@ import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { fetchLessonTemplates, LessonTemplate } from "@/lib/lesson-template-sync";
 import { parseMediaUrls, fetchComments, saveComment, updateComment, deleteComment, AnalysisComment } from "@/lib/analysis-sync";
-import { cn } from "@/lib/utils";
+import { cn, getYoutubeEmbedUrl, getKstDateStr } from "@/lib/utils";
 import { CustomVideoPlayer } from "@/components/ui/CustomVideoPlayer";
 import dynamic from 'next/dynamic';
 
@@ -263,7 +263,7 @@ export default function LessonDetailPage() {
 
             if (directorCommentInput.trim() && !directorComment && lesson.coach_id && lesson.coach_id !== currentUser?.id) {
                 const supabase = createClient();
-                const todayStr = new Date().toISOString().split('T')[0];
+                const todayStr = getKstDateStr();
                 await supabase.from("todos").insert({
                     user_id: lesson.coach_id,
                     assigner_id: currentUser?.id,

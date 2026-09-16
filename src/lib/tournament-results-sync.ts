@@ -1,4 +1,5 @@
 import { createClient } from "./supabase/client";
+import { getKstDateStr } from "./utils";
 
 export interface TournamentResult {
     id?: string;
@@ -73,7 +74,7 @@ export function getDatesBetween(startDateStr: string, endDateStr: string, year: 
 
     let current = new Date(start);
     while (current <= end) {
-        dates.push(current.toISOString().split('T')[0]);
+        dates.push(getKstDateStr(current));
         current.setDate(current.getDate() + 1);
         
         // Safety break to prevent infinite loops if something goes wrong

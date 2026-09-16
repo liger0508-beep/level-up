@@ -1,4 +1,5 @@
-import { format, isSameDay } from "date-fns";
+import { isSameDay } from "date-fns";
+import { getKstDateStr, getKstTimeStr } from "./utils";
 import { ScheduleEvent } from "@/components/schedule/ScheduleCalendar";
 import { createClient } from "./supabase/client";
 
@@ -60,7 +61,7 @@ export async function getStoredEvents(startDate?: string, endDate?: string): Pro
     return (data || []).map((item: any) => {
         const isLocalCompleted = localCompleted.some((c: any) => 
             c.participantName === (item.users?.name || "") &&
-            c.date === format(new Date(item.start_time), "yyyy-MM-dd") &&
+            c.date === getKstDateStr(item.start_time) &&
             c.type === mapEventType(item.event_type, item.title)
         );
 
@@ -264,8 +265,8 @@ export function isCompleted(participantName: string, date: Date, type: string, t
     if (!stored) return false;
     try {
         const completed = JSON.parse(stored);
-        const dateStr = format(date, "yyyy-MM-dd");
-        const timeStr = time || format(date, "HH:mm");
+        const dateStr = getKstDateStr(date);
+        const timeStr = time || getKstTimeStr(date);
         
         return completed.some((c: any) =>
             c.participantName === participantName &&

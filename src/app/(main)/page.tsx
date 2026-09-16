@@ -28,9 +28,10 @@ import {
   Lightbulb,
   Award,
   Video,
-  FileText
+  FileText,
+  PieChart
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, getKstDateStr } from "@/lib/utils";
 import { getStoredEvents } from "@/lib/schedule-sync";
 import { getPolls, Vote, VOTE_TYPE_COLORS, VOTE_TYPE_LABELS } from "@/lib/vote-sync";
 import { getNotices, Notice, getPlainText } from "@/lib/notice-sync";
@@ -42,13 +43,14 @@ import { PageTitle, SectionTitle, LabelText } from "@/components/ui/Typography";
 
 /* ──────── Master Shortcut Library ──────── */
 const ALL_SHORTCUTS = [
-  { id: "training", title: "훈련", icon: Dumbbell, color: "bg-emerald-50 border-transparent text-emerald-500 dark:bg-emerald-500/10 dark:border-transparent dark:text-emerald-400", href: "/training" },
   { id: "lessons", title: "레슨", icon: BookOpen, color: "bg-blue-50 border-transparent text-blue-500 dark:bg-blue-500/10 dark:border-transparent dark:text-blue-400", href: "/lessons" },
+  { id: "training", title: "훈련", icon: Dumbbell, color: "bg-emerald-50 border-transparent text-emerald-500 dark:bg-emerald-500/10 dark:border-transparent dark:text-emerald-400", href: "/training" },
   { id: "challenges", title: "챌린지", icon: Trophy, color: "bg-rose-50 border-transparent text-rose-500 dark:bg-rose-500/10 dark:border-transparent dark:text-rose-400", href: "/training/challenges" },
   { id: "tournament-schedule", title: "대회 스케쥴", icon: Calendar, color: "bg-teal-50 border-transparent text-teal-500 dark:bg-teal-500/10 dark:border-transparent dark:text-teal-400", href: "/admin/tournament-schedule" },
   { id: "tournament-results", title: "대회 결과", icon: Award, color: "bg-amber-50 border-transparent text-amber-500 dark:bg-amber-500/10 dark:border-transparent dark:text-amber-400", href: "/admin/tournament-results" },
   { id: "schedule", title: "스케쥴", icon: Calendar, color: "bg-cyan-50 border-transparent text-cyan-500 dark:bg-cyan-500/10 dark:border-transparent dark:text-cyan-400", href: "/schedule" },
   { id: "scores", title: "스코어", icon: Flag, color: "bg-sky-50 border-transparent text-sky-500 dark:bg-sky-500/10 dark:border-transparent dark:text-sky-400", href: "/scores" },
+  { id: "category-stats", title: "항목별 통계", icon: PieChart, color: "bg-pink-50 border-transparent text-pink-500 dark:bg-pink-500/10 dark:border-transparent dark:text-pink-400", href: "/scores/category-stats" },
   { id: "community", title: "공지사항", icon: Bell, color: "bg-indigo-50 border-transparent text-indigo-500 dark:bg-indigo-500/10 dark:border-transparent dark:text-indigo-400", href: "/community" },
   { id: "polls", title: "투표", icon: BarChart3, color: "bg-violet-50 border-transparent text-violet-500 dark:bg-violet-500/10 dark:border-transparent dark:text-violet-400", href: "/admin/polls" },
   { id: "consultations", title: "상담", icon: MessageSquare, color: "bg-amber-50 border-transparent text-amber-500 dark:bg-amber-500/10 dark:border-transparent dark:text-amber-400", href: "/consultations" },
@@ -82,7 +84,8 @@ function FeedCard({ item }: { item: any }) {
   const config = typeConfigs[item.type] || typeConfigs.etc;
   const Icon = config.icon;
   const timeAgo = formatDistanceToNow(new Date(item.created_at), { addSuffix: true, locale: ko });
-  const dateStr = format(new Date(item.created_at), "yy.MM.dd");
+  const dStr = new Date(item.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+  const dateStr = dStr.slice(2).replace(/-/g, '.');
   const playerName = item.users?.name || "선수";
   const authorName = item.coach?.name || "관리자";
 
@@ -228,10 +231,10 @@ export default function Home() {
         }
 
         // 1. Calculate Average Score
-        const todayStr = format(new Date(), "yyyy-MM-dd");
+        const todayStr = getKstDateStr();
         const now = new Date();
-        const startOfMonth = format(new Date(now.getFullYear(), now.getMonth(), 1), "yyyy-MM-dd");
-        const endOfMonth = format(new Date(now.getFullYear(), now.getMonth() + 1, 0), "yyyy-MM-dd");
+        const startOfMonth = getKstDateStr(new Date(now.getFullYear(), now.getMonth(), 1));
+        const endOfMonth = getKstDateStr(new Date(now.getFullYear(), now.getMonth() + 1, 0));
 
         if (scoreTargetAthleteIds.length > 0) {
           const { data: scoreData } = await supabase
@@ -303,18 +306,13 @@ export default function Home() {
           }
         }
 
-        const startOfToday = new Date();
-        startOfToday.setHours(0, 0, 0, 0);
-        const endOfToday = new Date();
-        endOfToday.setHours(23, 59, 59, 999);
-
         // Fetch today's records for completion checks
         const { data: todayRecords } = await supabase
           .from("records")
           .select("id, type, title, category, created_at")
           .eq("user_id", user.id)
-          .gte("created_at", startOfToday.toISOString())
-          .lte("created_at", endOfToday.toISOString());
+          .gte("created_at", todayStr + "T00:00:00+09:00")
+          .lte("created_at", todayStr + "T23:59:59+09:00");
 
         // Fetch today's scores
         const { data: todayScores } = await supabase
@@ -416,7 +414,7 @@ export default function Home() {
             const isCompletedInLogs = at.completion_logs?.some((log: string) => {
               try {
                 const ts = log.startsWith('{') ? JSON.parse(log).timestamp : log;
-                return format(new Date(ts), "yyyy-MM-dd") === todayStr;
+                return getKstDateStr(ts) === todayStr;
               } catch { return false; }
             });
 
@@ -451,7 +449,7 @@ export default function Home() {
             );
             return {
               id: s.id,
-              time: format(new Date(s.start), "HH:mm"),
+              time: new Date(s.start).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' }),
               title: s.title,
               type: 'schedule',
               completed: s.status === 'completed' || isCompletedByRecord
@@ -475,7 +473,7 @@ export default function Home() {
             return !isJournal && !isUsedInTraining && !matchesSchedule;
           }).map(r => ({
             id: `record-${r.id}`,
-            time: format(new Date(r.created_at), "HH:mm"),
+            time: new Date(r.created_at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' }),
             title: r.title || typeLabels[r.type] || "기록",
             type: r.type,
             completed: true
@@ -483,7 +481,7 @@ export default function Home() {
           // Add scorecards from today
           ...(todayScores || []).map(s => ({
             id: `score-${s.id}`,
-            time: format(new Date(s.created_at), "HH:mm"),
+            time: new Date(s.created_at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' }),
             title: `${s.course_name} 스코어 입력`,
             type: 'score',
             completed: true
@@ -525,7 +523,7 @@ export default function Home() {
   const handleToggleItem = async (item: any) => {
     const supabase = createClient();
     const isCurrentlyCompleted = item.completed;
-    const todayStr = format(new Date(), "yyyy-MM-dd");
+    const todayStr = getKstDateStr();
 
     try {
       if (item.type === 'todo') {
@@ -562,7 +560,7 @@ export default function Home() {
             logs = logs.filter((log: string) => {
               try {
                 const ts = log.startsWith('{') ? JSON.parse(log).timestamp : log;
-                return format(new Date(ts), "yyyy-MM-dd") !== todayStr;
+                return getKstDateStr(ts) !== todayStr;
               } catch { return true; }
             });
           }

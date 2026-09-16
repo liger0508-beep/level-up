@@ -12,7 +12,7 @@ import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { fetchAthletes } from "@/lib/athlete-sync";
 import { createClient } from "@/lib/supabase/client";
 import { DatePresets, DatePresetType } from "@/components/ui/DatePresets";
-import { cn } from "@/lib/utils";
+import { cn, getKstDateStr } from "@/lib/utils";
 import { format } from "date-fns";
 import { PageTitle, SectionTitle, LabelText } from "@/components/ui/Typography";
 
@@ -217,10 +217,7 @@ export default function LessonsPage() {
             // Fetch actual lessons from DB is now handled in a separate useEffect for pagination
 
             // Fetch today's schedule out of the new 'schedules' table
-            const startOfDay = new Date();
-            startOfDay.setHours(0, 0, 0, 0);
-            const endOfDay = new Date();
-            endOfDay.setHours(23, 59, 59, 999);
+            const dateStr = getKstDateStr();
 
             let scheduleQuery = supabase
                 .from("schedules")
@@ -234,8 +231,8 @@ export default function LessonsPage() {
                     users!schedules_user_id_fkey(name)
                 `)
                 .eq("event_type", "lesson")
-                .gte("start_time", startOfDay.toISOString())
-                .lte("start_time", endOfDay.toISOString())
+                .gte("start_time", dateStr + "T00:00:00+09:00")
+                .lte("start_time", dateStr + "T23:59:59+09:00")
                 .order("start_time", { ascending: true });
 
             if (currentRole === 'athlete' && user) {
@@ -245,9 +242,7 @@ export default function LessonsPage() {
             const { data: scheduleData, error: scheduleError } = await scheduleQuery;
             if (!scheduleError && scheduleData) {
                 const formattedSchedules = scheduleData.map((item: any) => {
-                    const dStart = new Date(item.start_time);
-                    const dEnd = new Date(item.end_time);
-                    const timeStr = `${dStart.getHours().toString().padStart(2, '0')}:${dStart.getMinutes().toString().padStart(2, '0')}~${dEnd.getHours().toString().padStart(2, '0')}:${dEnd.getMinutes().toString().padStart(2, '0')}`;
+                    const timeStr = `${new Date(item.start_time).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' })}~${new Date(item.end_time).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' })}`;
 
                     return {
                         id: item.id,
@@ -286,10 +281,10 @@ export default function LessonsPage() {
                 query = query.eq("category", activeFilter);
             }
             if (startDate) {
-                query = query.gte("created_at", startDate);
+                query = query.gte("created_at", startDate + "T00:00:00+09:00");
             }
             if (endDate) {
-                query = query.lte("created_at", endDate + " 23:59:59");
+                query = query.lte("created_at", endDate + "T23:59:59+09:00");
             }
             if (!selectAll && selectedPlayers.size > 0) {
                 const { data: usersData } = await supabase.from("users").select("id").in("name", Array.from(selectedPlayers));
@@ -339,7 +334,7 @@ export default function LessonsPage() {
                 playerName: item.users?.name || "Unknown",
                 coachName: item.coach?.name || "Unknown",
                 comment: item.content || "",
-                date: item.created_at ? format(new Date(item.created_at), 'yyyy-MM-dd') : "",
+                date: item.created_at ? new Date(item.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }) : "",
                 is_corrected: item.is_corrected,
                 created_at: item.created_at,
                 connected_lesson_id: item.connected_lesson_id,

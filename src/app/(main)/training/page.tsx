@@ -219,9 +219,7 @@ export default function TrainingsPage() {
                     .gte("training_end", todayStr);
 
                 const formattedSchedules = (scheduleData || []).map((item: any) => {
-                    const dStart = new Date(item.start_time);
-                    const dEnd = new Date(item.end_time);
-                    const timeStr = `${dStart.getHours().toString().padStart(2, '0')}:${dStart.getMinutes().toString().padStart(2, '0')}~${dEnd.getHours().toString().padStart(2, '0')}:${dEnd.getMinutes().toString().padStart(2, '0')}`;
+                    const timeStr = `${new Date(item.start_time).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' })}~${new Date(item.end_time).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' })}`;
 
                     return {
                         id: item.id,
@@ -265,9 +263,7 @@ export default function TrainingsPage() {
                     .order("start_time", { ascending: true });
 
                 const formattedSchedules = (scheduleData || []).map((item: any) => {
-                    const dStart = new Date(item.start_time);
-                    const dEnd = new Date(item.end_time);
-                    const timeStr = `${dStart.getHours().toString().padStart(2, '0')}:${dStart.getMinutes().toString().padStart(2, '0')}~${dEnd.getHours().toString().padStart(2, '0')}:${dEnd.getMinutes().toString().padStart(2, '0')}`;
+                    const timeStr = `${new Date(item.start_time).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' })}~${new Date(item.end_time).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' })}`;
 
                     return {
                         id: item.id,
@@ -313,10 +309,10 @@ export default function TrainingsPage() {
                 query = query.eq("category", activeFilter);
             }
             if (startDate) {
-                query = query.gte("created_at", startDate);
+                query = query.gte("created_at", startDate + "T00:00:00+09:00");
             }
             if (endDate) {
-                query = query.lte("created_at", endDate + " 23:59:59");
+                query = query.lte("created_at", endDate + "T23:59:59+09:00");
             }
             if (!selectAll && selectedPlayers.size > 0) {
                 const { data: usersData } = await supabase.from("users").select("id").in("name", Array.from(selectedPlayers));
@@ -349,7 +345,7 @@ export default function TrainingsPage() {
                     content: r.content,
                     media_urls: r.media_urls,
                     created_at: r.created_at,
-                    date: r.created_at.split("T")[0],
+                    date: r.created_at ? new Date(r.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }) : "",
                     training_start: r.training_start,
                     training_end: r.training_end,
                     completion_logs: r.completion_logs,

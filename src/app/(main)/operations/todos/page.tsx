@@ -138,16 +138,11 @@ export default function TodoPage() {
         const { data: trainingData } = await trainingQuery;
 
         // 4. Fetch All other records for the date
-        const startOfSelectedDay = new Date(date);
-        startOfSelectedDay.setHours(0, 0, 0, 0);
-        const endOfSelectedDay = new Date(date);
-        endOfSelectedDay.setHours(23, 59, 59, 999);
-
         let recordsQuery = supabase
             .from("records")
             .select(`*, users!records_user_id_fkey(name)`)
-            .gte("created_at", startOfSelectedDay.toISOString())
-            .lte("created_at", endOfSelectedDay.toISOString());
+            .gte("created_at", date + "T00:00:00+09:00")
+            .lte("created_at", date + "T23:59:59+09:00");
 
         if (role === "athlete" || role === "parent") {
             recordsQuery = recordsQuery.eq("user_id", currentUserId);

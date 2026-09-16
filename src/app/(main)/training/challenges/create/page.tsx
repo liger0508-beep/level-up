@@ -328,6 +328,16 @@ function CreateTestContent() {
     const challengeSearchRef = useRef<HTMLDivElement>(null);
 
     const scrollRef = useRef<HTMLDivElement>(null);
+    const scrollPositionsRef = useRef<Record<string, number>>({});
+
+    useEffect(() => {
+        if (activePlayer) {
+            const savedY = scrollPositionsRef.current[activePlayer] || 0;
+            setTimeout(() => {
+                window.scrollTo({ top: savedY, behavior: 'instant' });
+            }, 10);
+        }
+    }, [activePlayer]);
 
     const scrollLeft = () => {
         if (scrollRef.current) {
@@ -870,7 +880,12 @@ function CreateTestContent() {
                                 {selectedPlayers.map(player => (
                                     <div
                                         key={player}
-                                        onClick={() => setActivePlayer(player)}
+                                        onClick={() => {
+                                            if (activePlayer) {
+                                                scrollPositionsRef.current[activePlayer] = window.scrollY;
+                                            }
+                                            setActivePlayer(player);
+                                        }}
                                         className={cn(
                                             "relative flex-shrink-0 inline-flex items-center justify-center min-w-[70px] px-3.5 py-1.5 rounded-full text-xs font-semibold border transition-all cursor-pointer select-none",
                                             activePlayer === player

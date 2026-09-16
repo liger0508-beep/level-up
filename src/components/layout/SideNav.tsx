@@ -220,20 +220,23 @@ export function SideNav() {
     const canShowMenu = (item: any) => {
         if (!userRole) return false;
 
+        const isSuperAdmin = userRole === "admin" || userRole === "super_admin" || userRole === "superadmin" || userName === "슈퍼관리자";
+        if (isSuperAdmin) return true;
+
+        const isHeadCoach = userRole === "coach" && userBranch === "총괄";
+
         // Hide Admin & System menus explicitly for athletes
         if (userRole === "athlete" && (item.title === "운영/관리" || item.title === "시스템 관리" || item.title === "테스트")) {
             return false;
         }
 
-        // Hide System menus explicitly for coaches
-        if (userRole === "coach" && item.title === "시스템 관리") {
+        // Hide System menus explicitly for coaches (unless Head Coach)
+        if (userRole === "coach" && item.title === "시스템 관리" && !isHeadCoach) {
             return false;
         }
 
         if (item.title === "테스트") {
-            const isSuperAdmin = userRole === "admin" || userName === "슈퍼관리자";
-            const isHeadCoach = userRole === "coach" && userBranch === "총괄";
-            if (!isSuperAdmin && !isHeadCoach) {
+            if (!isHeadCoach) {
                 return false;
             }
         }
@@ -248,13 +251,30 @@ export function SideNav() {
         const perm = permissions.find(p => p.menuKey === item.key);
         if (!perm) return true; // Default to visible if not in perm table (e.g. newly added)
 
+        // Head Coach uses 'office' permissions
+        if (isHeadCoach && perm.permissions["office"]) {
+            return perm.permissions["office"].read;
+        }
+
         return perm.permissions[userRole]?.read;
     };
 
     const canShowSubItem = (sub: any) => {
         if (!userRole) return false;
+        
+        const isSuperAdmin = userRole === "admin" || userRole === "super_admin" || userRole === "superadmin" || userName === "슈퍼관리자";
+        if (isSuperAdmin) return true;
+
+        const isHeadCoach = userRole === "coach" && userBranch === "총괄";
+
         const perm = permissions.find(p => p.menuKey === sub.key);
         if (!perm) return true;
+
+        // Head Coach uses 'office' permissions
+        if (isHeadCoach && perm.permissions["office"]) {
+            return perm.permissions["office"].read;
+        }
+
         return perm.permissions[userRole]?.read;
     };
 

@@ -1,5 +1,5 @@
 import { createClient } from "./supabase/client";
-
+import { getKstDateStr } from "./utils";
 export interface TrainingRecord {
     id: string;
     type: string; // Part: shot, pitch, bunker, approach, putt, physical, etc
@@ -71,7 +71,7 @@ export async function fetchTrainingRecords(filters?: { playerName?: string, cate
                 content: r.content,
                 media_urls: r.media_urls,
                 created_at: r.created_at,
-                date: r.created_at.split("T")[0],
+                date: r.created_at ? getKstDateStr(r.created_at) : "",
                 training_start: r.training_start,
                 training_end: r.training_end,
                 completion_logs: r.completion_logs,
@@ -140,7 +140,7 @@ export async function fetchRecentTrainingsByPlayer(playerName: string): Promise<
                 content: r.content,
                 media_urls: r.media_urls,
                 created_at: r.created_at,
-                date: r.created_at.split("T")[0],
+                date: r.created_at ? getKstDateStr(r.created_at) : "",
                 training_start: r.training_start,
                 training_end: r.training_end,
                 total_count: r.total_count,

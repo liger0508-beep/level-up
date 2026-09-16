@@ -1,4 +1,5 @@
 import { createClient } from "./supabase/client";
+import { getKstDateStr } from "./utils";
 import { fetchCourseRecordBypassRLS } from "@/app/(main)/course-management/actions";
 
 export interface CourseManagementRecord {
@@ -66,7 +67,7 @@ export async function fetchCourseRecords(): Promise<CourseManagementRecord[]> {
             content: r.content || "",
             media_urls: r.media_urls || [],
             created_at: r.created_at,
-            date: r.created_at.split("T")[0],
+            date: r.created_at ? getKstDateStr(r.created_at) : "",
             playerName: (r.user as any)?.name || "전체",
             coachName: (r.coach as any)?.name || "알 수 없음"
         }));
@@ -119,7 +120,7 @@ export async function fetchCourseRecordById(id: string): Promise<CourseManagemen
             content: data.content || "",
             media_urls: data.media_urls || [],
             created_at: data.created_at,
-            date: data.created_at.split("T")[0],
+            date: data.created_at ? getKstDateStr(data.created_at) : "",
             playerName: (data.user as any)?.name || "전체",
             coachName: (data.coach as any)?.name || "알 수 없음"
         };
