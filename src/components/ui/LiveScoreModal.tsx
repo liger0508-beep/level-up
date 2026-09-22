@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { cn } from '@/lib/utils';
 
 interface LiveScoreModalProps {
     isOpen: boolean;
@@ -10,9 +11,10 @@ interface LiveScoreModalProps {
     tournamentId: string;
     athleteId: string;
     athleteName: string;
+    usePlainNumbers?: boolean;
 }
 
-export function LiveScoreModal({ isOpen, onClose, tournamentId, athleteId, athleteName }: LiveScoreModalProps) {
+export function LiveScoreModal({ isOpen, onClose, tournamentId, athleteId, athleteName, usePlainNumbers = false }: LiveScoreModalProps) {
     const [loading, setLoading] = useState(true);
     const [scorecard, setScorecard] = useState<any>(null);
 
@@ -28,7 +30,7 @@ export function LiveScoreModal({ isOpen, onClose, tournamentId, athleteId, athle
                 .from("scorecards")
                 .select(`
                     id, total_score, hole_count, is_final,
-                    base_holes:scorecard_holes(hole_number, par),
+                    base_holes:scorecard_holes(hole_number, par, score),
                     marker_scores:tournament_marker_scores(hole_number, score)
                 `)
                 .eq("tournament_id", tournamentId)
@@ -42,12 +44,14 @@ export function LiveScoreModal({ isOpen, onClose, tournamentId, athleteId, athle
                 const holesMap = new Map();
                 
                 scData.base_holes?.forEach((h: any) => {
-                    holesMap.set(h.hole_number, { hole_number: h.hole_number, par: h.par, score: 0 });
+                    holesMap.set(h.hole_number, { hole_number: h.hole_number, par: h.par, score: h.score || 0 });
                 });
                 
                 scData.marker_scores?.forEach((m: any) => {
                     if (holesMap.has(m.hole_number)) {
-                        holesMap.get(m.hole_number).score = m.score;
+                        if (m.score > 0) {
+                            holesMap.get(m.hole_number).score = m.score;
+                        }
                     } else {
                         holesMap.set(m.hole_number, { hole_number: m.hole_number, par: 0, score: m.score });
                     }
@@ -119,20 +123,60 @@ export function LiveScoreModal({ isOpen, onClose, tournamentId, athleteId, athle
                                     let sum = 0;
                                     for (let i = start; i <= end; i++) {
                                         const hole = scorecard.holes?.find((h: any) => h.hole_number === i);
-                                        let scoreStr = "-";
-                                        let colorClass = "";
                                         
                                         if (hole && hole.score > 0 && hole.par > 0) {
                                             const s = hole.score;
                                             sum += s;
-                                            scoreStr = s.toString();
-                                            
                                             const diff = s - hole.par;
-                                            if (diff < 0) colorClass = "text-red-500";
-                                            else if (diff > 0) colorClass = "text-blue-500";
+                                            
+                                            
+                                            if (usePlainNumbers) {
+                                                let colorClass = "";
+                                                if (diff < 0) colorClass = "text-red-500";
+                                                else if (diff > 0) colorClass = "text-blue-500";
+                                                
+                                                cells.push(<td key={i} className={`px-1 sm:px-2 py-2 sm:py-2.5 font-bold ${colorClass}`}>{s}</td>);
+                                            } else {
+                                                cells.push(
+                                                    <td key={i} className="px-0 sm:px-2 py-1 sm:py-1.5 align-middle">
+                                                        <div className="relative inline-flex items-center justify-center w-5 h-5 sm:w-7 sm:h-7 mx-auto">
+                                                            <span className={cn(
+                                                                "relative z-10 font-black tracking-tighter text-[10px] sm:text-[13px]",
+                                                                diff <= -2 ? "text-orange-600 dark:text-orange-400" :
+                                                                diff === -1 ? "text-yellow-600 dark:text-yellow-500" :
+                                                                diff === 1 ? "text-sky-600 dark:text-sky-400" :
+                                                                diff >= 2 ? "text-sky-700 dark:text-sky-300" :
+                                                                "text-zinc-900 dark:text-zinc-100"
+                                                            )}>{s}</span>
+                                                            {diff <= -2 && (
+                                                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                                    <div className="w-[110%] h-[110%] rounded-full border-[1.5px] border-orange-400/80 absolute" />
+                                                                    <div className="w-[85%] h-[85%] rounded-full border-[1.5px] border-orange-400/80 absolute" />
+                                                                </div>
+                                                            )}
+                                                            {diff === -1 && (
+                                                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                                    <div className="w-full h-full rounded-full border-[1.5px] border-yellow-400/80 absolute" />
+                                                                </div>
+                                                            )}
+                                                            {diff === 1 && (
+                                                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                                    <div className="w-[90%] h-[90%] border-[1.5px] border-sky-400/80 absolute" />
+                                                                </div>
+                                                            )}
+                                                            {diff >= 2 && (
+                                                                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                                    <div className="w-[100%] h-[100%] border-[1.5px] border-sky-400/80 absolute" />
+                                                                    <div className="w-[80%] h-[80%] border-[1.5px] border-sky-400/80 absolute" />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                );
+                                            }
+                                        } else {
+                                            cells.push(<td key={i} className="px-0 sm:px-2 py-2 sm:py-2.5 text-zinc-300 dark:text-zinc-700">-</td>);
                                         }
-                                        
-                                        cells.push(<td key={i} className={`px-1 sm:px-2 py-2 sm:py-2.5 ${colorClass}`}>{scoreStr}</td>);
                                     }
                                     return { cells, sum };
                                 };
@@ -163,28 +207,28 @@ export function LiveScoreModal({ isOpen, onClose, tournamentId, athleteId, athle
 
                                         <div className="space-y-4">
                                             {/* OUT Course */}
-                                            <div className="border border-zinc-200 dark:border-zinc-700 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm">
-                                                <div className="overflow-x-auto">
-                                                    <table className="w-full text-center text-[10px] sm:text-sm min-w-full">
+                                            <div className="border border-zinc-200 dark:border-zinc-700 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm w-full">
+                                                <div className="overflow-hidden">
+                                                    <table className="w-full table-fixed text-center text-[9px] sm:text-sm">
                                                         <thead>
                                                             <tr className="bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-600 dark:text-zinc-300">
-                                                                <th className="px-1 sm:px-3 py-2 sm:py-3 w-10 sm:w-16 bg-zinc-100 dark:bg-zinc-900/50 border-r border-zinc-200 dark:border-zinc-700 whitespace-nowrap">HOLE</th>
+                                                                <th className="px-0 sm:px-3 py-2 sm:py-3 w-8 sm:w-16 bg-zinc-100 dark:bg-zinc-900/50 border-r border-zinc-200 dark:border-zinc-700 whitespace-nowrap overflow-hidden">HOLE</th>
                                                                 {[1,2,3,4,5,6,7,8,9].map(h => (
-                                                                    <th key={h} className="px-1 sm:px-2 py-2 sm:py-3 min-w-[22px] sm:min-w-[36px]">{h}</th>
+                                                                    <th key={h} className="px-0 sm:px-2 py-2 sm:py-3 truncate">{h}</th>
                                                                 ))}
-                                                                <th className="px-1 sm:px-3 py-2 sm:py-3 bg-zinc-100 dark:bg-zinc-900/50 border-l border-zinc-200 dark:border-zinc-700 text-brand-navy w-10 sm:w-16 whitespace-nowrap">OUT</th>
+                                                                <th className="px-0 sm:px-3 py-2 sm:py-3 bg-zinc-100 dark:bg-zinc-900/50 border-l border-zinc-200 dark:border-zinc-700 text-brand-navy w-8 sm:w-16 whitespace-nowrap overflow-hidden">OUT</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody>
                                                             <tr className="border-b border-zinc-100 dark:border-zinc-800 text-zinc-500 font-semibold bg-white dark:bg-zinc-900">
-                                                                <td className="px-1 sm:px-3 py-1.5 sm:py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700">PAR</td>
+                                                                <td className="px-0 sm:px-3 py-1.5 sm:py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700 overflow-hidden">PAR</td>
                                                                 {outPar.cells}
-                                                                <td className="px-1 sm:px-3 py-1.5 sm:py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700">{outPar.sum || "-"}</td>
+                                                                <td className="px-0 sm:px-3 py-1.5 sm:py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700 overflow-hidden">{outPar.sum || "-"}</td>
                                                             </tr>
                                                             <tr className="font-bold text-zinc-900 dark:text-zinc-100 bg-white dark:bg-zinc-900">
-                                                                <td className="px-1 sm:px-3 py-2 sm:py-2.5 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700">SCORE</td>
+                                                                <td className="px-0 sm:px-3 py-2 sm:py-2.5 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700 overflow-hidden">SCORE</td>
                                                                 {outScore.cells}
-                                                                <td className="px-1 sm:px-3 py-2 sm:py-2.5 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700 text-brand-navy">{outScore.sum || "-"}</td>
+                                                                <td className="px-0 sm:px-3 py-2 sm:py-2.5 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700 text-brand-navy overflow-hidden">{outScore.sum || "-"}</td>
                                                             </tr>
                                                         </tbody>
                                                     </table>
@@ -192,28 +236,28 @@ export function LiveScoreModal({ isOpen, onClose, tournamentId, athleteId, athle
                                             </div>
 
                                             {/* IN Course */}
-                                            <div className="border border-zinc-200 dark:border-zinc-700 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm">
-                                                <div className="overflow-x-auto">
-                                                    <table className="w-full text-center text-[10px] sm:text-sm min-w-full">
+                                            <div className="border border-zinc-200 dark:border-zinc-700 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm w-full">
+                                                <div className="overflow-hidden">
+                                                    <table className="w-full table-fixed text-center text-[9px] sm:text-sm">
                                                         <thead>
                                                             <tr className="bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-600 dark:text-zinc-300">
-                                                                <th className="px-1 sm:px-3 py-2 sm:py-3 w-10 sm:w-16 bg-zinc-100 dark:bg-zinc-900/50 border-r border-zinc-200 dark:border-zinc-700 whitespace-nowrap">HOLE</th>
+                                                                <th className="px-0 sm:px-3 py-2 sm:py-3 w-8 sm:w-16 bg-zinc-100 dark:bg-zinc-900/50 border-r border-zinc-200 dark:border-zinc-700 whitespace-nowrap overflow-hidden">HOLE</th>
                                                                 {[10,11,12,13,14,15,16,17,18].map(h => (
-                                                                    <th key={h} className="px-1 sm:px-2 py-2 sm:py-3 min-w-[22px] sm:min-w-[36px]">{h}</th>
+                                                                    <th key={h} className="px-0 sm:px-2 py-2 sm:py-3 truncate">{h}</th>
                                                                 ))}
-                                                                <th className="px-1 sm:px-3 py-2 sm:py-3 bg-zinc-100 dark:bg-zinc-900/50 border-l border-zinc-200 dark:border-zinc-700 text-brand-navy w-10 sm:w-16 whitespace-nowrap">IN</th>
+                                                                <th className="px-0 sm:px-3 py-2 sm:py-3 bg-zinc-100 dark:bg-zinc-900/50 border-l border-zinc-200 dark:border-zinc-700 text-brand-navy w-8 sm:w-16 whitespace-nowrap overflow-hidden">IN</th>
                                                             </tr>
                                                         </thead>
                                                         <tbody>
                                                             <tr className="border-b border-zinc-100 dark:border-zinc-800 text-zinc-500 font-semibold bg-white dark:bg-zinc-900">
-                                                                <td className="px-1 sm:px-3 py-1.5 sm:py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700">PAR</td>
+                                                                <td className="px-0 sm:px-3 py-1.5 sm:py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700 overflow-hidden">PAR</td>
                                                                 {inPar.cells}
-                                                                <td className="px-1 sm:px-3 py-1.5 sm:py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700">{inPar.sum || "-"}</td>
+                                                                <td className="px-0 sm:px-3 py-1.5 sm:py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700 overflow-hidden">{inPar.sum || "-"}</td>
                                                             </tr>
                                                             <tr className="font-bold text-zinc-900 dark:text-zinc-100 bg-white dark:bg-zinc-900">
-                                                                <td className="px-1 sm:px-3 py-2 sm:py-2.5 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700">SCORE</td>
+                                                                <td className="px-0 sm:px-3 py-2 sm:py-2.5 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700 overflow-hidden">SCORE</td>
                                                                 {inScore.cells}
-                                                                <td className="px-1 sm:px-3 py-2 sm:py-2.5 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700 text-brand-navy">{inScore.sum || "-"}</td>
+                                                                <td className="px-0 sm:px-3 py-2 sm:py-2.5 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700 text-brand-navy overflow-hidden">{inScore.sum || "-"}</td>
                                                             </tr>
                                                         </tbody>
                                                     </table>

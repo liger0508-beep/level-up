@@ -2,21 +2,58 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Trophy, Calendar, MapPin, Hash, Lock, Loader2, ChevronLeft } from "lucide-react";
+import dynamic from "next/dynamic";
+import { Trophy, Calendar, MapPin, Hash, Lock, Loader2, ChevronLeft, FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
+
+const ReactQuill = dynamic(() => import("react-quill-new"), {
+    ssr: false,
+    loading: () => <div className="h-48 bg-zinc-50 dark:bg-zinc-900 rounded-xl animate-pulse flex items-center justify-center text-zinc-400">에디터 로딩 중...</div>
+});
+import "react-quill-new/dist/quill.snow.css";
+
+const quillModules = {
+    toolbar: [
+        [{ 'header': [1, 2, 3, false] }],
+        [{ 'size': ['small', false, 'large', 'huge'] }],
+        ['bold', 'italic', 'underline', 'strike'],
+        [{ 'list': 'ordered' }, { 'list': 'bullet' }],
+        [{ 'align': [] }],
+        [{ 'color': [] }, { 'background': [] }],
+        ['link', 'image', 'video'],
+        ['clean']
+    ],
+};
+
+const quillFormats = [
+    'header', 'size',
+    'bold', 'italic', 'underline', 'strike',
+    'list', 'indent',
+    'align', 'color', 'background',
+    'link', 'image', 'video'
+];
 
 export default function CreateTournamentPage() {
     const router = useRouter();
     const [loading, setLoading] = useState(false);
     
-    const [formData, setFormData] = useState({
-        name: "",
-        start_date: "",
-        end_date: "",
-        total_rounds: 1,
-        location: "",
-        password: ""
+    const [formData, setFormData] = useState(() => {
+        const d = new Date();
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const todayStr = `${year}-${month}-${day}`;
+
+        return {
+            name: "",
+            start_date: todayStr,
+            end_date: todayStr,
+            total_rounds: 1,
+            location: "",
+            password: "",
+            notice: ""
+        };
     });
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -45,8 +82,8 @@ export default function CreateTournamentPage() {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         
-        if (!formData.name || !formData.start_date || !formData.end_date || !formData.location || !formData.password) {
-            alert("모든 필드를 입력해주세요.");
+        if (!formData.name || !formData.start_date || !formData.end_date || !formData.location) {
+            alert("필수 필드를 모두 입력해주세요.");
             return;
         }
 
@@ -68,7 +105,8 @@ export default function CreateTournamentPage() {
                 end_date: formData.end_date,
                 total_rounds: formData.total_rounds,
                 location: formData.location,
-                password: formData.password,
+                password: formData.password || "",
+                notice: formData.notice,
                 status: "준비중",
                 created_by: user.id
             });
@@ -100,11 +138,8 @@ export default function CreateTournamentPage() {
             <div className="mb-8">
                 <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
                     <Trophy className="text-brand-navy" size={24} />
-                    새 토너먼트 개설
+                    토너먼트 개설
                 </h1>
-                <p className="text-sm text-zinc-500 mt-2">
-                    공식 대회의 기본 정보를 입력하고 참가자들이 입장할 수 있는 비밀번호를 설정합니다.
-                </p>
             </div>
 
             <form onSubmit={handleSubmit} className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 sm:p-8 shadow-sm">
@@ -171,7 +206,7 @@ export default function CreateTournamentPage() {
                                 max="10"
                                 value={formData.total_rounds}
                                 onChange={handleChange}
-                                className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none transition-all cursor-not-allowed"
+                                className="w-full text-center px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none transition-all cursor-not-allowed"
                                 required
                                 readOnly
                             />
@@ -198,17 +233,34 @@ export default function CreateTournamentPage() {
                     <div>
                         <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-2 flex items-center gap-1.5">
                             <Lock size={16} className="text-zinc-400" />
-                            참가 입장 비밀번호
+                            참가 입장 비밀번호 (선택)
                         </label>
                         <input
-                            type="text" // 텍스트로 보여주거나 type="password" 선택 가능, 일단 텍스트
+                            type="text"
                             name="password"
                             value={formData.password}
                             onChange={handleChange}
-                            placeholder="선수들에게 안내할 입장 비밀번호 (예: 1234)"
+                            placeholder="선수들에게 안내할 입장 비밀번호 (입력하지 않으면 누구나 참가 가능)"
                             className="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-navy/50 transition-all"
-                            required
                         />
+                    </div>
+
+                    {/* 안내사항 */}
+                    <div>
+                        <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300 mb-2 flex items-center gap-1.5">
+                            <FileText size={16} className="text-zinc-400" />
+                            안내사항
+                        </label>
+                        <div className="quill-container border-zinc-200 dark:border-zinc-800 min-h-[350px]">
+                            <ReactQuill
+                                theme="snow"
+                                value={formData.notice}
+                                onChange={(val) => setFormData(prev => ({ ...prev, notice: val }))}
+                                modules={quillModules}
+                                formats={quillFormats}
+                                className="h-[250px] mb-20 dark:bg-zinc-800/50"
+                            />
+                        </div>
                     </div>
                 </div>
 
@@ -227,6 +279,44 @@ export default function CreateTournamentPage() {
                     </button>
                 </div>
             </form>
+
+            <style jsx global>{`
+                .dark .ql-toolbar {
+                    background-color: #18181b;
+                    border-color: #27272a !important;
+                }
+                .dark .ql-container {
+                    border-color: #27272a !important;
+                }
+                .dark .ql-stroke {
+                    stroke: #a1a1aa !important;
+                }
+                .dark .ql-fill {
+                    fill: #a1a1aa !important;
+                }
+                .dark .ql-picker {
+                    color: #a1a1aa !important;
+                }
+                .dark .ql-picker-options {
+                    background-color: #18181b !important;
+                    border-color: #27272a !important;
+                }
+                .dark .ql-editor.ql-blank::before {
+                    color: #52525b !important;
+                }
+                .ql-editor {
+                    font-size: 15px;
+                    line-height: 1.6;
+                }
+                .ql-toolbar.ql-snow {
+                    border-top-left-radius: 12px;
+                    border-top-right-radius: 12px;
+                }
+                .ql-container.ql-snow {
+                    border-bottom-left-radius: 12px;
+                    border-bottom-right-radius: 12px;
+                }
+            `}</style>
         </div>
     );
 }

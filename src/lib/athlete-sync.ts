@@ -8,7 +8,7 @@ export async function fetchAthletes(): Promise<string[]> {
         const { data, error } = await supabase
             .from("users")
             .select("name")
-            .in("role", ["athlete", "coach", "admin"]);
+            .neq("role", "parent");
 
         if (error) {
             console.warn("Using fallback mock data as Supabase fetch failed:", error);
@@ -17,7 +17,8 @@ export async function fetchAthletes(): Promise<string[]> {
 
         if (!data || data.length === 0) return MOCK_ATHLETES;
 
-        return data.map((u: { name: string }) => (u.name || "")).filter(Boolean).sort();
+        const names = data.map((u: { name: string }) => (u.name || "")).filter(Boolean);
+        return Array.from(new Set(names)).sort();
     } catch (err) {
         console.warn("Using fallback mock data (Supabase not initialized):", err);
         return MOCK_ATHLETES;

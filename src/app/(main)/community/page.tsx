@@ -44,7 +44,7 @@ export default function CommunityPage() {
     useEffect(() => {
         setHasMounted(true);
         const applyPermissions = (q: any, role: string | null, branch: string | null, uid: string | null) => {
-            const isMasterBranch = branch === '오피스' || branch === '총괄';
+            const isMasterBranch = role === 'office' || role === 'headquarter';
             if (role !== 'admin' && !isMasterBranch) {
                 const baseBranch = branch ? branch.replace('점', '') : '';
                 let filterStr = `branch.in.(전체,${baseBranch})`;
@@ -171,7 +171,7 @@ export default function CommunityPage() {
         if (!hasMounted) return;
 
         const applyPermissions = (q: any, role: string | null, branch: string | null, uid: string | null) => {
-            const isMasterBranch = branch === '오피스' || branch === '총괄';
+            const isMasterBranch = role === 'office' || role === 'headquarter';
             if (role !== 'admin' && !isMasterBranch) {
                 const baseBranch = branch ? branch.replace('점', '') : '';
                 let filterStr = `branch.in.(전체,${baseBranch})`;

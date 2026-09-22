@@ -87,7 +87,7 @@ export default function EditPlanPage() {
     useEffect(() => {
         if (selectedPlayer) {
             fetchPlansByAthlete(selectedPlayer).then(setPlayerPlans);
-            fetchAllLessonsByPlayer(selectedPlayer, undefined, 10).then(lessons => {
+            fetchAllLessonsByPlayer(selectedPlayer).then(lessons => {
                 setAllLessons(lessons);
                 if (fetchedPlan && fetchedPlan.linkedLessonIds && fetchedPlan.linkedLessonIds.length > 0) {
                     const initialSelected: Record<string, LessonRecord | null> = {};

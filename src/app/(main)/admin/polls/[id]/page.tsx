@@ -340,7 +340,7 @@ export default function PollDetailPage() {
     const maxVotes = Math.max(...vote.options.map(o => o.votes), 0);
 
     const pollTypes = vote.type.split(',').map(t => t.trim());
-    const isMasterBranch = currentUser?.branch === '오피스' || currentUser?.branch === '총괄';
+    const isMasterBranch = currentUser?.role === 'office' || currentUser?.role === 'headquarter';
     const hasRolePermission = isMasterBranch || pollTypes.includes("all") || (currentUser?.role && pollTypes.includes(currentUser.role));
     
     const pollBranches = vote.branch.split(',').map(b => b.trim());
@@ -367,7 +367,7 @@ export default function PollDetailPage() {
         );
     }
 
-    const canSeeRoster = currentUser?.role === 'super_admin' || currentUser?.role === 'superadmin' || currentUser?.role === 'admin' || currentUser?.role === 'coach' || currentUser?.branch === '총괄' || currentUser?.branch === '오피스';
+    const canSeeRoster = currentUser?.role === 'super_admin' || currentUser?.role === 'superadmin' || currentUser?.role === 'admin' || currentUser?.role === 'coach' || currentUser?.role === 'headquarter' || currentUser?.role === 'office';
     const showRosterButton = vote?.status === "closed" && canSeeRoster;
 
     return (

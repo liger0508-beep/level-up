@@ -19,11 +19,12 @@ interface CrossCheckSignatureModalProps {
 
 export function CrossCheckSignatureModal({ 
     isOpen, onClose, tournamentId, athleteId, athleteName, scorecardId,
-    onSignAsPlayer, onCancelMarkerSig, hasPlayerSig, hasMarkerSig 
-}: CrossCheckSignatureModalProps) {
+    onSignAsPlayer, onRequestCorrection, hasPlayerSig, hasMarkerSig 
+}: CrossCheckSignatureModalProps & { onRequestCorrection?: () => void }) {
     const [loading, setLoading] = useState(true);
     const [scorecard, setScorecard] = useState<any>(null);
     const [markerScores, setMarkerScores] = useState<Record<number, number>>({});
+    const [markerPars, setMarkerPars] = useState<Record<number, number>>({});
     const [hasDiscrepancy, setHasDiscrepancy] = useState(false);
 
     useEffect(() => {
@@ -33,55 +34,65 @@ export function CrossCheckSignatureModal({
             setLoading(true);
             const supabase = createClient();
             
-            // 1. Fetch Scorecard with Holes (Player Score)
-            const { data: scData } = await supabase
+            // 1. Fetch Official Scorecard (Marker's Input)
+            const { data: officialSc } = await supabase
+                .from("scorecards")
+                .select(`
+                    id, 
+                    marker_scores:tournament_marker_scores(hole_number, score),
+                    holes:scorecard_holes(hole_number, par)
+                `)
+                .eq("id", scorecardId)
+                .single();
+
+            // 2. Fetch Athlete's Self-Drafted Scorecard (My Score)
+            const { data: selfScData } = await supabase
                 .from("scorecards")
                 .select(`
                     id, total_score, hole_count, is_final,
                     holes:scorecard_holes(id, hole_number, par, score)
                 `)
-                .eq("id", scorecardId)
-                .single();
-
-            // 2. Fetch Marker Scores (someone else's scorecard where marker_id = this athleteId)
-            const { data: otherScData } = await supabase
-                .from("scorecards")
-                .select("id")
                 .eq("tournament_id", tournamentId)
-                .eq("marker_id", athleteId)
+                .eq("athlete_id", athleteId)
                 .order("created_at", { ascending: false })
                 .limit(1)
                 .maybeSingle();
 
-            let mkData = null;
-            if (otherScData) {
-                const { data } = await supabase
-                    .from("tournament_marker_scores")
-                    .select("hole_number, score")
-                    .eq("scorecard_id", otherScData.id);
-                mkData = data;
-            }
-
-            if (scData) {
-                if (scData.holes) {
-                    scData.holes.sort((a: any, b: any) => a.hole_number - b.hole_number);
+            if (selfScData) {
+                if (selfScData.holes) {
+                    selfScData.holes.sort((a: any, b: any) => a.hole_number - b.hole_number);
                 }
-                setScorecard(scData);
+                setScorecard(selfScData);
+            } else {
+                setScorecard({ holes: [] });
             }
 
             const mkMap: Record<number, number> = {};
+            const mkParMap: Record<number, number> = {};
             let discrepancyFound = false;
 
-            if (mkData) {
-                mkData.forEach(m => {
+            if (officialSc?.marker_scores) {
+                officialSc.marker_scores.forEach((m: any) => {
                     mkMap[m.hole_number] = m.score;
                 });
             }
+            if (officialSc?.holes) {
+                officialSc.holes.forEach((p: any) => {
+                    mkParMap[p.hole_number] = p.par;
+                });
+            }
+            
             setMarkerScores(mkMap);
+            setMarkerPars(mkParMap);
 
-            if (scData?.holes) {
-                scData.holes.forEach((h: any) => {
-                    if (h.score !== mkMap[h.hole_number] && mkMap[h.hole_number] !== undefined) {
+            if (selfScData?.holes) {
+                selfScData.holes.forEach((h: any) => {
+                    const mScore = mkMap[h.hole_number];
+                    const mPar = mkParMap[h.hole_number];
+                    if (
+                        (mScore !== undefined && h.score !== mScore) ||
+                        (mScore !== undefined && mPar !== undefined && h.par !== mPar)
+                    ) {
                         discrepancyFound = true;
                     }
                 });
@@ -130,7 +141,7 @@ export function CrossCheckSignatureModal({
                                 <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 rounded-2xl p-4 flex gap-3 text-red-600 dark:text-red-400">
                                     <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
                                     <div className="text-sm font-semibold flex items-center">
-                                        <p>스코어가 일치하지 않는 홀이 있습니다</p>
+                                        <p>스코어 또는 PAR 정보가 일치하지 않는 홀이 있습니다</p>
                                     </div>
                                 </div>
                             )}
@@ -146,20 +157,73 @@ export function CrossCheckSignatureModal({
 
                                     for (let i = start; i <= end; i++) {
                                         const hole = scorecard.holes?.find((h: any) => h.hole_number === i);
-                                        const par = hole?.par || 0;
                                         const pScore = hole?.score || 0;
                                         const mScore = markerScores[i] || 0;
+                                        const mPar = markerPars[i] || 0;
+                                        const par = hole?.par || mPar; // fallback to mPar if self score has no par
                                         
                                         parSum += par;
                                         pSum += pScore;
                                         mSum += mScore;
 
-                                        const isMismatch = pScore !== mScore && mScore > 0 && pScore > 0;
-                                        const mismatchBg = isMismatch ? "bg-pink-100 dark:bg-pink-900/30" : "";
+                                        const isScoreMismatch = pScore !== mScore && mScore > 0 && pScore > 0;
+                                        const isParMismatch = par !== mPar && mPar > 0 && par > 0 && mScore > 0;
 
-                                        parCells.push(<td key={i} className="px-1 sm:px-2 py-1.5 sm:py-2 text-[10px] sm:text-[12px] min-w-[20px] sm:min-w-[36px]">{par || "-"}</td>);
-                                        pScoreCells.push(<td key={i} className={`px-1 sm:px-2 py-2 sm:py-2.5 font-bold ${mismatchBg}`}>{pScore > 0 ? pScore : "-"}</td>);
-                                        mScoreCells.push(<td key={i} className={`px-1 sm:px-2 py-2 sm:py-2.5 font-bold ${mismatchBg}`}>{mScore > 0 ? mScore : "-"}</td>);
+                                        const scoreMismatchBg = isScoreMismatch ? "bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300" : "";
+                                        const parMismatchBg = isParMismatch ? "bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 font-bold" : "";
+
+                                        parCells.push(
+                                            <td key={i} className={`px-1 sm:px-2 py-1.5 sm:py-2 text-[10px] sm:text-[12px] min-w-[20px] sm:min-w-[36px] ${parMismatchBg}`}>
+                                                {isParMismatch ? mPar : (par || "-")}
+                                            </td>
+                                        );
+                                        const renderGolfScore = (score: number, parVal: number, bgClass: string, isMyScore: boolean) => {
+                                            if (score === 0 || parVal === 0) return <td key={i} className={`px-1 sm:px-2 py-2 sm:py-2.5 font-bold ${bgClass}`}>-</td>;
+                                            
+                                            const diff = score - parVal;
+                                            
+                                            // 텍스트 색상
+                                            let textClass = isMyScore ? "text-blue-600 dark:text-blue-400" : "text-zinc-700 dark:text-zinc-300";
+                                            if (diff <= -2) textClass = "text-orange-600 dark:text-orange-400";
+                                            else if (diff === -1) textClass = "text-yellow-600 dark:text-yellow-500";
+                                            else if (diff === 1) textClass = "text-sky-600 dark:text-sky-400";
+                                            else if (diff >= 2) textClass = "text-sky-700 dark:text-sky-300";
+
+                                            return (
+                                                <td key={i} className={`px-0 sm:px-2 py-1 sm:py-1.5 align-middle ${bgClass}`}>
+                                                    <div className="relative inline-flex items-center justify-center w-5 h-5 sm:w-7 sm:h-7 mx-auto">
+                                                        <span className={`relative z-10 font-bold sm:font-black tracking-tighter text-[11px] sm:text-[13px] ${textClass}`}>
+                                                            {score}
+                                                        </span>
+                                                        {diff <= -2 && (
+                                                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                                <div className="w-[110%] h-[110%] rounded-full border-[1.5px] border-orange-400/80 absolute" />
+                                                                <div className="w-[85%] h-[85%] rounded-full border-[1.5px] border-orange-400/80 absolute" />
+                                                            </div>
+                                                        )}
+                                                        {diff === -1 && (
+                                                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                                <div className="w-full h-full rounded-full border-[1.5px] border-yellow-400/80 absolute" />
+                                                            </div>
+                                                        )}
+                                                        {diff === 1 && (
+                                                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                                <div className="w-[90%] h-[90%] border-[1.5px] border-sky-400/80 absolute" />
+                                                            </div>
+                                                        )}
+                                                        {diff >= 2 && (
+                                                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                                                <div className="w-[100%] h-[100%] border-[1.5px] border-sky-400/80 absolute" />
+                                                                <div className="w-[80%] h-[80%] border-[1.5px] border-sky-400/80 absolute" />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            );
+                                        };
+
+                                        pScoreCells.push(renderGolfScore(pScore, par, scoreMismatchBg, true));
+                                        mScoreCells.push(renderGolfScore(mScore, mPar, scoreMismatchBg, false));
                                     }
                                     return { parCells, pScoreCells, mScoreCells, pSum, mSum, parSum };
                                 };
@@ -214,17 +278,18 @@ export function CrossCheckSignatureModal({
                                             {hasDiscrepancy ? (
                                                 <>
                                                     <button 
-                                                        onClick={onCancelMarkerSig}
-                                                        className="px-3 sm:px-6 py-3 rounded-xl font-bold bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 shadow-sm transition-colors whitespace-nowrap text-[13px] sm:text-base flex-1 sm:flex-none"
+                                                        onClick={onRequestCorrection}
+                                                        className="px-3 sm:px-4 py-3 rounded-xl font-bold bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800/50 hover:bg-red-100 dark:hover:bg-red-900/40 shadow-sm transition-colors whitespace-nowrap text-[13px] sm:text-sm flex-1"
                                                     >
-                                                        마커 서명 취소 후 수정
+                                                        수정 요청
                                                     </button>
+
                                                     {!hasPlayerSig && onSignAsPlayer && (
                                                         <button 
                                                             onClick={onSignAsPlayer}
-                                                            className="px-3 sm:px-6 py-3 rounded-xl font-bold bg-brand-red hover:bg-brand-red-dark text-white shadow-sm transition-colors whitespace-nowrap text-[13px] sm:text-base flex-1 sm:flex-none"
+                                                            className="px-3 sm:px-4 py-3 rounded-xl font-bold bg-brand-red hover:bg-brand-red-dark text-white shadow-sm transition-colors whitespace-nowrap text-[13px] sm:text-sm flex-1"
                                                         >
-                                                            무시하고 서명하기
+                                                            서명하기
                                                         </button>
                                                     )}
                                                 </>

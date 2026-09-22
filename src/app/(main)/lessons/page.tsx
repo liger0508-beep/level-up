@@ -524,13 +524,12 @@ export default function LessonsPage() {
 
             <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 mb-6">
                 {/* Date Range: 레슨일자 */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 border-b border-zinc-100 dark:border-zinc-800 pb-4 mb-4">
                     <LabelText className="w-24 shrink-0 text-center">
                         레슨 일자
                     </LabelText>
                     <div className="flex items-center gap-1 flex-1 min-w-0">
                         <DatePickerInput
-
                             value={startDate}
                             onClick={(e) => (e.target as any).showPicker?.()}
                             onChange={(e) => { setStartDate(e.target.value); setActivePreset("custom"); }}
@@ -538,7 +537,6 @@ export default function LessonsPage() {
                         />
                         <span className="text-zinc-400 shrink-0 text-xs">~</span>
                         <DatePickerInput
-
                             value={endDate}
                             onClick={(e) => (e.target as any).showPicker?.()}
                             onChange={(e) => { setEndDate(e.target.value); setActivePreset("custom"); }}
@@ -555,7 +553,54 @@ export default function LessonsPage() {
                     )}
                 </div>
 
+                {/* Player Search */}
+                <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2">
+                        <LabelText className="w-24 shrink-0 text-center">
+                            선수명 검색
+                        </LabelText>
+                        <div className="relative flex-1 max-w-sm">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                            <input
+                                type="text"
+                                placeholder="선수명 검색"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full pl-9 pr-4 py-2 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 text-sm focus:outline-none focus:ring-2 focus:ring-brand-navy/30 transition-all text-zinc-900 dark:text-zinc-100"
+                            />
+                        </div>
+                    </div>
+                    
+                    {/* Player Chips */}
+                    <div className="flex items-center gap-2">
+                        <div className="w-24 shrink-0" />
+                        <div className="relative group flex-1 max-w-sm min-w-0">
+                            <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-white dark:from-zinc-900 to-transparent pointer-events-none z-10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white dark:from-zinc-900 to-transparent pointer-events-none z-10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            
+                            <div className="flex overflow-x-auto scrollbar-hide gap-2 pt-1" ref={scrollRef}>
 
+                            {visiblePlayersArr.map((name) => {
+                                const isSelected = selectedPlayers.has(name);
+                                return (
+                                    <button
+                                        key={name}
+                                        onClick={() => togglePlayer(name)}
+                                        className={cn(
+                                            "px-2.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all shadow-sm active:scale-95 border",
+                                            isSelected && !selectAll
+                                                ? "bg-brand-navy border-brand-navy text-white"
+                                                : "bg-white border-zinc-200 text-zinc-600 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-700"
+                                        )}
+                                    >
+                                        {name}
+                                    </button>
+                                );
+                            })}
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {/* ── Lesson Table ── */}

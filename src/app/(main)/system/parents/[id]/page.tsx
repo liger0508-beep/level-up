@@ -122,7 +122,7 @@ export default function ParentDetailPage() {
                 // Fetch branches
                 const { data: bData } = await supabase.from('users').select('branch');
                 if (bData) {
-                    const unique = Array.from(new Set(bData.map(b => b.branch).filter(v => v && v !== "미지정" && v !== "")));
+                    const unique = Array.from(new Set(bData.map(b => b.branch).filter(v => v && v !== "미지정" && v !== "" && v !== "총괄" && v !== "오피스")));
                     setAvailableBranches(["조이마루점", "구미점", ...unique.filter(v => v !== "조이마루점" && v !== "구미점")]);
                 }
 

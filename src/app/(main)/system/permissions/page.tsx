@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 // ── Types ──
-type Role = "admin" | "office" | "coach" | "athlete" | "parent";
+type Role = "admin" | "office" | "headquarter" | "coach" | "athlete" | "parent";
 type PermissionType = "read" | "write";
 
 interface MenuPermission {
@@ -19,6 +19,7 @@ interface MenuPermission {
 // ── Role metadata ──
 const roles: { key: Role; label: string; color: string; bgColor: string }[] = [
     { key: "coach", label: "코치", color: "text-blue-600 dark:text-blue-400", bgColor: "bg-blue-500/10" },
+    { key: "headquarter", label: "총괄", color: "text-fuchsia-600 dark:text-fuchsia-400", bgColor: "bg-fuchsia-500/10" },
     { key: "office", label: "오피스", color: "text-purple-600 dark:text-purple-400", bgColor: "bg-purple-500/10" },
     { key: "athlete", label: "선수", color: "text-emerald-600 dark:text-emerald-400", bgColor: "bg-emerald-500/10" },
     { key: "parent", label: "학부모", color: "text-amber-600 dark:text-amber-400", bgColor: "bg-amber-500/10" },
@@ -29,170 +30,170 @@ const defaultPermissions: MenuPermission[] = [
     // 메인 메뉴
     {
         menuKey: "home", label: "Home", section: "메인",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     {
         menuKey: "lessons", label: "레슨", section: "메인",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     {
         menuKey: "training", label: "훈련", section: "메인",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
 
     {
         menuKey: "challenges", label: "챌린지", section: "메인",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
 
     // 참가 대회
     {
         menuKey: "tournament-schedule", label: "대회 스케쥴", section: "참가 대회",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     {
         menuKey: "tournament-results-view", label: "대회 결과", section: "참가 대회",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
 
     // 스케쥴
     {
         menuKey: "schedule", label: "스케쥴", section: "스케쥴",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     {
         menuKey: "coach-trip-schedule", label: "출장 스케쥴", section: "스케쥴",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
 
     // 스코어
     {
         menuKey: "scores", label: "스코어", section: "스코어",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
     },
     {
         menuKey: "scores-stats", label: "스코어 통계", section: "스코어",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     {
         menuKey: "scores-category-stats", label: "항목별 통계", section: "스코어",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     {
         menuKey: "scores-tournaments", label: "토너먼트", section: "스코어",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
     },
     
     // 라운지
     {
         menuKey: "community", label: "공지사항", section: "라운지",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     {
         menuKey: "polls", label: "투표", section: "라운지",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: true } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: true } }
     },
     {
         menuKey: "consultations", label: "상담", section: "라운지",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: true } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: true } }
     },
     {
         menuKey: "training-journal", label: "훈련일지", section: "라운지",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
     },
     {
         menuKey: "attendance", label: "출석 체크", section: "라운지",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
     },
     {
         menuKey: "todo-list", label: "To-Do 리스트", section: "라운지",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: false, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: false, write: false } }
     },
     {
         menuKey: "course-management", label: "골프IQ", section: "라운지",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
         menuKey: "course-info", label: "코스 정보", section: "라운지",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     {
         menuKey: "reports", label: "선수 레포트", section: "라운지",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     {
         menuKey: "coach-selection", label: "담임 코치 선택", section: "라운지",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
     },
 
     // 운영/관리
     {
         menuKey: "statistics", label: "운영 통계", section: "운영/관리",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
         menuKey: "player-reports", label: "선수 레포트 작성", section: "운영/관리",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
         menuKey: "assigned-athletes", label: "담임 선수 배정", section: "운영/관리",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
         menuKey: "tournament-results", label: "대회 성적 관리", section: "운영/관리",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     {
         menuKey: "lesson-list", label: "스윙 오류 관리", section: "운영/관리",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
         menuKey: "training-list", label: "훈련 리스트 관리", section: "운영/관리",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
         menuKey: "challenge-list", label: "챌린지 컨텐츠 관리", section: "운영/관리",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
 
     // 시스템 관리
     {
         menuKey: "attendance-kiosk", label: "출석체크 번호 입력", section: "시스템 관리",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
     },
     {
         menuKey: "branches", label: "지점 관리", section: "시스템 관리",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: false }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: false }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
         menuKey: "athletes", label: "선수 관리", section: "시스템 관리",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
         menuKey: "coaches", label: "코치 관리", section: "시스템 관리",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: false, write: false }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: false, write: false }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
         menuKey: "parents", label: "학부모 관리", section: "시스템 관리",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: false }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: false }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
         menuKey: "permissions", label: "권한 관리", section: "시스템 관리",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: false, write: false }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: false, write: false }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
         menuKey: "menu-management", label: "메뉴 관리", section: "시스템 관리",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: false, write: false }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: false, write: false }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     
     // 테스트
     {
         menuKey: "temp-swing-skeleton", label: "스윙 테스트 (임시)", section: "테스트",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     {
         menuKey: "temp-swing-test", label: "복습 카메라 (임시)", section: "테스트",
-        permissions: { office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     }
 ];
 
@@ -410,8 +411,7 @@ export default function PermissionsPage() {
                         <p className="font-semibold">권한 설정 안내</p>
                         <p className="text-blue-600/80 dark:text-blue-400/80">
                             각 메뉴별로 역할(관리자/코치/선수/학부모)에 대한 <span className="font-semibold text-blue-500">읽기(보기)</span> 및 <span className="font-semibold text-emerald-500">쓰기(작성)</span> 권한을 설정할 수 있습니다.
-                            이 설정은 사이드바 메뉴 노출 여부를 제어합니다. (DB에 즉시 반영)<br />
-                            <span className="font-medium">* 참고: 지점이 '총괄'인 코치는 '오피스'와 동일한 권한을 적용받습니다.</span>
+                            이 설정은 사이드바 메뉴 노출 여부를 제어합니다. (DB에 즉시 반영)
                         </p>
                     </div>
                 </div>
@@ -454,7 +454,7 @@ export default function PermissionsPage() {
                             </div>
                         </div>
 
-                        <div className="hidden lg:grid items-center px-6 py-3 bg-zinc-50/50 dark:bg-zinc-800/30 border-b border-zinc-100 dark:border-zinc-800/30" style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr' }}>
+                        <div className="hidden lg:grid items-center px-6 py-3 bg-zinc-50/50 dark:bg-zinc-800/30 border-b border-zinc-100 dark:border-zinc-800/30" style={{ gridTemplateColumns: '2fr repeat(5, minmax(0, 1fr))' }}>
                             <div className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider">메뉴 ({activeMenus.length})</div>
                             {roles.map(role => (
                                 <div key={role.key} className="text-center">
@@ -470,7 +470,7 @@ export default function PermissionsPage() {
                                     key={menu.menuKey}
                                     className="px-6 py-5 hover:bg-zinc-50/50 dark:hover:bg-zinc-800/20 transition-colors"
                                 >
-                                    <div className="hidden lg:grid items-center" style={{ gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr' }}>
+                                    <div className="hidden lg:grid items-center" style={{ gridTemplateColumns: '2fr repeat(5, minmax(0, 1fr))' }}>
                                         <div className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 pr-4">
                                             {menu.label}
                                             <div className="text-[10px] text-zinc-400 font-normal mt-0.5 font-mono">{menu.menuKey}</div>

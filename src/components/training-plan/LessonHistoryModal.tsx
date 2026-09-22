@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Search, X, CheckCircle2, Circle, CornerDownRight } from "lucide-react";
+import { Search, ChevronLeft, CheckCircle2, Circle, CornerDownRight } from "lucide-react";
 import { CategoryTabs } from "@/components/ui/CategoryTabs";
 import { cn } from "@/lib/utils";
 import { LessonRecord } from "@/lib/lesson-sync";
@@ -44,6 +44,16 @@ export function LessonHistoryModal({ isOpen, onClose, allLessons, initialPart, o
         }
         return "all";
     });
+
+    React.useEffect(() => {
+        if (isOpen) {
+            if (initialPart) {
+                setHistorySelectedPart(initialPart);
+            } else if (typeof window !== 'undefined') {
+                setHistorySelectedPart(sessionStorage.getItem('lessonHistoryTab') || "all");
+            }
+        }
+    }, [isOpen, initialPart]);
 
     React.useEffect(() => {
         sessionStorage.setItem('lessonHistoryTab', historySelectedPart);
@@ -189,13 +199,13 @@ export function LessonHistoryModal({ isOpen, onClose, allLessons, initialPart, o
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
             <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl w-full max-w-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col" style={{ height: '85vh' }}>
-                <div className="p-5 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-900/50 shrink-0">
+                <div className="p-5 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-3 bg-zinc-50 dark:bg-zinc-900/50 shrink-0">
+                    <button onClick={onClose} className="p-1.5 text-zinc-400 hover:text-zinc-900 bg-white rounded-lg border border-zinc-200 shadow-sm">
+                        <ChevronLeft size={20} />
+                    </button>
                     <h2 className="font-bold text-lg text-zinc-900 dark:text-zinc-100">
                         레슨 히스토리 찾아보기
                     </h2>
-                    <button onClick={onClose} className="p-1.5 text-zinc-400 hover:text-zinc-900 bg-white rounded-lg border border-zinc-200">
-                        <X size={20} />
-                    </button>
                 </div>
                 <div className="p-4 shrink-0 border-b border-zinc-200 dark:border-zinc-800">
                     <CategoryTabs options={partOptions} value={effectivePart} onChange={setHistorySelectedPart} />

@@ -72,7 +72,7 @@ export default function VoteListPage() {
             setUserLoaded(true);
 
             const applyPermissions = (q: any) => {
-                const isMasterBranch = currentBranch === '오피스' || currentBranch === '총괄';
+                const isMasterBranch = currentRole === 'office' || currentRole === 'headquarter';
                 if (currentRole !== 'admin' && !isMasterBranch) {
                     const branchCond = `or(branch.ilike.*전체*,branch.ilike.*${currentBranch || ''}*)`;
                     let filterStr = branchCond;
@@ -126,7 +126,7 @@ export default function VoteListPage() {
                 .from("polls")
                 .select(`*, users!polls_author_id_fkey(name)`, { count: 'exact' });
 
-            const isMasterBranch = userBranch === '오피스' || userBranch === '총괄';
+            const isMasterBranch = userRole === 'office' || userRole === 'headquarter';
             if (userRole !== 'admin' && !isMasterBranch) {
                 const branchFilter = `branch.ilike.%전체%,branch.ilike.%${userBranch || ''}%,author_id.eq.${userId || ''}`;
                 query = query.or(branchFilter);

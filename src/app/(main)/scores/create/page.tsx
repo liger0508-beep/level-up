@@ -158,6 +158,7 @@ function ScoreCreateContent() {
     const isEditMode = !!editId && editId !== 'draft';
 
     const [isSaving, setIsSaving] = useState(false);
+    const [userRole, setUserRole] = useState<string>('');
     const [validationError, setValidationError] = useState<string | null>(null);
     const formRef = useRef<HTMLDivElement>(null);
 
@@ -208,6 +209,7 @@ function ScoreCreateContent() {
                     if (userData) {
                         // Always set the default player to themselves
                         setSelectedPlayer(userData.name);
+                        setUserRole(userData.role || '');
                     }
                 }
 
@@ -453,12 +455,13 @@ function ScoreCreateContent() {
             const { data: sc, error } = await supabase
                 .from("scorecards")
                 .select(`
-                    id, round_date, course_name, total_score, distance_unit, weather, is_final,
+                    id, round_date, course_name, total_score, distance_unit, weather, is_final, marker_id,
                     athlete:users!scorecards_athlete_id_fkey(name),
                     holes:scorecard_holes(
                         id, hole_number, par, score,
                         shots:scorecard_shots(*)
-                    )
+                    ),
+                    marker_scores:tournament_marker_scores(hole_number, score, putts)
                 `)
                 .eq("id", editId)
                 .single();
@@ -475,14 +478,24 @@ function ScoreCreateContent() {
             setGolfCourse(sc.course_name || "");
             setCategory(sc.weather || "연습");
             setDistanceUnit(sc.distance_unit === "yard" ? "야드 (y)" : "미터 (m)");
+            
+            if (sc.marker_id) {
+                const { data: markerUser } = await supabase.from("users").select("name").eq("id", sc.marker_id).single();
+                if (markerUser) {
+                    setSelectedMarker(markerUser.name);
+                }
+            }
 
             if (sc.holes && sc.holes.length > 0) {
                 const newHoles = [...holes];
                 sc.holes.forEach((h: any) => {
                     const hIdx = h.hole_number - 1;
                     if (hIdx >= 0 && hIdx < 18) {
+                        const mScoreData = sc.marker_scores?.find((m: any) => m.hole_number === h.hole_number);
                         newHoles[hIdx] = {
                             par: h.par,
+                            markerScore: mScoreData ? mScoreData.score?.toString() : "",
+                            markerPutts: mScoreData ? mScoreData.putts?.toString() : "",
                             shots: h.shots.sort((a: any, b: any) => a.shot_number - b.shot_number).map((s: any) => {
                                 const parts = (s.shot_value || "").split(" / ");
                                 const locCode = parts[0];
@@ -716,6 +729,9 @@ function ScoreCreateContent() {
                 });
             } catch (err) {}
             setShowSgTable(true);
+            setTimeout(() => {
+                window.scrollBy({ top: 400, behavior: "smooth" });
+            }, 150);
         }
     };
 
@@ -838,6 +854,12 @@ function ScoreCreateContent() {
             }
 
             next[currentHole - 1] = { ...next[currentHole - 1], shots };
+            
+            // 위치 선택 후 다음 입력을 위해 살짝 아래로 스크롤
+            setTimeout(() => {
+                window.scrollBy({ top: 60, behavior: "smooth" });
+            }, 50);
+            
             return next;
         });
     };
@@ -884,6 +906,12 @@ function ScoreCreateContent() {
     // 합산 스코어 = 1번홀부터 현재 홀까지의 누적 타수 (언더파/오버파)
     const totalScore = holes.slice(0, currentHole).reduce((acc, h) => {
         return acc + calcHoleScore(h.shots, h.par);
+    }, 0);
+
+    const markerTotalScore = holes.slice(0, currentHole).reduce((acc, h) => {
+        if (h.par === 0) return acc;
+        const ms = (h.markerScore && h.markerScore.trim() !== "") ? parseInt(h.markerScore, 10) : h.par;
+        return acc + (ms - h.par);
     }, 0);
 
     const formatRelativeScore = (score: number) => {
@@ -1270,8 +1298,18 @@ function ScoreCreateContent() {
             }
             */
 
-            // 9. 로컬 임시 저장 데이터 삭제 (이제 더이상 사용되지 않지만 안전을 위해)
+            // 9. 로컬 임시 저장 데이터 삭제 (이전 및 현재 드래프트 모두)
             localStorage.removeItem("gla_scorecard_draft");
+            const draftsStr = localStorage.getItem('scorecard_drafts');
+            if (draftsStr) {
+                try {
+                    const drafts = JSON.parse(draftsStr);
+                    if (drafts[scorecardId as string]) {
+                        delete drafts[scorecardId as string];
+                        localStorage.setItem('scorecard_drafts', JSON.stringify(drafts));
+                    }
+                } catch(e) {}
+            }
 
             hasFinalized.current = true;
             if (tournamentId) {
@@ -1304,6 +1342,62 @@ function ScoreCreateContent() {
                     <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
                         스코어카드 작성
                     </h1>
+                    
+                    {/* Delete Tournament Score Button */}
+                    {isEditMode && tournamentId && ['admin', 'superadmin', 'super_admin'].includes(userRole) && (
+                        <button
+                            type="button"
+                            onClick={async () => {
+                                if (!window.confirm("정말 이 스코어를 토너먼트 리더보드에서 삭제하시겠습니까?\n스코어카드 기록은 유지되며, 리더보드에서만 사라집니다.")) return;
+
+                                try {
+                                    setIsSaving(true);
+                                    const supabase = createClient();
+                                    
+                                    // Get athlete ID first
+                                    const { data: userData } = await supabase
+                                        .from("users")
+                                        .select("id")
+                                        .eq("name", selectedPlayer)
+                                        .single();
+                                        
+                                    if (userData?.id) {
+                                        // 1. Delete from tournament_leaderboards
+                                        await supabase
+                                            .from("tournament_leaderboards")
+                                            .delete()
+                                            .eq("tournament_id", tournamentId)
+                                            .eq("athlete_id", userData.id);
+                                    }
+                                        
+                                    // 2. Delete from tournament_marker_scores
+                                    await supabase
+                                        .from("tournament_marker_scores")
+                                        .delete()
+                                        .eq("scorecard_id", editId);
+                                        
+                                    // 3. Remove tournament association from scorecards
+                                    const { error } = await supabase
+                                        .from("scorecards")
+                                        .update({ tournament_id: null, tournament_round: null })
+                                        .eq("id", editId);
+                                        
+                                    if (error) throw error;
+                                    
+                                    alert("성공적으로 토너먼트에서 제외되었습니다.");
+                                    router.replace(`/scores/tournaments/${tournamentId}`);
+                                } catch (err) {
+                                    console.error("토너먼트 삭제 오류:", err);
+                                    alert("삭제 중 오류가 발생했습니다.");
+                                } finally {
+                                    setIsSaving(false);
+                                }
+                            }}
+                            className="ml-auto bg-red-50 hover:bg-red-100 text-red-500 dark:bg-red-900/20 dark:hover:bg-red-900/40 px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
+                        >
+                            토너먼트 성적 삭제
+                        </button>
+                    )}
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-8">
@@ -1353,7 +1447,7 @@ function ScoreCreateContent() {
                                     {/* 선수 선택 */}
                                     <div className="space-y-2 relative">
                                         <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                            선수 선택 <span className="text-brand-red">*</span>
+                                            {tournamentId ? "본인 선택" : "선수 선택"} <span className="text-brand-red">*</span>
                                         </label>
                                         <AthleteSearch
                                             multi={false}
@@ -1651,6 +1745,11 @@ function ScoreCreateContent() {
                                                                 }
                                                             }}
                                                             disabled={isDisabled}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    window.scrollBy({ top: 80, behavior: "smooth" });
+                                                                }
+                                                            }}
                                                             className={cn(
                                                                 "w-full pl-2 pr-6 py-2 rounded-lg border text-sm font-medium text-right focus:outline-none focus:ring-2 transition-all",
                                                                 isDisabled
@@ -1677,7 +1776,7 @@ function ScoreCreateContent() {
                             <div className="mt-2 mb-4 pt-6 border-t border-zinc-100 dark:border-zinc-800">
                                 <h3 className="text-sm font-bold text-zinc-800 dark:text-zinc-200 mb-4 flex items-center gap-2">
                                     <div className="w-1.5 h-1.5 rounded-full bg-brand-red"></div>
-                                    Player 기록 ({selectedMarker || 'Player'})
+                                    Player 기록 ({selectedMarker || 'Player'}) / <span className={getScoreColor(markerTotalScore)}>{formatRelativeScore(markerTotalScore)}</span>
                                 </h3>
                                 <div className="space-y-1.5">
                                     <label className="block text-xs font-semibold text-zinc-500">스코어 (타수)</label>
@@ -2004,7 +2103,6 @@ function ScoreCreateContent() {
                     scorecardId={submitModalScorecardId}
                     onClose={() => {
                         setSubmitModalScorecardId(null);
-                        router.replace(`/scores/tournaments/${tournamentId}`);
                     }}
                     onSignatureComplete={() => {
                         setSubmitModalScorecardId(null);

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Loader2 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { SignaturePad } from '@/components/ui/SignaturePad';
+import { cn } from '@/lib/utils';
 
 interface MarkerSubmitSignatureModalProps {
     isOpen: boolean;
@@ -67,7 +68,7 @@ export function MarkerSubmitSignatureModal({ isOpen, onClose, scorecardId, onSig
             <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
                 <div className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-[2rem] shadow-xl overflow-hidden p-6 relative">
                     <SignaturePad
-                        title="마커 서명"
+                        title="본인 서명"
                         description="스코어에 이상이 없음을 확인합니다."
                         onSave={handleSaveSignature}
                         onCancel={() => setShowSignaturePad(false)}
@@ -78,12 +79,18 @@ export function MarkerSubmitSignatureModal({ isOpen, onClose, scorecardId, onSig
     }
 
     return (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-            <div className="w-full max-w-3xl bg-white dark:bg-zinc-900 rounded-[2rem] shadow-xl overflow-hidden relative flex flex-col max-h-[85vh]">
+        <div 
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in"
+            onClick={onClose}
+        >
+            <div 
+                className="w-full max-w-3xl bg-white dark:bg-zinc-900 rounded-[2rem] shadow-xl overflow-hidden relative flex flex-col max-h-[85vh]"
+                onClick={(e) => e.stopPropagation()}
+            >
                 
                 <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 z-10 shrink-0">
                     <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
-                        스코어 제출 요약 <span className="text-zinc-400 text-sm font-semibold ml-2">({scorecard?.marker?.name || '알 수 없음'})</span>
+                        스코어 제출 요약 <span className="text-zinc-400 text-sm font-semibold ml-2">({scorecard?.marker?.name || scorecard?.athlete?.name || '알 수 없음'})</span>
                     </h2>
                     <button onClick={onClose} className="p-2 -mr-2 rounded-full text-zinc-400 hover:text-zinc-600 transition-colors">
                         <X size={20} />
@@ -109,13 +116,31 @@ export function MarkerSubmitSignatureModal({ isOpen, onClose, scorecardId, onSig
                                         const hole = scorecard.holes?.find((h: any) => h.hole_number === i);
                                         const mScore = scorecard.marker_scores?.find((m: any) => m.hole_number === i);
                                         const par = hole?.par || 0;
-                                        const pScore = mScore?.score > 0 ? mScore.score : (par || 0);
+                                        const pScore = mScore?.score > 0 ? mScore.score : (hole?.score > 0 ? hole.score : (par || 0));
                                         
                                         parSum += par;
                                         pSum += pScore;
 
+                                        const diff = pScore - par;
+                                        let scoreDisplay = <span className="font-bold">{pScore > 0 ? pScore : "-"}</span>;
+                                        
+                                        if (pScore > 0 && par > 0) {
+                                            const shapeClass = "flex items-center justify-center mx-auto w-5 h-5 sm:w-6 sm:h-6 text-[10px] sm:text-[12px] font-bold";
+                                            if (diff === 0) {
+                                                scoreDisplay = <div className={shapeClass}>{pScore}</div>;
+                                            } else if (diff === -1) {
+                                                scoreDisplay = <div className={cn(shapeClass, "border border-red-500 text-red-500 rounded-full")}>{pScore}</div>;
+                                            } else if (diff <= -2) {
+                                                scoreDisplay = <div className={cn(shapeClass, "border-[2px] border-red-500 text-red-500 rounded-full")}>{pScore}</div>;
+                                            } else if (diff === 1) {
+                                                scoreDisplay = <div className={cn(shapeClass, "border border-blue-600 text-blue-600 rounded-sm")}>{pScore}</div>;
+                                            } else if (diff >= 2) {
+                                                scoreDisplay = <div className={cn(shapeClass, "border-[2px] border-blue-600 text-blue-600 rounded-sm")}>{pScore}</div>;
+                                            }
+                                        }
+
                                         parCells.push(<td key={i} className="px-1 sm:px-2 py-1.5 sm:py-2 text-[10px] sm:text-[12px] min-w-[20px] sm:min-w-[36px]">{par || "-"}</td>);
-                                        pScoreCells.push(<td key={i} className="px-1 sm:px-2 py-2 sm:py-2.5 font-bold">{pScore > 0 ? pScore : "-"}</td>);
+                                        pScoreCells.push(<td key={i} className="px-1 sm:px-2 py-2 sm:py-2.5">{scoreDisplay}</td>);
                                     }
                                     return { parCells, pScoreCells, pSum, parSum };
                                 };
@@ -165,7 +190,7 @@ export function MarkerSubmitSignatureModal({ isOpen, onClose, scorecardId, onSig
                                                 onClick={() => setShowSignaturePad(true)}
                                                 className="px-6 py-3 rounded-xl font-bold bg-brand-navy hover:bg-brand-navy/90 text-white shadow-sm transition-colors"
                                             >
-                                                마커 서명하기
+                                                본인 서명하기
                                             </button>
                                         </div>
                                     </>

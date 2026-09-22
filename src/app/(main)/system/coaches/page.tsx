@@ -29,7 +29,7 @@ interface Coach {
     assignedAthletes: string[];
 }
 
-const branches = ["총괄", "오피스", "조이마루점", "구미점"];
+const branches = ["조이마루점", "구미점"];
 
 export default function CoachesListPage() {
     const router = useRouter();
@@ -45,7 +45,7 @@ export default function CoachesListPage() {
                 const { data, error } = await supabase
                     .from("users")
                     .select("*")
-                    .in("role", ["coach", "admin", "head_coach"]);
+                    .in("role", ["coach", "admin", "head_coach", "office"]);
 
                 if (error) {
                     console.error("Error fetching coaches:", error);
@@ -60,7 +60,7 @@ export default function CoachesListPage() {
                             name: d.name,
                             phone: d.phone || "",
                             email: "",
-                            branch: d.branch || "미지정",
+                            branch: (d.role === "headquarter" || d.role === "office") ? "전체" : (d.branch || "미지정"),
                             status: d.status === "휴직" ? "paused" : "active",
                             gender: d.gender === 'male' ? '남' : d.gender === 'female' ? '여' : (d.gender === 'other' ? '기타' : '미지정'),
                             assignedAthletes: [],

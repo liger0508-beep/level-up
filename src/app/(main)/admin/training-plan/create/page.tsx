@@ -127,7 +127,7 @@ export default function CreatePlanPage() {
                     setRecentPlan(null);
                 }
             });
-            fetchAllLessonsByPlayer(selectedPlayer, undefined, 10).then(setAllLessons);
+            fetchAllLessonsByPlayer(selectedPlayer).then(setAllLessons);
             fetchLatestLessonsPerCategory(selectedPlayer).then(lessons => {
                 // Initialize selectedLessons with the top 3 latest parts
                 const initialSelected: Record<string, LessonRecord | null> = {};

@@ -56,7 +56,7 @@ export default function AthletesListPage() {
     const router = useRouter();
     const supabase = createClient();
 
-    const [availableBranches, setAvailableBranches] = useState<string[]>(["총괄", "오피스", "조이마루점", "구미점"]);
+    const [availableBranches, setAvailableBranches] = useState<string[]>(["조이마루점", "구미점"]);
     const [athletes, setAthletes] = useState<Athlete[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");

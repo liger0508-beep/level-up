@@ -87,10 +87,10 @@ export default function CoachSelectionPage() {
             
             let branchCoaches = coachesData || [];
             
-            // Filter out Office and HQ (총괄) from the list
+            // Filter out Office and HQ from the list (if any slip through)
             branchCoaches = branchCoaches.filter(c => c.branch !== "오피스" && c.branch !== "총괄");
             
-            if (currentUser.branch && currentUser.branch !== "총괄" && currentUser.branch !== "오피스") {
+            if (currentUser.branch && currentUser.branch !== "전체" && currentUser.branch !== "오피스" && currentUser.branch !== "총괄") {
                 branchCoaches = branchCoaches.filter(c => c.branch === currentUser.branch);
             }
             setCoaches(branchCoaches);
@@ -142,7 +142,7 @@ export default function CoachSelectionPage() {
                         athlete_id: user.id,
                         coach_id: selectedCoachId,
                         month: selectedMonth,
-                        branch: user.branch || "총괄"
+                        branch: user.branch || "전체"
                     });
                     
                 if (insertError) {

@@ -212,18 +212,16 @@ export default function Home() {
             if (athletes) targetAthleteIds = athletes.map(a => a.id);
           }
           // Coach: Find branch athletes (for scores)
-          if (profile.branch) {
-            if (profile.branch === "총괄" || profile.branch === "오피스") {
+          if (profile.role === "headquarter" || profile.role === "office") {
               const { data: allBranchAthletes } = await supabase.from("users").select("id").eq("role", "athlete");
               if (allBranchAthletes) {
                 scoreTargetAthleteIds = allBranchAthletes.map(a => a.id);
               }
-            } else {
+          } else if (profile.branch) {
               const { data: branchAthletes } = await supabase.from("users").select("id").eq("branch", profile.branch).eq("role", "athlete");
               if (branchAthletes) {
                 scoreTargetAthleteIds = branchAthletes.map(a => a.id);
               }
-            }
           }
           if (scoreTargetAthleteIds.length === 0) {
             scoreTargetAthleteIds = [...targetAthleteIds];
@@ -349,7 +347,7 @@ export default function Home() {
           if (!isOngoing) return false;
 
           // Permission check: Branch & Role
-          const isMasterBranch = profile && (profile.branch === '오피스' || profile.branch === '총괄');
+          const isMasterBranch = profile && (profile.role === 'office' || profile.role === 'headquarter');
           
           const pollTypes = p.type.split(',').map(t => t.trim());
           const hasRolePermission = isMasterBranch || pollTypes.includes("all") || (profile && pollTypes.includes(profile.role));
@@ -379,7 +377,7 @@ export default function Home() {
         setPendingPolls(ongoingUnvoted);
         const allNotices = await getNotices(10);
         const filteredNotices = allNotices.filter(n => {
-          const isMasterBranch = profile && (profile.branch === '오피스' || profile.branch === '총괄');
+          const isMasterBranch = profile && (profile.role === 'office' || profile.role === 'headquarter');
           if (profile && profile.role === 'admin' || isMasterBranch) return true;
           
           const baseBranch = profile?.branch ? profile.branch.replace('점', '') : '';
@@ -589,7 +587,7 @@ export default function Home() {
 
   const isCoach = currentUser?.role === "coach";
   const isAdmin = currentUser?.role === "admin";
-  const isLessonWriter = currentUser?.role === "coach" || currentUser?.role === "admin" || currentUser?.branch === "총괄" || currentUser?.branch === "오피스";
+  const isLessonWriter = currentUser?.role === "coach" || currentUser?.role === "admin" || currentUser?.role === "headquarter" || currentUser?.role === "office";
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">

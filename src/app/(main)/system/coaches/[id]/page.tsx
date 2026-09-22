@@ -42,6 +42,7 @@ interface CoachDetail {
     birthDate: string;
     assignedAthletes: string; // Comma separated for simplicity in mock
     memo: string;
+    role: string;
 }
 
 // ── Status metadata ──
@@ -113,7 +114,7 @@ export default function CoachDetailPage() {
     const [isEditing, setIsEditing] = useState(false);
     const [editData, setEditData] = useState<CoachDetail | null>(null);
     const [saveMessage, setSaveMessage] = useState("");
-    const [availableBranches, setAvailableBranches] = useState<string[]>(["총괄", "오피스", "조이마루점", "구미점"]);
+    const [availableBranches, setAvailableBranches] = useState<string[]>(["조이마루점", "구미점"]);
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [isResettingPw, setIsResettingPw] = useState(false);
 
@@ -126,10 +127,10 @@ export default function CoachDetailPage() {
                 
                 // Fetch branches
                 const { data: branchesData } = await supabase.from('users').select('branch');
-                const standardBranches = ["총괄", "오피스", "조이마루점", "구미점"];
+                const standardBranches = ["조이마루점", "구미점"];
                 let allBranches = [...standardBranches];
                 if (branchesData) {
-                    const dynamicBranches = branchesData.map(b => b.branch).filter(v => v && v !== "미지정" && v !== "" && !standardBranches.includes(v));
+                    const dynamicBranches = branchesData.map(b => b.branch).filter(v => v && v !== "미지정" && v !== "" && v !== "총괄" && v !== "오피스" && !standardBranches.includes(v));
                     allBranches = [...allBranches, ...Array.from(new Set(dynamicBranches))];
                 }
                 setAvailableBranches(allBranches as string[]);
@@ -155,13 +156,14 @@ export default function CoachDetailPage() {
                         phone: data.phone || "",
                         email: data.email || "",
                         loginId: data.login_id || "",
-                        branch: data.branch || "미지정",
+                        branch: (data.role === "headquarter" || data.role === "office") ? "전체" : (data.branch || "미지정"),
                         registeredAt: data.created_at ? ((data.created_at) ? new Date(data.created_at).toLocaleDateString('en-CA', {timeZone: 'Asia/Seoul'}) : "") : "",
                         status: data.status === "휴직" ? "paused" : "active",
                         gender: data.gender === "male" ? "남" : data.gender === "female" ? "여" : (data.gender === "other" ? "기타" : "미지정"),
                         birthDate: data.dob || "",
                         assignedAthletes: data.assigned_athletes || "",
                         memo: data.memo || "",
+                        role: data.role || "coach",
                     };
                     setCoach(loaded);
                     setEditData(loaded);
@@ -195,7 +197,8 @@ export default function CoachDetailPage() {
                     status: editData.status === "paused" ? "휴직" : "재직",
                     memo: editData.memo || null,
                     assigned_athletes: editData.assignedAthletes || null,
-                    dob: editData.birthDate || null
+                    dob: editData.birthDate || null,
+                    role: editData.role
                 })
                 .eq("id", coachId);
 
@@ -427,6 +430,18 @@ export default function CoachDetailPage() {
                             )}
                         </div>
                         <InfoRow icon={MapPin} label="소속 지점" value={coach.branch} editable={isEditing} editValue={editData.branch} onEdit={(v) => updateField("branch", v)} isEditing={isEditing} options={availableBranches} />
+                        {currentUser?.name === '슈퍼관리자' && (
+                            <InfoRow 
+                                icon={Shield} 
+                                label="권한 (Role)" 
+                                value={coach.role === 'headquarter' ? '총괄' : coach.role === 'office' ? '오피스' : coach.role === 'admin' ? '관리자' : '코치'} 
+                                editable={isEditing} 
+                                editValue={editData.role} 
+                                onEdit={(v) => updateField("role", v)} 
+                                isEditing={isEditing} 
+                                options={["coach", "headquarter", "office", "admin"]} 
+                            />
+                        )}
                         <InfoRow icon={Hash} label="ID" value={coach.loginId} />
                         <InfoRow icon={Key} label="PW" value="••••••••" />
                     </div>

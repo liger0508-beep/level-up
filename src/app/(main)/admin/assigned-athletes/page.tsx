@@ -78,7 +78,7 @@ export default function AssignedAthletesPage() {
                 const { data: coachesData } = await supabase
                     .from('users')
                     .select('id, name, role, branch')
-                    .in('role', ['coach', 'admin', 'head_coach']);
+                    .in('role', ['coach', 'admin', 'head_coach', 'office', 'headquarter']);
                 setCoaches(coachesData || []);
 
                 // 3. Fetch all athletes (for management view)
@@ -129,7 +129,7 @@ export default function AssignedAthletesPage() {
             athlete_id: user.id,
             coach_id: coachId,
             month: monthToAssign,
-            branch: user.branch || "총괄"
+            branch: user.branch || "전체"
         };
 
         try {
@@ -188,7 +188,7 @@ export default function AssignedAthletesPage() {
                         athlete_id: athlete.id,
                         coach_id: coachId,
                         month: selectedMonth,
-                        branch: athlete.branch || "총괄" // Fallback to avoid NOT NULL constraint
+                        branch: athlete.branch || "전체" // Fallback to avoid NOT NULL constraint
                     }, { onConflict: 'athlete_id,month' });
 
                 if (error) throw error;
@@ -305,7 +305,7 @@ export default function AssignedAthletesPage() {
                                         >
                                             <option value="">코치 선택하기</option>
                                             {coaches
-                                                .filter(c => c.branch === user.branch || user.branch === '총괄')
+                                                .filter(c => c.branch === user.branch || user.role === 'office' || user.role === 'headquarter' || c.role === 'office' || c.role === 'headquarter' || user.branch === '전체')
                                                 .map(coach => (
                                                     <option key={coach.id} value={coach.id}>{coach.name} 코치 ({coach.branch})</option>
                                                 ))
@@ -329,7 +329,7 @@ export default function AssignedAthletesPage() {
                             >
                                 <option value="">코치 변경하기</option>
                                 {coaches
-                                    .filter(c => c.branch === user.branch || user.branch === '총괄')
+                                    .filter(c => c.branch === user.branch || user.role === 'office' || user.role === 'headquarter' || c.role === 'office' || c.role === 'headquarter' || user.branch === '전체')
                                     .filter(c => c.id !== assignedCoach.id)
                                     .map(coach => (
                                         <option key={coach.id} value={coach.id}>{coach.name} 코치 ({coach.branch})</option>
@@ -378,7 +378,7 @@ export default function AssignedAthletesPage() {
                                                         >
                                                             <option value="">미지정</option>
                                                             {coaches
-                                                                .filter(c => c.branch === athlete.branch || athlete.branch === '총괄')
+                                                                .filter(c => c.branch === athlete.branch || user?.role === 'office' || user?.role === 'headquarter' || c.role === 'office' || c.role === 'headquarter')
                                                                 .map(c => (
                                                                     <option key={c.id} value={c.id}>{c.name}</option>
                                                                 ))

@@ -223,26 +223,24 @@ export function SideNav() {
         const isSuperAdmin = userRole === "admin" || userRole === "super_admin" || userRole === "superadmin" || userName === "슈퍼관리자";
         if (isSuperAdmin) return true;
 
-        const isHeadCoach = userRole === "coach" && userBranch === "총괄";
+        const isHQOrOffice = userRole === "headquarter" || userRole === "office";
 
         // Hide Admin & System menus explicitly for athletes
         if (userRole === "athlete" && (item.title === "운영/관리" || item.title === "시스템 관리" || item.title === "테스트")) {
             return false;
         }
 
-        // Hide System menus explicitly for coaches (unless Head Coach)
-        if (userRole === "coach" && item.title === "시스템 관리" && !isHeadCoach) {
+        // Hide System menus explicitly for coaches
+        if (userRole === "coach" && item.title === "시스템 관리") {
             return false;
         }
 
         if (item.title === "테스트") {
-            if (!isHeadCoach) {
+            if (!isHQOrOffice) {
                 return false;
             }
         }
 
-        // Admins can see everything by default in the UI unless explicitly hidden?
-        // Actually, follow the permission table strictly.
         if (item.subItems) {
             // Folder is visible if any sub-item is visible
             return item.subItems.some((sub: any) => canShowSubItem(sub));
@@ -250,11 +248,6 @@ export function SideNav() {
 
         const perm = permissions.find(p => p.menuKey === item.key);
         if (!perm) return true; // Default to visible if not in perm table (e.g. newly added)
-
-        // Head Coach uses 'office' permissions
-        if (isHeadCoach && perm.permissions["office"]) {
-            return perm.permissions["office"].read;
-        }
 
         return perm.permissions[userRole]?.read;
     };
@@ -265,15 +258,8 @@ export function SideNav() {
         const isSuperAdmin = userRole === "admin" || userRole === "super_admin" || userRole === "superadmin" || userName === "슈퍼관리자";
         if (isSuperAdmin) return true;
 
-        const isHeadCoach = userRole === "coach" && userBranch === "총괄";
-
         const perm = permissions.find(p => p.menuKey === sub.key);
         if (!perm) return true;
-
-        // Head Coach uses 'office' permissions
-        if (isHeadCoach && perm.permissions["office"]) {
-            return perm.permissions["office"].read;
-        }
 
         return perm.permissions[userRole]?.read;
     };

@@ -119,7 +119,7 @@ export default function AthleteDetailPage() {
     const [isEditing, setIsEditing] = useState(false);
     const [editData, setEditData] = useState<AthleteDetail | null>(null);
     const [saveMessage, setSaveMessage] = useState("");
-    const [availableBranches, setAvailableBranches] = useState<string[]>(["총괄", "오피스", "조이마루점", "구미점"]);
+    const [availableBranches, setAvailableBranches] = useState<string[]>(["조이마루점", "구미점"]);
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [isResettingPw, setIsResettingPw] = useState(false);
 
@@ -135,13 +135,13 @@ export default function AthleteDetailPage() {
                     .select('branch');
                 
                 // Start with standard branches
-                const standardBranches = ["총괄", "오피스", "조이마루점", "구미점"];
+                const standardBranches = ["조이마루점", "구미점"];
                 let allBranches = [...standardBranches];
 
                 if (branchesData) {
                     const dynamicBranches = branchesData
                         .map(b => b.branch)
-                        .filter(v => v && v !== "미지정" && v !== "" && !standardBranches.includes(v));
+                        .filter(v => v && v !== "미지정" && v !== "" && v !== "총괄" && v !== "오피스" && !standardBranches.includes(v));
                     allBranches = [...allBranches, ...Array.from(new Set(dynamicBranches))];
                 }
                 

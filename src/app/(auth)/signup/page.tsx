@@ -138,12 +138,6 @@ export default function SignupPage(props: { searchParams: Promise<{ [key: string
                     required
                     defaultValue="조이마루점"
                 >
-                    {selectedRole === 'coach' && (
-                        <>
-                            <option value="총괄">총괄</option>
-                            <option value="오피스">오피스</option>
-                        </>
-                    )}
                     <option value="조이마루점">조이마루점</option>
                     <option value="구미점">구미점</option>
                 </select>

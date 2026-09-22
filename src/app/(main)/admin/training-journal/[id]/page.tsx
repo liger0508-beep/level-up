@@ -349,7 +349,7 @@ export default function JournalDetailPage() {
                 {/* ── 3. Content ── */}
                 <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm min-h-[140px]">
                     <div
-                        className="prose prose-sm sm:prose-base prose-zinc dark:prose-invert max-w-none text-zinc-700 dark:text-zinc-300 leading-relaxed"
+                        className="prose prose-sm sm:prose-base prose-zinc dark:prose-invert max-w-none text-zinc-700 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap"
                         dangerouslySetInnerHTML={{ __html: journal.content }}
                     />
                 </section>
