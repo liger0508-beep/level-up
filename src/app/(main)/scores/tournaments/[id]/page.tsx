@@ -8,6 +8,8 @@ import { createClient } from "@/lib/supabase/client";
 import { PageTitle } from "@/components/ui/Typography";
 import { LiveScoreModal } from "@/components/ui/LiveScoreModal";
 import { CrossCheckSignatureModal } from "@/components/ui/CrossCheckSignatureModal";
+import { AdminScoreEditModal } from "@/components/ui/AdminScoreEditModal";
+import { TournamentStatsView } from "@/components/ui/TournamentStatsView";
 import { SignaturePad } from "@/components/ui/SignaturePad";
 import "react-quill-new/dist/quill.snow.css";
 
@@ -29,13 +31,14 @@ export default function TournamentDetailPage() {
     const [draftId, setDraftId] = useState<string | null>(null);
     const [leaderboard, setLeaderboard] = useState<any[]>([]);
     const [scorecardsMap, setScorecardsMap] = useState<Record<string, any>>({});
-    const [leaderboardTab, setLeaderboardTab] = useState<'live' | 'pending'>('live');
+    const [leaderboardTab, setLeaderboardTab] = useState<'live' | 'pending' | 'stats'>('live');
     const [selectedRound, setSelectedRound] = useState<number>(1);
     const [showDraftPopup, setShowDraftPopup] = useState(false);
 
     // Category & Live Score State
     const [selectedLiveScoreAthlete, setSelectedLiveScoreAthlete] = useState<{id: string, name: string} | null>(null);
     const [selectedCrossCheckAthlete, setSelectedCrossCheckAthlete] = useState<{id: string, name: string, scorecardId: string} | null>(null);
+    const [selectedAdminEdit, setSelectedAdminEdit] = useState<{id: string, name: string, scorecardId: string} | null>(null);
 
     // Signature Modal State
     const [showSignatureModal, setShowSignatureModal] = useState(false);
@@ -43,6 +46,18 @@ export default function TournamentDetailPage() {
     const [signatureStep, setSignatureStep] = useState<'marker' | 'player' | 'referee'>('marker');
     const [targetScorecardId, setTargetScorecardId] = useState<string | null>(null);
     const [tempMarkerSignature, setTempMarkerSignature] = useState<string | null>(null);
+
+    // Restore Live Score Modal on Back Navigation
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const urlParams = new URLSearchParams(window.location.search);
+            const liveAthleteId = urlParams.get('live_athlete');
+            const liveAthleteName = urlParams.get('live_name');
+            if (liveAthleteId && liveAthleteName) {
+                setSelectedLiveScoreAthlete({ id: liveAthleteId, name: liveAthleteName });
+            }
+        }
+    }, []);
 
     useEffect(() => {
         const load = async () => {
@@ -228,12 +243,12 @@ export default function TournamentDetailPage() {
         // Refresh scorecards map
         const { data: updatedSc } = await supabase
             .from("scorecards")
-            .select("id, athlete_id, marker_signature, player_signature, referee_signature")
+            .select("id, athlete_id, round_number, marker_signature, player_signature, referee_signature")
             .eq("id", targetScorecardId)
             .single();
             
         if (updatedSc) {
-            setScorecardsMap(prev => ({ ...prev, [updatedSc.athlete_id]: updatedSc }));
+            setScorecardsMap(prev => ({ ...prev, [`${updatedSc.athlete_id}_${updatedSc.round_number}`]: updatedSc }));
         }
     };
 
@@ -256,13 +271,16 @@ export default function TournamentDetailPage() {
 
             alert("선수 서명이 취소되었습니다.");
             
-            setScorecardsMap(prev => ({
-                ...prev,
-                [athleteId]: {
-                    ...prev[athleteId],
-                    player_signature: null,
-                }
-            }));
+            setScorecardsMap(prev => {
+                const key = `${athleteId}_${selectedRound}`;
+                return {
+                    ...prev,
+                    [key]: {
+                        ...(prev[key] || {}),
+                        player_signature: null,
+                    }
+                };
+            });
 
         } catch (err) {
             console.error(err);
@@ -509,6 +527,16 @@ export default function TournamentDetailPage() {
                 >
                     서명 대기
                 </button>
+                <button
+                    onClick={() => setLeaderboardTab('stats')}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors border shadow-sm ${
+                        leaderboardTab === 'stats' 
+                            ? "bg-brand-navy border-brand-navy text-white" 
+                            : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
+                    }`}
+                >
+                    통계
+                </button>
                 </div>
                 <button
                     onClick={() => {
@@ -526,7 +554,7 @@ export default function TournamentDetailPage() {
             </div>
 
             {/* Round Tabs */}
-            {tournament?.total_rounds > 1 && (
+            {tournament?.total_rounds > 1 && leaderboardTab !== 'stats' && (
                 <div className="flex items-center gap-2 mb-4 overflow-x-auto scrollbar-hide px-1">
                     {Array.from({ length: tournament.total_rounds }).map((_, i) => {
                         const roundNum = i + 1;
@@ -548,7 +576,9 @@ export default function TournamentDetailPage() {
                 </div>
             )}
 
-            {leaderboard.length === 0 ? (
+            {leaderboardTab === 'stats' ? (
+                <TournamentStatsView tournamentId={tournamentId} totalRounds={tournament?.total_rounds || 1} tournamentStartDate={tournament?.start_date} />
+            ) : leaderboard.length === 0 ? (
                 <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-10 text-center text-zinc-500 shadow-sm">
                     <Trophy className="w-12 h-12 text-zinc-300 dark:text-zinc-700 mx-auto mb-4" />
                     <p>아직 제출된 스코어가 없습니다.</p>
@@ -598,6 +628,7 @@ export default function TournamentDetailPage() {
                                         // Signature Status
                                         const sc = scorecardsMap[`${lb.athlete?.id}_${selectedRound}`];
                                         const is18Completed = lb.thru_hole === 18;
+                                        const hasMarkerSig = !!sc?.marker_signature;
                                         const hasPlayerSig = !!sc?.player_signature;
                                         const hasRefereeSig = !!sc?.referee_signature;
                                         const isFinalComplete = hasPlayerSig && hasRefereeSig;
@@ -676,65 +707,43 @@ export default function TournamentDetailPage() {
                                                                     }}
                                                                     className="text-[11px] font-bold bg-amber-500 text-white px-2 py-1.5 rounded-lg shadow-sm hover:bg-amber-600 transition-colors w-full max-w-[120px]"
                                                                 >
-                                                                    경기위원 검토중
+                                                                    경기위원 확인중
                                                                 </button>
                                                             ) : (
-                                                                <span className="text-[11px] text-zinc-400 font-semibold border border-zinc-200 dark:border-zinc-700 px-2 py-1.5 rounded-lg bg-white dark:bg-zinc-800 w-full max-w-[120px]">경기위원 검토중</span>
+                                                                <span className="text-[11px] text-zinc-400 font-semibold border border-zinc-200 dark:border-zinc-700 px-2 py-1.5 rounded-lg bg-white dark:bg-zinc-800 w-full max-w-[120px]">경기위원 확인중</span>
                                                             )
                                                         ) : (
-                                                        sc?.marker_signature === 'rejected' ? (
-                                                                (isOwnRow || canReviewOthers) ? (
-                                                                    <button 
-                                                                        onClick={(e) => { 
-                                                                            e.stopPropagation(); 
-                                                                            if (sc) {
-                                                                                setSelectedCrossCheckAthlete({ id: lb.athlete?.id, name: lb.athlete?.name || '알 수 없음', scorecardId: sc.id });
-                                                                            } else {
-                                                                                alert('공식 스코어카드를 찾을 수 없습니다.');
-                                                                            }
-                                                                        }}
-                                                                        className="text-[11px] font-bold bg-red-500 text-white px-2 py-1.5 rounded-lg shadow-sm hover:bg-red-600 transition-colors w-full max-w-[120px]"
-                                                                    >
-                                                                        재검토 요청
-                                                                    </button>
-                                                                ) : (
-                                                                    <span className="text-[11px] font-bold text-white bg-red-500/50 px-2 py-1.5 rounded-lg w-full max-w-[120px]">재검토 요청</span>
-                                                                )
+                                                            (isOwnRow || canReviewOthers) ? (
+                                                                <button 
+                                                                    onClick={(e) => { 
+                                                                        e.stopPropagation(); 
+                                                                        if (sc) {
+                                                                            setSelectedCrossCheckAthlete({ id: lb.athlete?.id, name: lb.athlete?.name || '알 수 없음', scorecardId: sc.id });
+                                                                        } else {
+                                                                            alert('공식 스코어카드를 찾을 수 없습니다.');
+                                                                        }
+                                                                    }}
+                                                                    className={`text-[11px] font-bold text-white px-2 py-1.5 rounded-lg shadow-sm transition-colors w-full max-w-[120px] ${!hasMarkerSig ? 'bg-indigo-500 hover:bg-indigo-600' : 'bg-brand-navy hover:bg-brand-navy/90'}`}
+                                                                >
+                                                                    {!hasMarkerSig ? "마커 확인중" : "본인 확인중"}
+                                                                </button>
                                                             ) : (
-                                                                (isOwnRow || canReviewOthers) ? (
-                                                                    <button 
-                                                                        onClick={(e) => { 
-                                                                            e.stopPropagation(); 
-                                                                            if (sc) {
-                                                                                setSelectedCrossCheckAthlete({ id: lb.athlete?.id, name: lb.athlete?.name || '알 수 없음', scorecardId: sc.id });
-                                                                            } else {
-                                                                                alert('공식 스코어카드를 찾을 수 없습니다.');
-                                                                            }
-                                                                        }}
-                                                                        className="text-[11px] font-bold bg-brand-navy text-white px-2 py-1.5 rounded-lg shadow-sm hover:bg-brand-navy/90 transition-colors w-full max-w-[120px]"
-                                                                    >
-                                                                        본인 검토중
-                                                                    </button>
-                                                                ) : (
-                                                                    <span className="text-[11px] text-zinc-400 font-semibold border border-zinc-200 dark:border-zinc-700 px-2 py-1.5 rounded-lg bg-white dark:bg-zinc-800 w-full max-w-[120px]">본인 검토중</span>
-                                                                )
+                                                                <span className="text-[11px] text-zinc-400 font-semibold border border-zinc-200 dark:border-zinc-700 px-2 py-1.5 rounded-lg bg-white dark:bg-zinc-800 w-full max-w-[120px]">
+                                                                    {!hasMarkerSig ? "마커 확인중" : "본인 확인중"}
+                                                                </span>
                                                             )
                                                         )}
                                                     </div>
                                                 </td>
                                             )}
                                             <td className="px-2 sm:px-6 py-4 text-center">
-                                                {(sc?.athlete_id === userId || ['admin', 'superadmin', 'super_admin'].includes(userRole)) && sc && (
+                                                {(sc?.marker_id === userId || ['admin', 'superadmin', 'super_admin', 'headquarter', 'office'].includes(userRole)) && sc && (
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
-                                                            router.push(`/scores/create?id=${sc.id}&tournament_id=${tournamentId}`);
+                                                            setSelectedAdminEdit({ id: lb.athlete?.id, name: lb.athlete?.name || '알 수 없음', scorecardId: sc.id });
                                                         }}
-                                                        className={`text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow-sm ${
-                                                            sc?.marker_signature === 'rejected'
-                                                                ? 'bg-red-500 text-white hover:bg-red-600 animate-pulse'
-                                                                : 'text-brand-navy bg-brand-navy/10 hover:bg-brand-navy/20 dark:text-brand-navy-light dark:bg-brand-navy/20 dark:hover:bg-brand-navy/30'
-                                                        }`}
+                                                        className="text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow-sm text-brand-navy bg-brand-navy/10 hover:bg-brand-navy/20 dark:text-brand-navy-light dark:bg-brand-navy/20 dark:hover:bg-brand-navy/30"
                                                     >
                                                         수정
                                                     </button>
@@ -754,7 +763,15 @@ export default function TournamentDetailPage() {
             {selectedLiveScoreAthlete && (
                 <LiveScoreModal
                     isOpen={!!selectedLiveScoreAthlete}
-                    onClose={() => setSelectedLiveScoreAthlete(null)}
+                    onClose={() => {
+                        setSelectedLiveScoreAthlete(null);
+                        if (typeof window !== 'undefined') {
+                            const currentUrl = new URL(window.location.href);
+                            currentUrl.searchParams.delete('live_athlete');
+                            currentUrl.searchParams.delete('live_name');
+                            window.history.replaceState(null, '', currentUrl.toString());
+                        }
+                    }}
                     tournamentId={tournamentId}
                     athleteId={selectedLiveScoreAthlete?.id || ''}
                     athleteName={selectedLiveScoreAthlete?.name || ''}
@@ -783,19 +800,46 @@ export default function TournamentDetailPage() {
                     onRequestCorrection={async () => {
                         setSelectedCrossCheckAthlete(null);
                         const supabase = createClient();
-                        await supabase.from('scorecards').update({ marker_signature: 'rejected' }).eq('id', selectedCrossCheckAthlete.scorecardId);
-                        alert("마커에게 수정 요청을 보냈습니다.");
-                        setScorecardsMap(prev => ({
-                            ...prev,
-                            [selectedCrossCheckAthlete.id]: {
-                                ...prev[selectedCrossCheckAthlete.id],
-                                marker_signature: 'rejected'
-                            }
-                        }));
+                        await supabase.from('scorecards').update({ 
+                            marker_signature: null,
+                            player_signature: null,
+                            referee_signature: null,
+                            marker_signed_at: null,
+                            player_signed_at: null,
+                            referee_signed_at: null
+                        }).eq('id', selectedCrossCheckAthlete.scorecardId);
+                        alert("서명이 초기화되었습니다. 스코어 수정 후 처음부터 다시 서명을 진행해주세요.");
+                        setScorecardsMap(prev => {
+                            const key = `${selectedCrossCheckAthlete.id}_${selectedRound}`;
+                            return {
+                                ...prev,
+                                [key]: {
+                                    ...(prev[key] || {}),
+                                    marker_signature: null,
+                                    player_signature: null,
+                                    referee_signature: null
+                                }
+                            };
+                        });
                     }}
                     onEditMyScore={() => {
                         setSelectedCrossCheckAthlete(null);
                         router.push(`/scores/create?id=${selectedCrossCheckAthlete.scorecardId}&tournament_id=${tournamentId}`);
+                    }}
+                />
+            )}
+
+            {/* ── Admin Edit Modal ── */}
+            {selectedAdminEdit && (
+                <AdminScoreEditModal
+                    isOpen={!!selectedAdminEdit}
+                    onClose={() => setSelectedAdminEdit(null)}
+                    tournamentId={tournamentId}
+                    athleteId={selectedAdminEdit.id}
+                    athleteName={selectedAdminEdit.name}
+                    scorecardId={selectedAdminEdit.scorecardId}
+                    onSaveSuccess={() => {
+                        window.location.reload();
                     }}
                 />
             )}

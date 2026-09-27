@@ -264,6 +264,24 @@ export function LiveScoreModal({ isOpen, onClose, tournamentId, athleteId, athle
                                                 </div>
                                             </div>
                                         </div>
+
+                                        <div className="flex justify-end pt-2">
+                                            <a 
+                                                href={`/scores/${scorecard.id}`}
+                                                onClick={(e) => {
+                                                    e.preventDefault();
+                                                    const currentUrl = new URL(window.location.href);
+                                                    currentUrl.searchParams.set('live_athlete', athleteId);
+                                                    currentUrl.searchParams.set('live_name', athleteName);
+                                                    window.history.replaceState(null, '', currentUrl.toString());
+                                                    window.location.href = `/scores/${scorecard.id}`;
+                                                }}
+                                                className="inline-flex items-center gap-1.5 px-4 py-2 bg-brand-navy hover:bg-brand-navy/90 text-white text-[13px] font-bold rounded-xl transition-colors shadow-sm"
+                                            >
+                                                상세 스코어 확인
+                                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                                            </a>
+                                        </div>
                                     </>
                                 );
                             })()}

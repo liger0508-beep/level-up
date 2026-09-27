@@ -252,30 +252,40 @@ export default function CategoryStatsPage() {
                         </button>
                         
                         {isCategoryOpen && (
-                            <div className="absolute z-50 w-full mt-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl shadow-lg max-h-[300px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] py-1">
-                                {CATEGORY_OPTIONS.map(opt => {
-                                    const isSelected = selectedCategories.includes(opt.value);
-                                    return (
-                                        <button
-                                            key={opt.value}
-                                            onClick={() => {
-                                                if (isSelected) {
-                                                    setSelectedCategories(prev => prev.filter(c => c !== opt.value));
-                                                } else {
-                                                    setSelectedCategories(prev => [...prev, opt.value]);
-                                                }
-                                            }}
-                                            className={cn(
-                                                "w-full px-3 py-2.5 text-sm font-bold text-center transition-colors",
-                                                isSelected 
-                                                    ? "text-brand-navy bg-brand-navy/10 dark:bg-brand-navy/20 dark:text-brand-navy-light" 
-                                                    : "text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700/50"
-                                            )}
-                                        >
-                                            {opt.label}
-                                        </button>
-                                    );
-                                })}
+                            <div className="absolute z-50 w-full mt-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl shadow-lg flex flex-col">
+                                <div className="max-h-[300px] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] py-1">
+                                    {CATEGORY_OPTIONS.map(opt => {
+                                        const isSelected = selectedCategories.includes(opt.value);
+                                        return (
+                                            <button
+                                                key={opt.value}
+                                                onClick={() => {
+                                                    if (isSelected) {
+                                                        setSelectedCategories(prev => prev.filter(c => c !== opt.value));
+                                                    } else {
+                                                        setSelectedCategories(prev => [...prev, opt.value]);
+                                                    }
+                                                }}
+                                                className={cn(
+                                                    "w-full px-3 py-2.5 text-sm font-bold text-center transition-colors",
+                                                    isSelected 
+                                                        ? "text-brand-navy bg-brand-navy/10 dark:bg-brand-navy/20 dark:text-brand-navy-light" 
+                                                        : "text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700/50"
+                                                )}
+                                            >
+                                                {opt.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <div className="p-2 border-t border-zinc-100 dark:border-zinc-700 bg-zinc-50/80 dark:bg-zinc-800/80 rounded-b-2xl flex justify-end">
+                                    <button
+                                        onClick={() => setIsCategoryOpen(false)}
+                                        className="px-4 py-1.5 bg-brand-navy hover:bg-brand-navy/90 text-white text-xs font-bold rounded-lg transition-colors shadow-sm"
+                                    >
+                                        완료
+                                    </button>
+                                </div>
                             </div>
                         )}
                     </div>
