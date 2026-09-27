@@ -140,7 +140,7 @@ export default function TrainingJournalPage() {
 
     // Server-side Pagination & Filtering
     useEffect(() => {
-        if (isLoading && ['coach', 'admin', 'office', 'total', 'superadmin'].includes(userRole) && allAthletes.length === 0) return; // Wait until athletes load
+        if (isLoading && ['coach', 'admin', 'office', 'headquarter', 'total', 'superadmin'].includes(userRole) && allAthletes.length === 0) return; // Wait until athletes load
 
         const fetchFiltered = async () => {
             const supabase = createClient();
@@ -411,7 +411,7 @@ export default function TrainingJournalPage() {
                     )}
                 </div>
 
-                {['coach', 'admin', 'office', 'total', 'superadmin'].includes(userRole) ? (
+                {['coach', 'admin', 'office', 'headquarter', 'total', 'superadmin'].includes(userRole) ? (
                     <>
                         {/* ── Player Search ── */}
                         <div className="flex items-center gap-2 mt-3">

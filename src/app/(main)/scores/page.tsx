@@ -329,7 +329,7 @@ export default function ScoresPage() {
             if (startDate) query = query.gte("round_date", startDate);
             if (endDate) query = query.lte("round_date", endDate);
             
-            if (userRole === 'coach' || userRole === 'admin') {
+            if (userRole === 'coach' || userRole === 'admin' || userRole === 'headquarter' || userRole === 'office') {
                 if (!selectAll && selectedPlayers.size > 0) {
                     const { data: usersData } = await supabase.from("users").select("id").in("name", Array.from(selectedPlayers));
                     const userIds = usersData?.map(u => u.id) || [];

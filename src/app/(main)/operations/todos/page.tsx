@@ -79,8 +79,7 @@ export default function TodoPage() {
 
                 await fetchAllItems(user.id, selectedDate, profile?.role || "athlete");
 
-                // Fetch all users for selection (only if coach/admin)
-                if (profile?.role === "coach" || profile?.role === "admin") {
+                if (profile?.role === "coach" || profile?.role === "admin" || profile?.role === "headquarter") {
                     const { data: users } = await supabase
                         .from("users")
                         .select("id, name, role, branch")
@@ -458,7 +457,7 @@ export default function TodoPage() {
         setSelectedDate(formatLocalDate(d));
     };
 
-    const isCoachOrAdmin = currentUser?.role === "coach" || currentUser?.role === "admin";
+    const isCoachOrAdmin = currentUser?.role === "coach" || currentUser?.role === "admin" || currentUser?.role === "headquarter";
 
     return (
         <div className="max-w-5xl mx-auto px-4 py-8">

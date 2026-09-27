@@ -264,7 +264,7 @@ export default function CommunityPage() {
                         공지사항
                     </PageTitle>
                 </div>
-                {(userRole === 'admin' || userRole === 'coach') && (
+                {(userRole === 'admin' || userRole === 'coach' || userRole === 'headquarter') && (
                     <Link
                         href="/community/create"
                         className="bg-brand-red hover:bg-brand-red-dark text-white px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"

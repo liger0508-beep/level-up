@@ -488,7 +488,7 @@ export default function LessonsPage() {
                     <BookOpen size={24} className="text-brand-navy dark:text-brand-navy-light shrink-0" />
                     <PageTitle>Lesson</PageTitle>
                 </div>
-                {(userRole === 'coach' || userRole === 'admin') && (
+                {(userRole === 'coach' || userRole === 'admin' || userRole === 'headquarter' || userRole === 'office') && (
                     <div className="flex items-center gap-2 shrink-0">
                         <button
                             onClick={() => setIsPlayerHistoryModalOpen(true)}

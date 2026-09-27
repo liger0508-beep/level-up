@@ -150,10 +150,6 @@ export default function AthleteReportPage() {
         return "";
     });
     const [selectedMonth, setSelectedMonth] = useState<string>(() => {
-        if (typeof window !== "undefined") {
-            const saved = sessionStorage.getItem("gla_report_month");
-            if (saved) return saved;
-        }
         const d = new Date();
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     });

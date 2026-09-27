@@ -221,7 +221,7 @@ export default function VoteListPage() {
                         투표
                     </h1>
                 </div>
-                {(userRole === 'admin' || userRole === 'coach') && (
+                {(userRole === 'admin' || userRole === 'coach' || userRole === 'headquarter') && (
                     <button
                         onClick={() => router.push("/admin/polls/create")}
                         className="bg-brand-red hover:bg-brand-red-dark text-white px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
