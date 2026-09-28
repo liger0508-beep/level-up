@@ -308,7 +308,7 @@ export default function CourseManagementDetailPage() {
                 </section>
 
                 {/* 3.5 Send to Athletes (Coach/Admin only) */}
-                {currentUser && (currentUser.role === 'coach' || currentUser.role === 'admin') && (
+                {currentUser && (currentUser.role === 'coach' || currentUser.role === 'admin' || currentUser.role === 'office' || currentUser.role === 'headquarter') && (
                     <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-4">
                         <div className="flex items-center gap-2 mb-2">
                             <Send size={18} className="text-brand-navy dark:text-brand-navy-light" />

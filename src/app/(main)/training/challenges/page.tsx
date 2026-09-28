@@ -141,7 +141,7 @@ export default function ChallengesPage() {
                 query = query.lte("created_at", endDate + "T23:59:59+09:00");
             }
 
-            if ((userRole === 'coach' || userRole === 'admin') && !selectAll && selectedPlayers.size > 0) {
+            if ((userRole === 'coach' || userRole === 'admin' || userRole === 'office' || userRole === 'headquarter') && !selectAll && selectedPlayers.size > 0) {
                 const { data: usersData } = await supabase.from("users").select("id").in("name", Array.from(selectedPlayers));
                 const userIds = usersData?.map(u => u.id) || [];
                 if (userIds.length > 0) {
@@ -305,7 +305,7 @@ export default function ChallengesPage() {
                         Challenge
                     </PageTitle>
                 </div>
-                {(userRole === 'coach' || userRole === 'admin' || userRole === 'athlete') && (
+                {(userRole === 'coach' || userRole === 'admin' || userRole === 'office' || userRole === 'headquarter' || userRole === 'athlete') && (
                     <Link
                         href="/training/challenges/create"
                         className="bg-brand-red hover:bg-brand-red-dark text-white px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
@@ -440,7 +440,7 @@ export default function ChallengesPage() {
                 </div>
 
                 {/* Player Search & Select All */}
-                {(userRole === 'coach' || userRole === 'admin') && (
+                {(userRole === 'coach' || userRole === 'admin' || userRole === 'office' || userRole === 'headquarter') && (
                     <>
                         <div className="flex items-center gap-2 mt-3">
                             <LabelText>

@@ -167,7 +167,7 @@ export function SideNav() {
                     setUserRole(profile.role);
                     setUserName(profile.name);
                     setUserBranch(profile.branch);
-                    if (profile.role === "coach" || profile.role === "admin") {
+                    if (profile.role === "coach" || profile.role === "admin" || profile.role === "headquarter" || profile.role === "office") {
                         setProfileLink(`/system/coaches/${profile.id}`);
                     } else if (profile.role === "athlete") {
                         setProfileLink(`/system/athletes/${profile.id}`);

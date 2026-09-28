@@ -25,7 +25,8 @@ import {
     ChevronUp,
     ChevronDown,
     Info,
-    Trophy as TrophyIcon
+    Trophy as TrophyIcon,
+    RefreshCw
 } from "lucide-react";
 import { cn, formatScore, getKstDateStr } from "@/lib/utils";
 import { 
@@ -92,6 +93,9 @@ export default function ScoreStatsPage() {
     const [loading, setLoading] = useState(true);
     const [userRole, setUserRole] = useState<string | null>(null);
     const [userName, setUserName] = useState<string>("");
+    
+    const [statsTab, setStatsTab] = useState<"individual" | "branch">("individual");
+    const [selectedBranch, setSelectedBranch] = useState<string>("조이마루점");
     
     const [activePreset, setActivePreset] = useState<DatePresetType>("custom");
     const [selectedPlayers, setSelectedPlayers] = useState<Set<string>>(new Set());
@@ -180,9 +184,25 @@ export default function ScoreStatsPage() {
         fetchInitial();
     }, []);
 
-    const handleFetch = async (playersToFetch: Set<string> = selectedPlayers) => {
+    const handleFetch = async (playersToFetch: Set<string> = selectedPlayers, fetchBranch: boolean = false, forceRefresh: boolean = false) => {
         setLoading(true);
         setHasSearched(true);
+        
+        const cacheKey = `gla_score_stats_${fetchBranch ? 'branch_' + selectedBranch : 'indiv_' + Array.from(playersToFetch).sort().join(',')}_${startDate}_${endDate}_${holeType}`;
+        
+        if (!forceRefresh) {
+            const cached = sessionStorage.getItem(cacheKey);
+            if (cached) {
+                try {
+                    const parsed = JSON.parse(cached);
+                    setAllScorecards(parsed.allScorecards);
+                    setAnalysisMap(parsed.analysisMap);
+                    setLoading(false);
+                    return;
+                } catch(e) {}
+            }
+        }
+
         const supabase = createClient();
         
         let query = supabase
@@ -194,11 +214,12 @@ export default function ScoreStatsPage() {
             .lte("round_date", endDate)
             .order("round_date", { ascending: false });
 
-        if (playersToFetch.size > 0) {
+        if (fetchBranch) {
             const { data: users } = await supabase
                 .from("users")
                 .select("id")
-                .in("name", Array.from(playersToFetch));
+                .eq("branch", selectedBranch)
+                .in("role", ["athlete", "parent"]);
             const userIds = users?.map(u => u.id) || [];
             if (userIds.length > 0) {
                 query = query.in("athlete_id", userIds);
@@ -207,6 +228,22 @@ export default function ScoreStatsPage() {
                 setAnalysisMap({});
                 setLoading(false);
                 return;
+            }
+        } else {
+            if (playersToFetch.size > 0) {
+                const { data: users } = await supabase
+                    .from("users")
+                    .select("id")
+                    .in("name", Array.from(playersToFetch));
+                const userIds = users?.map(u => u.id) || [];
+                if (userIds.length > 0) {
+                    query = query.in("athlete_id", userIds);
+                } else {
+                    setAllScorecards([]);
+                    setAnalysisMap({});
+                    setLoading(false);
+                    return;
+                }
             }
         }
 
@@ -237,13 +274,23 @@ export default function ScoreStatsPage() {
     };
 
     useEffect(() => {
-        if (allScorecards.length === 0 || !selectedDetailAthlete) {
+        const isBranchMode = statsTab === "branch";
+        
+        if (allScorecards.length === 0) {
             setSummary(null);
             setScorecardInfo(null);
             return;
         }
 
-        const athleteScs = allScorecards.filter(sc => (sc.athlete?.name || "미지정") === selectedDetailAthlete);
+        if (!isBranchMode && !selectedDetailAthlete) {
+            setSummary(null);
+            setScorecardInfo(null);
+            return;
+        }
+
+        const athleteScs = isBranchMode 
+            ? allScorecards 
+            : allScorecards.filter(sc => (sc.athlete?.name || "미지정") === selectedDetailAthlete);
         
         // Filter out incomplete rounds (where analyzed holes < holeType) and excluded ones
         const activeScs = athleteScs.filter(sc => {
@@ -270,10 +317,10 @@ export default function ScoreStatsPage() {
             : (holeType === 18 ? 72 : 36);
 
         setScorecardInfo({
-            player: activeScs[0].athlete?.name || "선수",
-            coach: activeScs[0].coach?.name || "코치",
+            player: isBranchMode ? selectedBranch : (activeScs[0].athlete?.name || "선수"),
+            coach: isBranchMode ? "지점 소속 전체 선수" : (activeScs[0].coach?.name || "코치"),
             date: `${startDate.replace(/-/g, ".")} ~ ${endDate.replace(/-/g, ".")}`,
-            title: `통계 (${numRounds}라운드)`,
+            title: isBranchMode ? `${selectedBranch} 평균 데이터` : `통계 (${numRounds}라운드)`,
             totalScore: Math.round(activeScs.reduce((s, sc) => s + sc.total_score, 0) / numRounds),
             totalPar: avgPar
         });
@@ -532,12 +579,13 @@ export default function ScoreStatsPage() {
         <div className="p-4 sm:p-8 max-w-4xl mx-auto pb-24 min-h-screen">
             <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-2">
-                    {selectedDetailAthlete && (
+                    {((selectedDetailAthlete && statsTab === "individual") || (statsTab === "branch" && hasSearched)) && (
                         <button 
                             onClick={() => {
                                 setSelectedDetailAthlete(null);
                                 setExcludedIds(new Set());
                                 setViewingScorecardId(null);
+                                if (statsTab === "branch") setHasSearched(false);
                             }} 
                             className="p-1 -ml-1 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-zinc-900 dark:text-zinc-50"
                         >
@@ -552,7 +600,24 @@ export default function ScoreStatsPage() {
             </div>
             
             <main className="space-y-6">
-                {!selectedDetailAthlete ? (
+                {['admin', 'total', 'office', 'coach'].includes(userRole || '') && (
+                    <div className="flex bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl w-fit mb-4">
+                        <button 
+                            onClick={() => { setStatsTab("individual"); setHasSearched(false); setSelectedDetailAthlete(null); }}
+                            className={cn("px-4 py-2 rounded-lg text-sm font-bold transition-all", statsTab === "individual" ? "bg-white shadow-sm text-zinc-900" : "text-zinc-500")}
+                        >
+                            개인별 통계
+                        </button>
+                        <button 
+                            onClick={() => { setStatsTab("branch"); setHasSearched(false); setSelectedDetailAthlete(null); }}
+                            className={cn("px-4 py-2 rounded-lg text-sm font-bold transition-all", statsTab === "branch" ? "bg-white shadow-sm text-zinc-900" : "text-zinc-500")}
+                        >
+                            지점별 통계
+                        </button>
+                    </div>
+                )}
+                
+                {(!selectedDetailAthlete && statsTab === "individual") || (statsTab === "branch" && !hasSearched) ? (
                     <>
                         <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 mb-6 shadow-sm">
                             <div className="flex items-center gap-2 mb-4">
@@ -569,25 +634,50 @@ export default function ScoreStatsPage() {
                             </div>
                             {userRole !== 'athlete' && userRole !== 'parent' ? (
                                 <div className="mt-3">
-                                    <div className="flex items-center gap-2">
-                                        <label className="w-24 shrink-0 text-center text-sm font-semibold text-zinc-700 dark:text-zinc-300">선수명</label>
-                                        <div className="flex-1 min-w-0">
-                                            <AthleteSearch multi={true} showChips={false} selectedNames={Array.from(selectedPlayers)} onSelect={togglePlayer} onRemove={handlePlayerRemove} placeholder="선수 검색..." />
+                                    {statsTab === "branch" ? (
+                                        <div className="flex items-center gap-2">
+                                            <label className="w-24 shrink-0 text-center text-sm font-semibold text-zinc-700 dark:text-zinc-300">지점 선택</label>
+                                            <div className="flex-1 min-w-0">
+                                                <select 
+                                                    value={selectedBranch} 
+                                                    onChange={(e) => setSelectedBranch(e.target.value)}
+                                                    className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm font-bold"
+                                                >
+                                                    <option value="조이마루점">조이마루점</option>
+                                                    <option value="구미점">구미점</option>
+                                                </select>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => handleFetch(new Set(), true, false)} className="px-4 py-2 sm:px-5 rounded-xl bg-brand-navy text-white text-sm font-bold flex items-center justify-center gap-2 shrink-0"><Search size={16} /> 조회</button>
+                                                <button onClick={() => handleFetch(new Set(), true, true)} className="px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 text-sm font-bold flex items-center justify-center shrink-0 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors" title="최신 데이터 다시 불러오기"><RefreshCw size={16} className={loading ? "animate-spin" : ""} /></button>
+                                            </div>
                                         </div>
-                                        <button onClick={() => handleFetch()} className="px-4 py-2 sm:px-5 rounded-xl bg-brand-navy text-white text-sm font-bold flex items-center justify-center gap-2 shrink-0"><Search size={16} /> 조회</button>
-                                    </div>
-                                    {selectedPlayers.size > 0 && (
-                                        <div className="flex flex-wrap gap-1.5 mt-2" style={{ paddingLeft: '104px' }}>
-                                            {Array.from(selectedPlayers).map((name) => (
-                                                <span key={name} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 text-xs font-medium border border-blue-200 dark:border-blue-800">
-                                                    {name}
-                                                    <button type="button" onClick={() => handlePlayerRemove(name)}
-                                                        className="hover:text-blue-600 dark:hover:text-blue-100 transition-colors">
-                                                        <X size={12} />
-                                                    </button>
-                                                </span>
-                                            ))}
-                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="flex items-center gap-2">
+                                                <label className="w-24 shrink-0 text-center text-sm font-semibold text-zinc-700 dark:text-zinc-300">선수명</label>
+                                                <div className="flex-1 min-w-0">
+                                                    <AthleteSearch multi={true} showChips={false} selectedNames={Array.from(selectedPlayers)} onSelect={togglePlayer} onRemove={handlePlayerRemove} placeholder="선수 검색..." />
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    <button onClick={() => handleFetch(selectedPlayers, false, false)} className="px-4 py-2 sm:px-5 rounded-xl bg-brand-navy text-white text-sm font-bold flex items-center justify-center gap-2 shrink-0"><Search size={16} /> 조회</button>
+                                                    <button onClick={() => handleFetch(selectedPlayers, false, true)} className="px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 text-sm font-bold flex items-center justify-center shrink-0 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors" title="최신 데이터 다시 불러오기"><RefreshCw size={16} className={loading ? "animate-spin" : ""} /></button>
+                                                </div>
+                                            </div>
+                                            {selectedPlayers.size > 0 && (
+                                                <div className="flex flex-wrap gap-1.5 mt-2" style={{ paddingLeft: '104px' }}>
+                                                    {Array.from(selectedPlayers).map((name) => (
+                                                        <span key={name} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 text-xs font-medium border border-blue-200 dark:border-blue-800">
+                                                            {name}
+                                                            <button type="button" onClick={() => handlePlayerRemove(name)}
+                                                                className="hover:text-blue-600 dark:hover:text-blue-100 transition-colors">
+                                                                <X size={12} />
+                                                            </button>
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </>
                                     )}
                                 </div>
                             ) : (
@@ -597,13 +687,17 @@ export default function ScoreStatsPage() {
                                         <div className="flex-1 min-w-0 flex items-center justify-center py-2 px-2 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-xl text-[13px] font-bold text-zinc-600 dark:text-zinc-400">
                                             {userName}
                                         </div>
-                                        <button onClick={() => handleFetch(new Set([userName]))} className="px-4 py-2 sm:px-5 rounded-xl bg-brand-navy text-white text-sm font-bold flex items-center justify-center gap-2 shrink-0"><Search size={16} /> 조회</button>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => handleFetch(new Set([userName]), false, false)} className="px-4 py-2 sm:px-5 rounded-xl bg-brand-navy text-white text-sm font-bold flex items-center justify-center gap-2 shrink-0"><Search size={16} /> 조회</button>
+                                            <button onClick={() => handleFetch(new Set([userName]), false, true)} className="px-3 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 text-sm font-bold flex items-center justify-center shrink-0 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors" title="최신 데이터 다시 불러오기"><RefreshCw size={16} className={loading ? "animate-spin" : ""} /></button>
+                                        </div>
                                     </div>
                                 </div>
                             )}
                         </div>
-
-                        <section>
+                        
+                        {statsTab === "individual" && (
+                            <section>
                             <div className="flex items-center justify-between mb-4 px-2">
                                 <h2 className="text-lg font-bold text-zinc-800 dark:text-zinc-200">선수별 평균 스코어</h2>
                                 <DatePresets activePreset={activePreset} onPresetChange={(s,e,p)=>{setStartDate(s);setEndDate(e);setActivePreset(p);}} />
@@ -652,6 +746,7 @@ export default function ScoreStatsPage() {
                                 )}
                             </div>
                         </section>
+                        )}
                     </>
                 ) : (
                     <div className="space-y-6">
@@ -671,13 +766,13 @@ export default function ScoreStatsPage() {
                                     <button onClick={() => setIsTagsExpanded(!isTagsExpanded)} className="w-full px-6 py-4 flex items-center justify-between text-sm font-bold text-zinc-700 hover:bg-zinc-50 transition-colors">
                                         <div className="flex items-center gap-2">
                                             <Activity size={16} className="text-brand-navy" /> 
-                                            스코어카드 적용 ({allScorecards.filter(sc => (sc.athlete?.name || "미지정") === selectedDetailAthlete).length - excludedIds.size}건)
+                                            스코어카드 적용 ({statsTab === "branch" ? allScorecards.length - excludedIds.size : allScorecards.filter(sc => (sc.athlete?.name || "미지정") === selectedDetailAthlete).length - excludedIds.size}건)
                                         </div>
                                         <ChevronRight size={18} className={cn("transition-transform", isTagsExpanded ? "rotate-90" : "")} />
                                     </button>
                                     {isTagsExpanded && (
                                         <div className="px-6 pb-6 pt-2 border-t border-zinc-50 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                            {allScorecards.filter(sc => (sc.athlete?.name || "미지정") === selectedDetailAthlete).map(sc => (
+                                            {(statsTab === "branch" ? allScorecards : allScorecards.filter(sc => (sc.athlete?.name || "미지정") === selectedDetailAthlete)).map(sc => (
                                                 <button key={sc.id} onClick={() => { const next = new Set(excludedIds); if(next.has(sc.id)) next.delete(sc.id); else next.add(sc.id); setExcludedIds(next); }} className={cn("px-4 py-3 rounded-xl text-[11px] font-bold border transition-all flex items-center justify-between", excludedIds.has(sc.id) ? "bg-zinc-50 border-zinc-200 text-zinc-400" : "bg-brand-navy/5 border-brand-navy/20 text-brand-navy")}>
                                                     <div className="flex items-center gap-3 truncate mr-2">
                                                         <span className="shrink-0">{sc.round_date.substring(5).replace('-','/')}</span>

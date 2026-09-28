@@ -281,7 +281,7 @@ export default function ChallengesPage() {
                         Challenge
                     </h1>
                 </div>
-                {(userRole === 'coach' || userRole === 'admin' || userRole === 'athlete') && (
+                {(userRole === 'coach' || userRole === 'admin' || userRole === 'office' || userRole === 'headquarter' || userRole === 'athlete') && (
                     <Link
                         href="/admin/training-temp/challenges/create"
                         className="bg-brand-red hover:bg-brand-red-dark text-white px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"

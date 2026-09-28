@@ -411,7 +411,7 @@ export default function TrainingsPage() {
                         Training
                     </PageTitle>
                 </div>
-                {(userRole === 'coach' || userRole === 'admin') && (
+                {(userRole === 'coach' || userRole === 'admin' || userRole === 'office' || userRole === 'headquarter') && (
                     <Link
                         href="/admin/training-temp/create"
                         className="bg-brand-red hover:bg-brand-red-dark text-white px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
@@ -513,7 +513,7 @@ export default function TrainingsPage() {
                 </div>
 
                 {/* Player Search & Select All */}
-                {(userRole === 'coach' || userRole === 'admin') && (
+                {(userRole === 'coach' || userRole === 'admin' || userRole === 'office' || userRole === 'headquarter') && (
                     <>
                         <div className="flex items-center gap-2 mt-3">
                             <LabelText>

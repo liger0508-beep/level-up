@@ -471,7 +471,7 @@ export default function TrainingsPage() {
                     <Dumbbell size={24} className="text-brand-navy dark:text-brand-navy-light shrink-0" />
                     <PageTitle>Training</PageTitle>
                 </div>
-                {(userRole === 'coach' || userRole === 'admin') && (
+                {(userRole === 'coach' || userRole === 'admin' || userRole === 'office' || userRole === 'headquarter') && (
                     <Link
                         href="/training/create"
                         className="bg-brand-red hover:bg-brand-red-dark text-white px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
@@ -516,7 +516,7 @@ export default function TrainingsPage() {
                 </div>
 
                 {/* Player Search & Select All */}
-                {(userRole === 'coach' || userRole === 'admin') && (
+                {(userRole === 'coach' || userRole === 'admin' || userRole === 'office' || userRole === 'headquarter') && (
                     <>
                         <div className="flex items-center gap-2 mt-3">
                             <LabelText className="w-24 shrink-0 text-center">

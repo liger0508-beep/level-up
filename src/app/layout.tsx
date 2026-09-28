@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { UserActivityTracker } from "@/components/layout/UserActivityTracker";
 
 export const metadata: Metadata = {
   title: "2026 GLA Data Report",
@@ -18,6 +19,7 @@ export default function RootLayout({
         suppressHydrationWarning={true}
       >
         {children}
+        <UserActivityTracker />
       </body>
     </html>
   );

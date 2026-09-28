@@ -82,7 +82,7 @@ export default function AssignedAthletesPage() {
                 setCoaches(coachesData || []);
 
                 // 3. Fetch all athletes (for management view)
-                if (profile?.role === 'admin' || profile?.role === 'coach' || profile?.role === 'head_coach') {
+                if (profile?.role === 'admin' || profile?.role === 'coach' || profile?.role === 'head_coach' || profile?.role === 'office' || profile?.role === 'headquarter') {
                     const { data: athletesData } = await supabase
                         .from('users')
                         .select('id, name, role, branch')
@@ -144,6 +144,19 @@ export default function AssignedAthletesPage() {
                 
                 if (error) throw error;
             } else {
+                // Re-check count before saving to prevent race conditions
+                const { data: latestAssignments } = await supabase
+                    .from("monthly_assignments")
+                    .select("id")
+                    .eq("coach_id", coachId)
+                    .eq("month", monthToAssign);
+                    
+                if (latestAssignments && latestAssignments.length >= 7) {
+                    alert("선택하신 코치님은 이미 최대 정원(7명)이 마감되었습니다. 다른 코치님을 선택해 주세요.");
+                    await fetchAssignments(selectedMonth); // Refresh list
+                    return;
+                }
+
                 const { error } = await supabase
                     .from('monthly_assignments')
                     .upsert(payload, { onConflict: 'athlete_id,month' });
@@ -168,7 +181,7 @@ export default function AssignedAthletesPage() {
     };
 
     const handleAdminAssignCoach = async (athlete: User, coachId: string) => {
-        if (!user || (user.role !== 'admin' && user.role !== 'head_coach')) return;
+        if (!user || (user.role !== 'admin' && user.role !== 'head_coach' && user.role !== 'office' && user.role !== 'headquarter')) return;
         
         try {
             if (!coachId) {
@@ -306,9 +319,15 @@ export default function AssignedAthletesPage() {
                                             <option value="">코치 선택하기</option>
                                             {coaches
                                                 .filter(c => c.branch === user.branch || user.role === 'office' || user.role === 'headquarter' || c.role === 'office' || c.role === 'headquarter' || user.branch === '전체')
-                                                .map(coach => (
-                                                    <option key={coach.id} value={coach.id}>{coach.name} 코치 ({coach.branch})</option>
-                                                ))
+                                                .map(coach => {
+                                                    const count = assignments.filter(a => a.coach_id === coach.id).length;
+                                                    const isFull = count >= 7;
+                                                    return (
+                                                        <option key={coach.id} value={coach.id} disabled={isFull}>
+                                                            {coach.name} 코치 ({coach.branch}) {isFull ? '(마감)' : ''}
+                                                        </option>
+                                                    );
+                                                })
                                             }
                                         </select>
                                         <ChevronRight size={14} className="absolute right-3 top-1/2 -translate-y-1/2 rotate-90 pointer-events-none" />
@@ -331,9 +350,15 @@ export default function AssignedAthletesPage() {
                                 {coaches
                                     .filter(c => c.branch === user.branch || user.role === 'office' || user.role === 'headquarter' || c.role === 'office' || c.role === 'headquarter' || user.branch === '전체')
                                     .filter(c => c.id !== assignedCoach.id)
-                                    .map(coach => (
-                                        <option key={coach.id} value={coach.id}>{coach.name} 코치 ({coach.branch})</option>
-                                    ))
+                                    .map(coach => {
+                                        const count = assignments.filter(a => a.coach_id === coach.id).length;
+                                        const isFull = count >= 7;
+                                        return (
+                                            <option key={coach.id} value={coach.id} disabled={isFull}>
+                                                {coach.name} 코치 ({coach.branch}) {isFull ? '(마감)' : ''}
+                                            </option>
+                                        );
+                                    })
                                 }
                             </select>
                         </div>
@@ -370,7 +395,7 @@ export default function AssignedAthletesPage() {
                                                     <span className="text-sm font-black text-zinc-900 dark:text-zinc-100">{athlete.name}</span>
                                                 </td>
                                                 <td className="px-4 py-3">
-                                                    {user?.role === 'admin' || user?.role === 'head_coach' ? (
+                                                    {user?.role === 'admin' || user?.role === 'head_coach' || user?.role === 'office' || user?.role === 'headquarter' ? (
                                                         <select
                                                             value={assignedCoach?.id || ""}
                                                             onChange={(e) => handleAdminAssignCoach(athlete, e.target.value)}

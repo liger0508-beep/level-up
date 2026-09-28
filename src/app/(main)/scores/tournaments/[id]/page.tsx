@@ -502,14 +502,27 @@ export default function TournamentDetailPage() {
                     <Medal size={20} className="text-brand-navy dark:text-brand-navy-light" />
                     리더보드
                 </PageTitle>
+                <button
+                    onClick={() => {
+                        if (draftId) {
+                            setShowDraftPopup(true);
+                        } else {
+                            router.push(`/scores/create?tournament_id=${tournamentId}`);
+                        }
+                    }}
+                    className="bg-brand-red hover:bg-brand-red-dark text-white px-4 sm:px-5 py-2.5 rounded-xl text-[13px] sm:text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
+                >
+                    <Plus size={18} />
+                    스코어 작성
+                </button>
             </div>
 
             {/* ── Tabs and Actions ── */}
-            <div className="flex items-center justify-between mb-4">
-                <div className="flex overflow-x-auto scrollbar-hide gap-2 pb-2">
+            <div className="flex items-center mb-4">
+                <div className="grid grid-cols-3 sm:flex sm:overflow-x-auto scrollbar-hide gap-2 pb-2 w-full sm:w-auto">
                 <button
                     onClick={() => setLeaderboardTab('live')}
-                    className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors border shadow-sm ${
+                    className={`w-full flex items-center justify-center sm:w-auto px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors border shadow-sm ${
                         leaderboardTab === 'live' 
                             ? "bg-brand-navy border-brand-navy text-white" 
                             : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
@@ -519,7 +532,7 @@ export default function TournamentDetailPage() {
                 </button>
                 <button
                     onClick={() => setLeaderboardTab('pending')}
-                    className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors border shadow-sm ${
+                    className={`w-full flex items-center justify-center sm:w-auto px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors border shadow-sm ${
                         leaderboardTab === 'pending' 
                             ? "bg-brand-navy border-brand-navy text-white" 
                             : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
@@ -529,7 +542,7 @@ export default function TournamentDetailPage() {
                 </button>
                 <button
                     onClick={() => setLeaderboardTab('stats')}
-                    className={`px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors border shadow-sm ${
+                    className={`w-full flex items-center justify-center sm:w-auto px-4 py-2 rounded-xl text-sm font-bold whitespace-nowrap transition-colors border shadow-sm ${
                         leaderboardTab === 'stats' 
                             ? "bg-brand-navy border-brand-navy text-white" 
                             : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
@@ -538,19 +551,6 @@ export default function TournamentDetailPage() {
                     통계
                 </button>
                 </div>
-                <button
-                    onClick={() => {
-                        if (draftId) {
-                            setShowDraftPopup(true);
-                        } else {
-                            router.push(`/scores/create?tournament_id=${tournamentId}`);
-                        }
-                    }}
-                    className="bg-brand-red hover:bg-brand-red-dark text-white px-4 sm:px-5 py-2.5 rounded-xl text-[13px] sm:text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0 ml-2 mb-2"
-                >
-                    <Plus size={18} />
-                    스코어 작성
-                </button>
             </div>
 
             {/* Round Tabs */}

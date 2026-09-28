@@ -199,8 +199,8 @@ export default function NoticeDetailPage() {
                         </div>
                     </div>
 
-                    {/* Only show menu if author or admin */}
-                    {(currentUser?.id === notice.authorId || currentUser?.role === 'admin') && (
+                    {/* Only show menu if author or admin/office/headquarter */}
+                    {(currentUser?.id === notice.authorId || ['admin', 'office', 'headquarter'].includes(currentUser?.role || '')) && (
                         <div className="relative" ref={menuRef}>
                             <button
                                 onClick={() => setIsMenuOpen(!isMenuOpen)}
