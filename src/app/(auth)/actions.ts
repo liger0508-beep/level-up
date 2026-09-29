@@ -37,6 +37,8 @@ export async function signup(formData: FormData) {
     const name = formData.get('name') as string
     const role = formData.get('role') as string
     const phone = formData.get('phone') as string
+    const branch = formData.get('branch') as string
+    const marketingAgreed = formData.get('marketing_agreed') === 'true'
     // 중복 확인 (이름 또는 전화번호 중 하나라도 같으면 차단)
     const adminSupabase = await createAdminClient()
     const { data: existingUser } = await adminSupabase
@@ -63,12 +65,17 @@ export async function signup(formData: FormData) {
                 role,
                 phone,
                 branch,
+                is_marketing_agreed: marketingAgreed,
             },
         },
     })
 
     if (error) {
-        redirect(`/signup?message=${encodeURIComponent(`회원가입 중 오류가 발생했습니다: ${error.message}`)}`)
+        let errorMessage = error.message
+        if (error.message.includes('User already registered')) {
+            errorMessage = '이미 가입된 이메일입니다.'
+        }
+        redirect(`/signup?message=${encodeURIComponent(`회원가입 중 오류가 발생했습니다: ${errorMessage}`)}`)
     }
 
     revalidatePath('/', 'layout')
