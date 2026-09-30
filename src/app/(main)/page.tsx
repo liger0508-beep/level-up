@@ -816,7 +816,7 @@ export default function Home() {
                 <X size={24} />
               </button>
             </div>
-            <div className="grid grid-cols-3 gap-4 mb-6">
+            <div className="grid grid-cols-4 gap-2 sm:gap-3 mb-6">
               {ALL_SHORTCUTS.map(s => {
                 const Icon = s.icon;
                 const isSelected = selectedShortcutIds.includes(s.id);
@@ -835,17 +835,17 @@ export default function Home() {
                       }
                     }}
                     className={cn(
-                      "flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all bg-transparent",
+                      "flex flex-col items-center gap-1.5 p-2 rounded-xl border-2 transition-all bg-transparent",
                       isSelected ? "border-transparent" : "border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800"
                     )}
                   >
                     <div className="relative">
                       {isSelected && (
-                        <div className="absolute -top-2 -left-2 w-5 h-5 bg-zinc-500 text-white text-[10px] font-black rounded-full flex items-center justify-center shadow-sm z-10">
+                        <div className="absolute -top-1.5 -left-1.5 w-4 h-4 bg-zinc-500 text-white text-[9px] font-black rounded-full flex items-center justify-center shadow-sm z-10">
                           {selectedShortcutIds.indexOf(s.id) + 1}
                         </div>
                       )}
-                      <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center border-2 transition-opacity", s.color, isSelected ? "opacity-100" : "opacity-50")}>
+                      <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center border-2 transition-opacity", s.color, isSelected ? "opacity-100" : "opacity-50")}>
                         <Icon size={16} />
                       </div>
                     </div>

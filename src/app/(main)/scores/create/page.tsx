@@ -245,7 +245,7 @@ function ScoreCreateContent() {
             const lastValidHoleIdx = holes.map((h, i) => h.par > 0 ? i : -1).reduce((max, curr) => Math.max(max, curr), -1);
             const saveHolesCount = lastValidHoleIdx >= 0 ? lastValidHoleIdx + 1 : 1; 
 
-            const computedTotalScore = holes.slice(0, saveHolesCount).reduce((acc, h) => {
+            const computedTotalScore = holes.reduce((acc, h) => {
                 if (h.par === 0) return acc;
                 const idx = h.shots.findIndex(s => s.location === "홀인" || s.location === "HI");
                 return acc + (idx > 0 ? idx : 0);
@@ -263,7 +263,7 @@ function ScoreCreateContent() {
                 const { error: updateErr } = await supabase.from("scorecards").update({
                     total_score: computedTotalScore,
                     is_final: isOriginallyFinal.current ? true : false,
-                    hole_count: saveHolesCount,
+                    hole_count: holes.filter(h => h.par > 0).length,
                     round_date: roundDate,
                     course_name: golfCourse,
                     weather: category,
@@ -280,7 +280,7 @@ function ScoreCreateContent() {
                     total_score: computedTotalScore,
                     distance_unit: distanceUnit.includes("야드") ? "yard" : "meter",
                     is_final: false,
-                    hole_count: saveHolesCount
+                    hole_count: holes.filter(h => h.par > 0).length
                 }).select("id").single();
                 if (insertErr) throw insertErr;
                 if (sc) {
@@ -446,6 +446,7 @@ function ScoreCreateContent() {
                     setCurrentHole(lastSavedHole);
                     draftIdRef.current = draft.id;
                     setIsBasicInfoConfirmed(true);
+                    setIsInfoExpanded(false);
                     return; // 로컬 데이터로 로드 성공!
                 }
             }
@@ -517,12 +518,41 @@ function ScoreCreateContent() {
                 
                 let targetHole = 1;
                 if (sc.holes && sc.holes.length > 0) {
-                    const maxHoleNum = Math.max(...sc.holes.map((h: any) => h.hole_number));
-                    targetHole = maxHoleNum;
-                    const lastHoleData = newHoles[targetHole - 1];
-                    const isComplete = lastHoleData.shots.some((s: any) => s.location === "홀인" || s.location === "HI");
-                    if (isComplete && targetHole < 18) {
-                        targetHole += 1;
+                    const isStarted = (hIdx: number) => newHoles[hIdx].par > 0;
+                    const isCompleted = (hIdx: number) => newHoles[hIdx].par > 0 && newHoles[hIdx].shots.some((s: any) => s.location === "홀인" || s.location === "HI");
+                    
+                    let incompleteStartedHole = -1;
+                    for (let i = 0; i < 18; i++) {
+                        if (isStarted(i) && !isCompleted(i)) {
+                            incompleteStartedHole = i + 1;
+                            break;
+                        }
+                    }
+                    
+                    if (incompleteStartedHole !== -1) {
+                        targetHole = incompleteStartedHole;
+                    } else {
+                        let completedCount = 0;
+                        let frontiers = [];
+                        for (let i = 0; i < 18; i++) {
+                            if (isCompleted(i)) {
+                                completedCount++;
+                                const nextI = (i + 1) % 18;
+                                if (!isCompleted(nextI)) {
+                                    frontiers.push(i + 1);
+                                }
+                            }
+                        }
+                        
+                        if (completedCount === 18) {
+                            targetHole = 1;
+                        } else if (frontiers.length > 0) {
+                            const lastFrontier = frontiers[frontiers.length - 1];
+                            targetHole = (lastFrontier % 18) + 1;
+                        } else {
+                            const maxHoleNum = Math.max(...sc.holes.map((h: any) => h.hole_number));
+                            targetHole = (maxHoleNum % 18) + 1;
+                        }
                     }
                 }
                 setCurrentHole(targetHole);
@@ -530,6 +560,7 @@ function ScoreCreateContent() {
                 setHoles(newHoles);
                 draftIdRef.current = sc.id;
                 setIsBasicInfoConfirmed(true);
+                setIsInfoExpanded(false);
             }
         };
 
@@ -550,11 +581,11 @@ function ScoreCreateContent() {
             e.stopPropagation();
             saveCurrentAndNext();
         }
-        if (dx > 0 && currentHole > 1) {
+        if (dx > 0) {
             // Swipe Right -> Prev
             e.preventDefault();
             e.stopPropagation();
-            setCurrentHole(h => h - 1);
+            setCurrentHole(h => h === 1 ? 18 : h - 1);
             setDistanceErrors(new Set());
         }
     };
@@ -615,8 +646,8 @@ function ScoreCreateContent() {
         // If not forced (top button / swipe), allow skip only if NO save has occurred yet.
         // Once the save button is pressed at least once, the user MUST fill out every visited hole before moving next.
         if (!forced && !hasSaveOccurred) {
-            if (isNext && currentHole < 18) {
-                setCurrentHole(h => h + 1);
+            if (isNext) {
+                setCurrentHole(h => h === 18 ? 1 : h + 1);
                 setShowSgTable(false);
                 setDistanceErrors(new Set());
             }
@@ -705,10 +736,8 @@ function ScoreCreateContent() {
         setDistanceErrors(new Set());
         
         if (isNext) {
-            if (currentHole < 18) {
-                setCurrentHole(h => h + 1);
-                setShowSgTable(false); // 다음 홀로 넘어가면 SG 테이블 숨김
-            }
+            setCurrentHole(h => h === 18 ? 1 : h + 1);
+            setShowSgTable(false); // 다음 홀로 넘어가면 SG 테이블 숨김
         } else {
             // 샷별 점수 확인 클릭 시 현재 홀에 머물며 로컬 SG 계산 후 테이블 표시
             try {
@@ -742,7 +771,7 @@ function ScoreCreateContent() {
     const [editingMemoIndex, setEditingMemoIndex] = useState<number | null>(null);
 
     // Info section collapse
-    const [isInfoExpanded, setIsInfoExpanded] = useState(true);
+    const [isInfoExpanded, setIsInfoExpanded] = useState(!isEditMode);
 
     const [showIntermediateModal, setShowIntermediateModal] = useState(false);
     const [intermediateSectors, setIntermediateSectors] = useState<any[]>([]);
@@ -903,12 +932,12 @@ function ScoreCreateContent() {
     const holeScore = holeData.par > 0 ? calcHoleScore(holeData.shots, holeData.par) : 0;
     const isCurrentHoleComplete = holeData.shots.findIndex(s => s.location === "홀인" || s.location === "HI") > 0;
 
-    // 합산 스코어 = 1번홀부터 현재 홀까지의 누적 타수 (언더파/오버파)
-    const totalScore = holes.slice(0, currentHole).reduce((acc, h) => {
+    // 합산 스코어 = 순서에 상관없이 지금까지 입력된 모든 홀의 누적 타수 (언더파/오버파)
+    const totalScore = holes.reduce((acc, h) => {
         return acc + calcHoleScore(h.shots, h.par);
     }, 0);
 
-    const markerTotalScore = holes.slice(0, currentHole).reduce((acc, h) => {
+    const markerTotalScore = holes.reduce((acc, h) => {
         if (h.par === 0) return acc;
         const ms = (h.markerScore && h.markerScore.trim() !== "") ? parseInt(h.markerScore, 10) : h.par;
         return acc + (ms - h.par);
@@ -1587,8 +1616,7 @@ function ScoreCreateContent() {
                         <div className="flex items-center justify-between">
                             <button
                                 type="button"
-                                onClick={() => setCurrentHole(prev => Math.max(1, prev - 1))}
-                                disabled={currentHole === 1}
+                                onClick={() => setCurrentHole(prev => prev === 1 ? 18 : prev - 1)}
                                 className="flex items-center gap-1 text-sm font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-white disabled:opacity-25 transition-all"
                             >
                                 <ChevronLeft size={18} /> 이전 홀
@@ -1597,7 +1625,6 @@ function ScoreCreateContent() {
                             <button
                                 type="button"
                                 onClick={() => saveCurrentAndNext(false)}
-                                disabled={currentHole === 18}
                                 className="flex items-center gap-1 text-sm font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:white disabled:opacity-25 transition-all"
                             >
                                 다음 홀 <ChevronRight size={18} />

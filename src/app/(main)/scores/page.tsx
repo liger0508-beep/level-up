@@ -274,8 +274,12 @@ export default function ScoresPage() {
         const holes = s.holes || [];
         let completedCount = holes.filter((h: any) => h.score > 0 && h.score !== -1).length;
         
-        if (s.is_final === false && s.hole_count) {
-            completedCount = s.hole_count;
+        if (s.is_final === false) {
+            if (holes.length > 0) {
+                completedCount = holes.filter((h: any) => h.par > 0).length;
+            } else if (s.hole_count) {
+                completedCount = s.hole_count;
+            }
         }
 
         let relativeScore = undefined;

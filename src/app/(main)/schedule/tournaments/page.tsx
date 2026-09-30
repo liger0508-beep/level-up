@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Trophy, Settings } from "lucide-react";
+import { Trophy, Plus } from "lucide-react";
 import { Tournament, getStoredTournaments } from "@/lib/tournament-sync";
 import { TournamentCalendar } from "@/components/schedule/TournamentCalendar";
 import Link from "next/link";
@@ -37,11 +37,10 @@ export default function TournamentsPage() {
 
                 <Link
                     href="/admin/tournament-schedule"
-                    className="flex items-center gap-2 px-3 py-2 sm:px-4 sm:py-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-xs sm:text-sm font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all shadow-sm active:scale-95 shrink-0"
+                    className="bg-brand-red hover:bg-brand-red-dark text-white px-5 py-2 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
                 >
-                    <Settings size={18} />
-                    <span className="hidden xs:inline">대회 일정 등록</span>
-                    <span className="xs:hidden">등록</span>
+                    <Plus size={18} />
+                    등록
                 </Link>
             </div>
 

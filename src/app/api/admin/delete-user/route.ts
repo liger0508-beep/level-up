@@ -28,20 +28,20 @@ export async function POST(request: Request) {
 
     const supabaseAdmin = getSupabaseAdmin();
 
-    // 1. Delete from auth.users (this might cascade to public.users depending on setup, but we'll manually delete just in case)
+    // 1. Delete from public.users first to avoid foreign key constraint errors
+    const { error: dbError } = await supabaseAdmin.from('users').delete().eq('id', targetUserId);
+    
+    if (dbError) {
+      console.error('Delete user failed in public.users:', dbError);
+      // Even if this fails, we might still want to try deleting from auth.users, but usually this needs to succeed.
+    }
+
+    // 2. Delete from auth.users
     const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(targetUserId);
 
     if (authError) {
       console.error('Delete user failed in Supabase auth:', authError);
       return NextResponse.json({ error: `계정 삭제 실패: ${authError.message}` }, { status: 500 });
-    }
-
-    // 2. Delete from public.users (in case it didn't cascade)
-    const { error: dbError } = await supabaseAdmin.from('users').delete().eq('id', targetUserId);
-
-    if (dbError) {
-      console.error('Delete user failed in public.users:', dbError);
-      // Not returning 500 here since auth was deleted successfully, user is essentially gone.
     }
 
     return NextResponse.json({ success: true });

@@ -372,6 +372,50 @@ export default function AssignedAthletesPage() {
     const renderManagementView = () => {
         return (
             <div className="space-y-6">
+                {/* Coach Assignment Stats */}
+                <div className="space-y-4 mb-8">
+                    <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 px-1">코치별 담당 인원 현황</h3>
+                    <div className="flex flex-col gap-3">
+                        {coachStats.length > 0 ? (
+                            coachStats.map(stat => {
+                                const athleteChunks: string[][] = [];
+                                const chunkSize = 5;
+                                for (let i = 0; i < stat.athleteNames.length; i += chunkSize) {
+                                    athleteChunks.push(stat.athleteNames.slice(i, i + chunkSize));
+                                }
+
+                                return (
+                                    <div key={stat.name} className="flex items-center justify-between p-5 px-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-sm">
+                                        <div className="flex flex-col min-w-0 pr-4 flex-1">
+                                            <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-1.5">
+                                                {stat.name} <span className="text-xs font-medium text-zinc-400">({stat.branch})</span>
+                                            </p>
+                                            <div className="flex flex-col min-h-[3.75rem] justify-start gap-0.5">
+                                                {athleteChunks.length > 0 ? (
+                                                    athleteChunks.map((chunk, idx) => (
+                                                        <p key={idx} className="text-xs text-zinc-500 dark:text-zinc-400 leading-normal">
+                                                            {chunk.join(', ')}
+                                                        </p>
+                                                    ))
+                                                ) : (
+                                                    <p className="text-xs text-zinc-300 dark:text-zinc-600">담당 선수가 없습니다.</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="text-lg font-black text-zinc-900 dark:text-zinc-50 shrink-0 self-center pl-4">
+                                            {stat.count}명
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        ) : (
+                            <div className="p-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-center text-zinc-400 text-sm">
+                                배정 내역이 없습니다.
+                            </div>
+                        )}
+                    </div>
+                </div>
+
                 {/* Assignment Table */}
                 <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl overflow-hidden">
                     <div className="overflow-x-auto">
@@ -430,50 +474,6 @@ export default function AssignedAthletesPage() {
                                 )}
                             </tbody>
                         </table>
-                    </div>
-                </div>
-
-                {/* Coach Assignment Stats */}
-                <div className="space-y-4">
-                    <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 px-1">코치별 담당 인원 현황</h3>
-                    <div className="flex flex-col gap-3">
-                        {coachStats.length > 0 ? (
-                            coachStats.map(stat => {
-                                const athleteChunks: string[][] = [];
-                                const chunkSize = 5;
-                                for (let i = 0; i < stat.athleteNames.length; i += chunkSize) {
-                                    athleteChunks.push(stat.athleteNames.slice(i, i + chunkSize));
-                                }
-
-                                return (
-                                    <div key={stat.name} className="flex items-center justify-between p-5 px-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-sm">
-                                        <div className="flex flex-col min-w-0 pr-4 flex-1">
-                                            <p className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-1.5">
-                                                {stat.name} <span className="text-xs font-medium text-zinc-400">({stat.branch})</span>
-                                            </p>
-                                            <div className="flex flex-col min-h-[3.75rem] justify-start gap-0.5">
-                                                {athleteChunks.length > 0 ? (
-                                                    athleteChunks.map((chunk, idx) => (
-                                                        <p key={idx} className="text-xs text-zinc-500 dark:text-zinc-400 leading-normal">
-                                                            {chunk.join(', ')}
-                                                        </p>
-                                                    ))
-                                                ) : (
-                                                    <p className="text-xs text-zinc-300 dark:text-zinc-600">담당 선수가 없습니다.</p>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <div className="text-lg font-black text-zinc-900 dark:text-zinc-50 shrink-0 self-center pl-4">
-                                            {stat.count}명
-                                        </div>
-                                    </div>
-                                );
-                            })
-                        ) : (
-                            <div className="p-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl text-center text-zinc-400 text-sm">
-                                배정 내역이 없습니다.
-                            </div>
-                        )}
                     </div>
                 </div>
             </div>

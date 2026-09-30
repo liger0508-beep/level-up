@@ -17,6 +17,7 @@ export interface MonthlyStatistic {
     score: number;
     consultation: number;
     trainingLog: number;
+    trainingPlan: number;
     attendance: number;
     competition: number;
     reportView: number;
@@ -98,10 +99,10 @@ export async function fetchMonthlyStatistics(
             .lte("created_at", endDate + "T23:59:59+09:00")
             .in("user_id", athleteIds);
 
-        const recordsMap: Record<string, { lesson: number, lessonByCoach: number, training: number, trainingByCoach: number, measurement: number, score: number, journal: number, challenge: number }> = {};
+        const recordsMap: Record<string, { lesson: number, lessonByCoach: number, training: number, trainingByCoach: number, measurement: number, score: number, journal: number, challenge: number, trainingPlan: number }> = {};
         
         athleteIds.forEach(id => {
-            recordsMap[id] = { lesson: 0, lessonByCoach: 0, training: 0, trainingByCoach: 0, measurement: 0, score: 0, journal: 0, challenge: 0 };
+            recordsMap[id] = { lesson: 0, lessonByCoach: 0, training: 0, trainingByCoach: 0, measurement: 0, score: 0, journal: 0, challenge: 0, trainingPlan: 0 };
         });
 
         if (records) {
@@ -121,11 +122,45 @@ export async function fetchMonthlyStatistics(
                     if (isByAssignedCoach) map.trainingByCoach++;
                 }
                 if (r.type === "analysis") map.measurement++;
-                if (r.type === "scorecard") map.score++;
+                
                 if (r.type === "journal") map.journal++;
-                if (r.type === "challenge") map.challenge++;
+                if (r.type === "plan") map.trainingPlan++;
+                
             });
         }
+
+        // Query scorecards table
+        const { data: scorecards } = await supabase
+            .from('scorecards')
+            .select('athlete_id, round_date')
+            .gte('round_date', startDate)
+            .lte('round_date', endDate)
+            .in('athlete_id', athleteIds);
+
+        if (scorecards) {
+            scorecards.forEach(sc => {
+                if (recordsMap[sc.athlete_id]) {
+                    recordsMap[sc.athlete_id].score++;
+                }
+            });
+        }
+
+        // Query test_sessions table
+        const { data: tests } = await supabase
+            .from('test_sessions')
+            .select('user_id, created_at')
+            .gte('created_at', startDate + 'T00:00:00+09:00')
+            .lte('created_at', endDate + 'T23:59:59+09:00')
+            .in('user_id', athleteIds);
+
+        if (tests) {
+            tests.forEach(t => {
+                if (recordsMap[t.user_id]) {
+                    recordsMap[t.user_id].challenge++;
+                }
+            });
+        }
+
 
         // 6. Fetch Consultations
         const { data: consultations } = await supabase
@@ -167,6 +202,21 @@ export async function fetchMonthlyStatistics(
                  if (a.activity_type === "report_view") activityMap[a.user_id].reportView++;
              });
         }
+        const { data: loginLogs } = await supabase
+            .from("login_logs")
+            .select("user_id, created_at")
+            .gte("created_at", startDate + "T00:00:00+09:00")
+            .lte("created_at", endDate + "T23:59:59+09:00")
+            .in("user_id", athleteIds)
+            .then(res => res, err => ({ data: [] }));
+
+        if (loginLogs && !('error' in loginLogs && loginLogs.error)) {
+             (loginLogs).forEach((l) => {
+                 if (!l.user_id || !activityMap[l.user_id]) return;
+                 activityMap[l.user_id].login++;
+             });
+        }
+
 
         // Combine all data
         const result: MonthlyStatistic[] = athletes.map((athlete) => {
@@ -191,6 +241,7 @@ export async function fetchMonthlyStatistics(
                 score: rMap.score,
                 consultation: consultationMap[athlete.id] || 0,
                 trainingLog: rMap.journal,
+                trainingPlan: rMap.trainingPlan,
                 attendance: attendanceMap[athlete.id] || 0,
                 competition: 0, // Mock for now unless we know tournaments
                 reportView: activityMap[athlete.id].reportView,
@@ -388,15 +439,15 @@ export async function fetchCoachMonthlyStatistics(
             
         const { data: loginLogs } = await supabase
             .from("login_logs")
-            .select("user_id, login_time")
+            .select("user_id, created_at")
             .in("user_id", coachIds)
-            .gte("login_time", startDate + "T00:00:00+09:00")
-            .lte("login_time", endDate + "T23:59:59+09:00");
+            .gte("created_at", startDate + "T00:00:00+09:00")
+            .lte("created_at", endDate + "T23:59:59+09:00");
             
         const loginMap: Record<string, Set<string>> = {};
         if (activityLogs) {
             activityLogs.forEach(a => {
-                if (a.activity_type === "daily_visit") {
+                if (a.activity_type === "login" || a.activity_type === "daily_visit") {
                     if (!loginMap[a.user_id]) loginMap[a.user_id] = new Set();
                     loginMap[a.user_id].add(a.created_at.split("T")[0]);
                 }
@@ -405,7 +456,7 @@ export async function fetchCoachMonthlyStatistics(
         if (loginLogs) {
             loginLogs.forEach(l => {
                 if (!loginMap[l.user_id]) loginMap[l.user_id] = new Set();
-                const date = l.login_time.split("T")[0];
+                const date = l.created_at.split("T")[0];
                 loginMap[l.user_id].add(date);
             });
         }

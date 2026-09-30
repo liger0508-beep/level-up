@@ -166,70 +166,65 @@ export function PlayerLessonHistoryModal({ isOpen, onClose, allAthletes }: Playe
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
             <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl w-full max-w-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col" style={{ height: '85vh' }}>
-                <div className="p-5 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-900/50 shrink-0">
-                    <h2 className="font-bold text-base sm:text-lg text-zinc-900 dark:text-zinc-100 whitespace-nowrap tracking-tight">
-                        선수 통합 정보 대시보드
-                    </h2>
-                    <button onClick={() => {
-                        setRegisteredPlayers([]);
-                        setActivePlayer(null);
-                        if (typeof window !== 'undefined') {
-                            sessionStorage.removeItem('playerLessonHistoryModal_registeredPlayers');
-                            sessionStorage.removeItem('playerLessonHistoryModal_activePlayer');
-                            sessionStorage.removeItem('openPlayerLessonHistoryModal');
-                        }
-                        onClose();
-                    }} className="p-1.5 text-zinc-400 hover:text-zinc-900 bg-white rounded-lg border border-zinc-200">
-                        <X size={20} />
-                    </button>
-                </div>
-
-                <div className="pt-4 px-4 pb-2 shrink-0 border-b border-zinc-200 dark:border-zinc-800 space-y-3">
-                    {/* Registered Players Tabs */}
-                    <div className="flex overflow-x-auto whitespace-nowrap gap-3 pb-2 pt-2 px-1 scrollbar-hide">
-                        {registeredPlayers.map(player => (
-                            <div
-                                key={player}
-                                className={cn(
-                                    "relative flex items-center justify-center px-4 py-2 rounded-xl text-[13px] font-bold cursor-pointer transition-colors border shrink-0",
-                                    activePlayer === player
-                                        ? "bg-brand-navy text-white border-brand-navy dark:border-brand-navy-light shadow-sm"
-                                        : "bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300"
-                                )}
-                                onClick={() => setActivePlayer(player)}
-                            >
-                                <span>{player}</span>
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        removePlayer(player);
-                                    }}
-                                    className={cn(
-                                        "absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center shadow-sm border transition-all z-10",
-                                        activePlayer === player
-                                            ? "bg-white text-brand-navy border-zinc-200 hover:bg-zinc-50"
-                                            : "bg-white text-zinc-500 border-zinc-200 hover:bg-zinc-100 dark:bg-zinc-700 dark:border-zinc-600 dark:text-zinc-300"
-                                    )}
-                                >
-                                    <X size={10} strokeWidth={3} />
-                                </button>
-                            </div>
-                        ))}
-                        {registeredPlayers.length === 0 && (
-                            <span className="text-sm text-zinc-400 py-1 italic">
-                                선수 이름을 검색해 추가해주세요.
-                            </span>
-                        )}
+                <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex flex-col gap-3 bg-zinc-50 dark:bg-zinc-900/50 shrink-0">
+                    <div className="flex justify-between items-center w-full gap-2">
+                        <div className="flex overflow-x-auto whitespace-nowrap gap-3 pb-1 pt-1 px-1 scrollbar-hide flex-1">
+                            {registeredPlayers.length === 0 ? (
+                                <span className="text-[15px] font-bold text-zinc-800 dark:text-zinc-100 tracking-tight pl-1">
+                                    선수 이름을 검색해 추가해주세요.
+                                </span>
+                            ) : (
+                                registeredPlayers.map(player => (
+                                    <div
+                                        key={player}
+                                        className={cn(
+                                            "relative flex items-center justify-center px-4 py-1.5 rounded-xl text-[13px] font-bold cursor-pointer transition-colors border shrink-0",
+                                            activePlayer === player
+                                                ? "bg-brand-navy text-white border-brand-navy dark:border-brand-navy-light shadow-sm"
+                                                : "bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 dark:bg-zinc-800 dark:border-zinc-700 dark:text-zinc-300"
+                                        )}
+                                        onClick={() => setActivePlayer(player)}
+                                    >
+                                        <span>{player}</span>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                removePlayer(player);
+                                            }}
+                                            className={cn(
+                                                "absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center shadow-sm border transition-all z-10",
+                                                activePlayer === player
+                                                    ? "bg-white text-brand-navy border-zinc-200 hover:bg-zinc-50"
+                                                    : "bg-white text-zinc-500 border-zinc-200 hover:bg-zinc-100 dark:bg-zinc-700 dark:border-zinc-600 dark:text-zinc-300"
+                                            )}
+                                        >
+                                            <X size={10} strokeWidth={3} />
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                        <button onClick={() => {
+                            setRegisteredPlayers([]);
+                            setActivePlayer(null);
+                            if (typeof window !== 'undefined') {
+                                sessionStorage.removeItem('playerLessonHistoryModal_registeredPlayers');
+                                sessionStorage.removeItem('playerLessonHistoryModal_activePlayer');
+                                sessionStorage.removeItem('openPlayerLessonHistoryModal');
+                            }
+                            onClose();
+                        }} className="p-1.5 text-zinc-400 hover:text-zinc-900 bg-white dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700 shrink-0 shadow-sm">
+                            <X size={20} />
+                        </button>
                     </div>
 
-                    {/* Search Input */}
-                    <div className="relative w-full z-10 mb-2">
+                    <div className="relative w-full z-10">
                         <AthleteSearch
                             onSelect={(name) => handleAddPlayer(name)}
                             selectedNames={[]}
                             showChips={false}
                             placeholder="선수 이름 검색 후 Enter..."
-                            inputClassName="bg-zinc-50 dark:bg-zinc-950 rounded-xl"
+                            inputClassName="bg-white dark:bg-zinc-950 rounded-xl"
                             multi={true}
                         />
                     </div>

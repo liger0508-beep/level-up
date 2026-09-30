@@ -95,13 +95,13 @@ export async function GET(request: Request) {
     const results = Array.from(athleteMap.values()).map(stat => {
         const rounds = stat.rounds;
         
-        const teeTotal = (stat.tee_dist_sg + stat.tee_acc_sg) / rounds / 2;
-        const secondTotal = (stat.dist_180_plus_sg + stat.dist_150_179_sg + stat.dist_120_149_sg + stat.dist_90_119_sg) / rounds / 4;
-        const greenTotal = (stat.pitch_sg + stat.bunker_sg + stat.approach_sg) / rounds / 3;
-        const puttingTotal = (stat.putt_9_plus_sg + stat.putt_4_8_sg + stat.putt_2_3_sg + stat.putt_1_sg) / rounds / 4;
+        const teeTotal = (stat.tee_dist_sg + stat.tee_acc_sg) / rounds;
+        const secondTotal = (stat.dist_180_plus_sg + stat.dist_150_179_sg + stat.dist_120_149_sg + stat.dist_90_119_sg) / rounds;
+        const greenTotal = (stat.pitch_sg + stat.bunker_sg + stat.approach_sg) / rounds;
+        const puttingTotal = (stat.putt_9_plus_sg + stat.putt_4_8_sg + stat.putt_2_3_sg + stat.putt_1_sg) / rounds;
         
-        const longSG = (teeTotal * 2) + (secondTotal * 4);
-        const shortSG = (greenTotal * 3) + (puttingTotal * 4);
+        const longSG = teeTotal + secondTotal;
+        const shortSG = greenTotal + puttingTotal;
         const longVsShort = shortSG - longSG;
 
         const avgTotalScore = stat.total_score / rounds;

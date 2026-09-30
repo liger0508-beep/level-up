@@ -23,14 +23,21 @@ export default function CoachSelectionPage() {
     const supabase = createClient();
     
     const [user, setUser] = useState<User | null>(null);
-    const [selectedMonth, setSelectedMonth] = useState(format(new Date(), "yyyy-MM"));
+    const [selectedMonth, setSelectedMonth] = useState(() => {
+        const now = new Date();
+        if (now.getDate() >= 25) {
+            const nextMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+            return format(nextMonth, "yyyy-MM");
+        }
+        return format(now, "yyyy-MM");
+    });
     const [coaches, setCoaches] = useState<Coach[]>([]);
     const [selectedCoachId, setSelectedCoachId] = useState<string>("");
     const [originalCoachId, setOriginalCoachId] = useState<string>("");
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [coachCounts, setCoachCounts] = useState<Record<string, number>>({});
-    const [branchFilter, setBranchFilter] = useState("전체");
+    const [branchFilter, setBranchFilter] = useState("조이마루점");
 
     useEffect(() => {
         const initialize = async () => {
@@ -221,7 +228,7 @@ export default function CoachSelectionPage() {
         return (
             <button
                 key={coach.id}
-                onClick={() => setSelectedCoachId(coach.id)}
+                onClick={() => setSelectedCoachId(isSelected ? "" : coach.id)}
                 disabled={isFull}
                 className={`flex items-center justify-between p-4 rounded-xl border text-left transition-all ${
                     isSelected
@@ -368,6 +375,7 @@ export default function CoachSelectionPage() {
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                             {coaches
                                                 .filter(c => c.branch === "조이마루점" && ["김규태", "김봉진", "이동진"].includes(c.name))
+                                                .sort((a, b) => ["김규태", "김봉진", "이동진"].indexOf(a.name) - ["김규태", "김봉진", "이동진"].indexOf(b.name))
                                                 .map(renderCoachButton)}
                                         </div>
                                     </div>
@@ -379,6 +387,7 @@ export default function CoachSelectionPage() {
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                             {coaches
                                                 .filter(c => c.branch === "조이마루점" && ["김종명", "박치우", "성세환"].includes(c.name))
+                                                .sort((a, b) => ["김종명", "박치우", "성세환"].indexOf(a.name) - ["김종명", "박치우", "성세환"].indexOf(b.name))
                                                 .map(renderCoachButton)}
                                         </div>
                                     </div>

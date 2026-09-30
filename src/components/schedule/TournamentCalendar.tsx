@@ -125,7 +125,7 @@ export function TournamentCalendar({ tournaments }: TournamentCalendarProps) {
         }).sort((a, b) => {
             const aStart = getTournamentDateRange(a).start;
             const bStart = getTournamentDateRange(b).start;
-            return bStart.localeCompare(aStart);
+            return aStart.localeCompare(bStart);
         });
     }, [tournaments, categoryFilter, startDate, endDate, selectedPlayers]);
 
@@ -274,28 +274,34 @@ export function TournamentCalendar({ tournaments }: TournamentCalendarProps) {
                                     colors.border
                                 )}
                             >
-                                {/* Info row: Category + Name + Date + Venue */}
-                                <div className="flex items-center justify-start gap-2 flex-nowrap overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] mb-3">
-                                    <span className={cn("text-[10px] font-bold px-2.5 py-1 rounded-full uppercase shrink-0", colors.bg, colors.text)}>
-                                        {t.category}
-                                    </span>
-                                    <h3 className="font-bold text-sm sm:text-base text-zinc-900 dark:text-zinc-50 shrink-0">{t.name}</h3>
-                                    <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 font-medium whitespace-nowrap bg-transparent dark:bg-zinc-800/80 px-2.5 py-1.5 rounded-lg shrink-0">
+                                <div className="flex flex-col gap-2.5">
+                                    {/* Line 1: Category + Name */}
+                                    <div className="flex items-center gap-2">
+                                        <span className={cn("text-[10px] font-bold px-2.5 py-1 rounded-full uppercase shrink-0", colors.bg, colors.text)}>
+                                            {t.category}
+                                        </span>
+                                        <h3 className="font-bold text-sm sm:text-base text-zinc-900 dark:text-zinc-50 line-clamp-1">{t.name}</h3>
+                                    </div>
+
+                                    {/* Line 2: Date */}
+                                    <div className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400 font-medium">
                                         <Calendar size={13} className="shrink-0 text-zinc-400" />
                                         <span>{t.date.replace(/^\d{4}-/, "").replace(/ ~ \d{4}-/, " ~ ")}</span>
                                     </div>
-                                    <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 whitespace-nowrap shrink-0">
-                                        <MapPin size={13} className="shrink-0" />
-                                        <span>{t.venue}</span>
-                                    </div>
-                                </div>
 
-                                {/* Players */}
-                                <div className="flex items-center gap-2 bg-transparent dark:bg-zinc-800/50 px-3 py-2.5 rounded-xl border border-zinc-100 dark:border-zinc-800">
-                                    <Users size={14} className="shrink-0 text-zinc-400" />
-                                    <span className="text-xs text-zinc-600 dark:text-zinc-400 font-medium">
-                                        {t.players.length > 0 ? t.players.join(", ") : "선수 지정안됨"}
-                                    </span>
+                                    {/* Line 3: Venue */}
+                                    <div className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400 font-medium">
+                                        <MapPin size={13} className="shrink-0 text-zinc-400" />
+                                        <span>{t.venue || "장소 미지정"}</span>
+                                    </div>
+
+                                    {/* Line 4: Players */}
+                                    <div className="flex items-center gap-2 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-2.5 rounded-xl border border-zinc-100 dark:border-zinc-800 mt-1">
+                                        <Users size={14} className="shrink-0 text-zinc-400" />
+                                        <span className="text-xs text-zinc-600 dark:text-zinc-400 font-medium leading-relaxed">
+                                            {t.players.length > 0 ? t.players.join(", ") : "선수 지정안됨"}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                         );

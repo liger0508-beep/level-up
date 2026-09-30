@@ -15,6 +15,7 @@ interface CrossCheckSignatureModalProps {
     onCancelMarkerSig?: () => void;
     hasPlayerSig: boolean;
     hasMarkerSig: boolean;
+    onEditMyScore?: () => void;
 }
 
 export function CrossCheckSignatureModal({ 

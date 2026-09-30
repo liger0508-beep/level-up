@@ -89,9 +89,15 @@ export default function TournamentAdminPage() {
     // Tournaments visible for the current month/year
     const monthTournaments = allTournaments
         .filter(t => {
+            const orig = originalTournamentsRef.current.find(o => o.id === t.id);
+            if (!orig) return true; // Always show newly added rows so they don't disappear while editing
+
             const y = t.year ?? viewYear;
             const startStr = t.date.split("~")[0].trim();
             const month = parseInt(startStr.split("-")[0]); // MM from MM-DD
+            
+            if (orig.date !== t.date) return true; // Keep visible if date was modified
+
             // Allow row to be visible if the month is not yet valid (e.g. newly added row)
             return y === viewYear && (isNaN(month) || month === viewMonth);
         });
@@ -157,7 +163,7 @@ export default function TournamentAdminPage() {
                 try {
                     const isMobile = window.innerWidth < 768;
                     const ref = isMobile ? endInputRefs.current[`mobile-${id}`] : endInputRefs.current[id];
-                    ref?.showPicker?.();
+                    ref?.focus();
                 } catch (err) {
                     console.warn("Browser blocked auto-opening picker:", err);
                 }
@@ -165,12 +171,22 @@ export default function TournamentAdminPage() {
         }
     };
 
-    const handleDelete = (id: string, name?: string) => {
+    const handleDelete = async (id: string, name?: string) => {
         if (!window.confirm(`"${name || "이 일정"}"을(를) 정말 삭제하시겠습니까?`)) return;
+        
+        // Remove locally
         setAllTournaments(prev => prev.filter(t => t.id !== id));
-        setDeletedIds(prev => [...prev, id]);
+        setDeletedIds(prev => prev.filter(d => d !== id));
         setPlayerInput(prev => { const n = { ...prev }; delete n[id]; return n; });
         setPlayerErrors(prev => { const n = { ...prev }; delete n[id]; return n; });
+        originalTournamentsRef.current = originalTournamentsRef.current.filter(o => o.id !== id);
+        
+        // Instantly sync deletion to DB
+        try {
+            await saveAllTournaments([], [id]);
+        } catch (err) {
+            console.error("Failed to delete tournament instantly", err);
+        }
     };
 
     const handleSave = async () => {
@@ -576,7 +592,7 @@ export default function TournamentAdminPage() {
                     )}
                 >
                     {savedOk ? <Check size={18} /> : <Save size={18} />}
-                    {savedOk ? "저장 완료" : "일정 저장하기"}
+                    {savedOk ? "등록 완료" : "일정 등록"}
                 </button>
             </div>
 

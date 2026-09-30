@@ -209,6 +209,7 @@ export default function StatisticsPage() {
                                     <th className="px-6 py-4 font-bold text-center whitespace-nowrap">스코어</th>
                                     <th className="px-6 py-4 font-bold text-center whitespace-nowrap">상담</th>
                                     <th className="px-6 py-4 font-bold text-center whitespace-nowrap">훈련일지</th>
+                                    <th className="px-6 py-4 font-bold text-center whitespace-nowrap">훈련 계획</th>
                                     <th className="px-6 py-4 font-bold text-center whitespace-nowrap">선수 레포트 조회</th>
                                     <th className="px-6 py-4 font-bold text-center whitespace-nowrap">접속</th>
                                 </tr>
@@ -235,6 +236,7 @@ export default function StatisticsPage() {
                                             <td className="px-6 py-4 text-center font-medium text-zinc-600 dark:text-zinc-400">{d.score.toLocaleString()}</td>
                                             <td className="px-6 py-4 text-center font-medium text-zinc-600 dark:text-zinc-400">{d.consultation.toLocaleString()}</td>
                                             <td className="px-6 py-4 text-center font-medium text-zinc-600 dark:text-zinc-400">{d.trainingLog.toLocaleString()}</td>
+                                            <td className="px-6 py-4 text-center font-medium text-zinc-600 dark:text-zinc-400">{d.trainingPlan?.toLocaleString() || 0}</td>
                                             <td className="px-6 py-4 text-center font-medium text-zinc-600 dark:text-zinc-400">{d.reportView.toLocaleString()}</td>
                                             <td className="px-6 py-4 text-center font-medium text-zinc-600 dark:text-zinc-400">{d.login.toLocaleString()}</td>
                                         </tr>

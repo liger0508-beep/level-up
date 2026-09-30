@@ -15,20 +15,27 @@ export const DatePickerInput = forwardRef<HTMLInputElement, DatePickerInputProps
                 <span className="pointer-events-none truncate z-0 font-medium">
                     {displayValue || <span className="opacity-50">날짜 선택</span>}
                 </span>
+                <style>{`
+                    .date-picker-input-native::-webkit-calendar-picker-indicator {
+                        position: absolute;
+                        top: 0;
+                        left: 0;
+                        right: 0;
+                        bottom: 0;
+                        width: 100%;
+                        height: 100%;
+                        padding: 0;
+                        color: transparent;
+                        background: transparent;
+                        cursor: pointer;
+                        opacity: 0;
+                    }
+                `}</style>
                 <input
                     ref={ref}
                     type="date"
                     value={value}
-                    onClick={(e) => {
-                        try {
-                            // Ensure the element is focused to help mobile browsers anchor the picker
-                            (e.target as HTMLInputElement).focus();
-                            (e.target as HTMLInputElement).showPicker?.();
-                        } catch (err) { }
-                    }}
-                    // Using a very small opacity instead of 0 can sometimes help browsers 
-                    // with positioning the native picker relative to the element.
-                    className="absolute inset-0 w-full h-full opacity-[0.01] cursor-pointer z-10 appearance-none"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10 date-picker-input-native"
                     {...props}
                 />
             </div>
