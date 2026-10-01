@@ -154,6 +154,11 @@ export default function AthleteReportPage() {
     });
     const [selectedMonth, setSelectedMonth] = useState<string>(() => {
         const d = new Date();
+        const daysInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+        // 마지막 주(월의 총 일수 - 6일)가 아니면 이전 달을 기본값으로 설정
+        if (d.getDate() < daysInMonth - 6) {
+            d.setMonth(d.getMonth() - 1);
+        }
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     });
 
@@ -205,10 +210,11 @@ export default function AthleteReportPage() {
 
     const [branchFilter, setBranchFilter] = useState<string>("ALL");
     const [searchQuery, setSearchQuery] = useState("");
-    const [statusFilter, setStatusFilter] = useState<"ALL" | "COMPLETED" | "INCOMPLETE">("ALL");
+    const [statusFilter, setStatusFilter] = useState<"ALL" | "COMPLETED" | "INCOMPLETE" | "NEEDS_REVIEW">("ALL");
     const [coachFilter, setCoachFilter] = useState<string>("ALL");
     const [reportStatuses, setReportStatuses] = useState<Record<string, boolean>>({});
     const [assignedCoaches, setAssignedCoaches] = useState<Record<string, string>>({});
+    const [hasScorecards, setHasScorecards] = useState<Record<string, boolean>>({});
 
     const [refreshTrigger, setRefreshTrigger] = useState(0);
 
@@ -311,6 +317,19 @@ export default function AthleteReportPage() {
                         }
                     });
                     setAssignedCoaches(coachMap);
+                }
+
+                // 3. Fetch athletes who have scorecards this month (via admin API to bypass RLS)
+                const scRes = await fetch(`/api/reports?type=scorecards&month=${selectedMonth}`);
+                if (scRes.ok) {
+                    const { data: scorecardsData } = await scRes.json();
+                    if (scorecardsData) {
+                        const scMap: Record<string, boolean> = {};
+                        scorecardsData.forEach((s: any) => {
+                            scMap[s.athlete_id] = true;
+                        });
+                        setHasScorecards(scMap);
+                    }
                 }
             } catch (err) {
                 console.error("Error fetching statuses/coaches:", err);
@@ -889,14 +908,18 @@ export default function AthleteReportPage() {
             const matchesBranch = branchFilter === "ALL" || (a.branch && a.branch.includes(branchFilter));
             const matchesSearch = !searchQuery || a.name.includes(searchQuery);
             const isCompleted = !!reportStatuses[a.id];
-            const matchesStatus = statusFilter === "ALL"
-                ? true
-                : statusFilter === "COMPLETED" ? isCompleted : !isCompleted;
+            const isNeedsReview = !assignedCoaches[a.id] && hasScorecards[a.id];
+            
+            let matchesStatus = true;
+            if (statusFilter === "COMPLETED") matchesStatus = isCompleted;
+            else if (statusFilter === "NEEDS_REVIEW") matchesStatus = !isCompleted && isNeedsReview;
+            else if (statusFilter === "INCOMPLETE") matchesStatus = !isCompleted && !isNeedsReview;
+
             const matchesCoach = coachFilter === "ALL" || assignedCoaches[a.id] === coachFilter;
 
             return matchesBranch && matchesSearch && matchesStatus && matchesCoach;
         });
-    }, [athletes, branchFilter, searchQuery, statusFilter, coachFilter, reportStatuses, assignedCoaches]);
+    }, [athletes, branchFilter, searchQuery, statusFilter, coachFilter, reportStatuses, assignedCoaches, hasScorecards]);
 
     if (isLoading) {
         return (
@@ -1565,6 +1588,7 @@ export default function AthleteReportPage() {
                                         <option value="ALL">상태</option>
                                         <option value="COMPLETED">완료</option>
                                         <option value="INCOMPLETE">미작성</option>
+                                        <option value="NEEDS_REVIEW">리뷰 필요</option>
                                     </select>
                                     <select
                                         value={coachFilter}
@@ -1593,11 +1617,18 @@ export default function AthleteReportPage() {
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-3">
-                                            {reportStatuses[athlete.id] && (
+                                            {reportStatuses[athlete.id] ? (
                                                 <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20">
                                                     <CheckCircle2 size={14} />
                                                     <span className="text-xs font-bold">완료</span>
                                                 </div>
+                                            ) : (
+                                                !assignedCoaches[athlete.id] && hasScorecards[athlete.id] && (
+                                                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-500/20">
+                                                        <AlertCircle size={14} />
+                                                        <span className="text-xs font-bold">리뷰 필요</span>
+                                                    </div>
+                                                )
                                             )}
                                             <button
                                                 onClick={() => {

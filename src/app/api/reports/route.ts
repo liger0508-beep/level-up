@@ -22,6 +22,20 @@ export async function GET(request: Request) {
         return NextResponse.json({ data, error });
     }
 
+    if (type === 'scorecards' && month) {
+        const [y, m] = month.split('-');
+        const lastDay = new Date(Number(y), Number(m), 0).getDate();
+        const startDate = `${month}-01`;
+        const endDate = `${month}-${lastDay}`;
+
+        const { data, error } = await supabaseAdmin
+            .from("scorecards")
+            .select("athlete_id")
+            .gte("round_date", startDate)
+            .lte("round_date", endDate);
+        return NextResponse.json({ data, error });
+    }
+
     if (type === 'detail' && month && athleteId) {
         const { data, error } = await supabaseAdmin
             .from("player_reports")

@@ -2,6 +2,7 @@
 
 import React, { useEffect } from 'react';
 import { cn } from '@/lib/utils';
+import { X } from 'lucide-react';
 
 export interface BottomSheetPickerProps {
     isOpen: boolean;
@@ -45,15 +46,23 @@ export function BottomSheetPicker({ isOpen, onClose, options, value, onSelect, t
                     <div className="w-10 h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-700" />
                 </div>
 
-                {/* Title */}
-                {title && (
-                    <div className="px-4 py-3 shrink-0">
-                        <p className="text-[13px] font-bold text-zinc-800 dark:text-zinc-200 text-center">{title}</p>
-                    </div>
-                )}
+                {/* Title and Close Button */}
+                <div className="px-5 py-3 shrink-0 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 mb-2">
+                    {title ? (
+                        <p className="text-[14px] font-bold text-zinc-800 dark:text-zinc-200">{title}</p>
+                    ) : (
+                        <div />
+                    )}
+                    <button type="button" onClick={onClose} className="p-1 -mr-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+                        <X size={18} />
+                    </button>
+                </div>
 
                 {/* Options */}
-                <div className="flex-1 grid grid-cols-2 gap-2 px-4 pb-4 pt-1 overflow-y-auto">
+                <div 
+                    className="flex-1 grid grid-cols-2 gap-2 px-4 pt-1 overflow-y-auto" 
+                    style={{ paddingBottom: "max(3.5rem, env(safe-area-inset-bottom))" }}
+                >
                     <div className="flex flex-col gap-2">
                         {options.slice(0, Math.ceil(options.length / 2)).map(opt => (
                             <button key={opt} type="button" onClick={() => { onSelect(opt); onClose(); }} className={rowCls(value === opt)}>
@@ -68,14 +77,6 @@ export function BottomSheetPicker({ isOpen, onClose, options, value, onSelect, t
                             </button>
                         ))}
                     </div>
-                </div>
-
-                {/* Close */}
-                <div className="px-4 pb-4 pt-1 shrink-0 border-t border-zinc-100 dark:border-zinc-800">
-                    <button type="button" onClick={onClose}
-                        className="w-full py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 text-[13px] font-semibold text-zinc-600 dark:text-zinc-300 active:bg-zinc-200 transition-colors">
-                        닫기
-                    </button>
                 </div>
             </div>
 

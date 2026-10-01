@@ -49,9 +49,9 @@ type ActivePreset = "monthly" | "weekly" | "today" | "custom";
 export function TournamentCalendar({ tournaments }: TournamentCalendarProps) {
     const today = new Date();
 
-    const [startDate, setStartDate] = useState(format(startOfWeek(today, { weekStartsOn: 1 }), "yyyy-MM-dd"));
-    const [endDate, setEndDate] = useState(format(endOfWeek(today, { weekStartsOn: 1 }), "yyyy-MM-dd"));
-    const [activePreset, setActivePreset] = useState<ActivePreset>("weekly");
+    const [startDate, setStartDate] = useState(format(startOfMonth(today), "yyyy-MM-dd"));
+    const [endDate, setEndDate] = useState(format(endOfMonth(today), "yyyy-MM-dd"));
+    const [activePreset, setActivePreset] = useState<ActivePreset>("monthly");
 
     const [categoryFilter, setCategoryFilter] = useState<TournamentCategory | "all">("all");
     const [searchQuery, setSearchQuery] = useState("");
