@@ -465,6 +465,15 @@ export default function ScoreDetailPage() {
                     const scorePar4 = getRelScore(result.filter(h => h.par === 4));
                     const scorePar5 = getRelScore(result.filter(h => h.par === 5));
 
+                    const getAvgScore = (list: HoleAnalysis[]) => {
+                        if (list.length === 0) return 0;
+                        const s = list.reduce((acc, h) => acc + h.score, 0);
+                        return s / list.length;
+                    };
+                    const avgPar3 = getAvgScore(result.filter(h => h.par === 3));
+                    const avgPar4 = getAvgScore(result.filter(h => h.par === 4));
+                    const avgPar5 = getAvgScore(result.filter(h => h.par === 5));
+
                     // Average Remaining Distance stats
                     const distStats: Record<string, { sum: number; count: number }> = {
                         "티샷": { sum: 0, count: 0 },
@@ -576,11 +585,14 @@ export default function ScoreDetailPage() {
                         scorePar3,
                         scorePar4,
                         scorePar5,
+                        avgPar3,
+                        avgPar4,
+                        avgPar5,
                         avgRemainingDists,
                         sectorChanges: [
                             { type: "티샷", value: formatScore(teeSG, 2), items: cats.slice(0, 2) },
                             { type: "세컨샷", value: formatScore(secondSG, 2), items: cats.slice(2, 6) },
-                            { type: "그린주변샷", value: formatScore(greenSG, 2), items: cats.slice(6, 9) },
+                            { type: "숏게임", value: formatScore(greenSG, 2), items: cats.slice(6, 9) },
                             { type: "퍼팅", value: formatScore(puttingSG, 2), items: cats.slice(9, 13) }
                         ],
                         contributions: categoriesWithPercent,
@@ -667,8 +679,10 @@ export default function ScoreDetailPage() {
             { label: "퍼트수", value: summary.totalPutts, unit: "개" },
             { label: "3퍼트 이상", value: summary.threePuttCount, unit: "회" },
             { label: "패널티/OB", value: summary.penaltyCount, unit: "개" },
-            { label: "BOUNCE BACK", value: roundToOne(summary.bounceBackRate), unit: "%" },
-            { label: "버디 이상수", value: summary.birdieOrBetterCount, unit: "개" }
+            { label: "버디 이상수", value: summary.birdieOrBetterCount, unit: "개" },
+            { label: "PAR3 평균 타수", value: Number(summary.avgPar3 || 0).toFixed(1), unit: "타" },
+            { label: "PAR4 평균 타수", value: Number(summary.avgPar4 || 0).toFixed(1), unit: "타" },
+            { label: "PAR5 평균 타수", value: Number(summary.avgPar5 || 0).toFixed(1), unit: "타" }
         ],
         sectorChanges: summary.sectorChanges,
         contributions: summary.contributions,

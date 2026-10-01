@@ -918,7 +918,7 @@ export function generateReviewFocusCategories(analysis: HoleAnalysis[]): Record<
                     else if (dist >= 90) subCategory = "90-119m";
                     else if (dist >= 31) subCategory = "31-89m";
                 } else {
-                    majorCategory = "그린주변샷";
+                    majorCategory = "숏게임";
                     if (label === "GB") subCategory = "벙커";
                     else if (['GA', 'GB'].includes(s.landingLabel)) subCategory = s.landingLabel === "GB" ? "벙커" : "어프로치";
                     else if (['OB', 'PA', 'PS', '-'].includes(s.landingLabel)) subCategory = "기타";
@@ -943,7 +943,7 @@ export function generateReviewFocusCategories(analysis: HoleAnalysis[]): Record<
     const result: Record<string, ReviewFocusShot[]> = {
         "티샷": [],
         "아이언&피치샷": [],
-        "그린주변샷": [],
+        "숏게임": [],
         "퍼팅": []
     };
 
@@ -980,7 +980,7 @@ export function generateReviewFocusCategories(analysis: HoleAnalysis[]): Record<
                 return a.holeNumber - b.holeNumber; // 홀 번호 오름차순
             } else if (major === "아이언&피치샷") {
                 return a.attemptDistance - b.attemptDistance; // 거리 오름차순
-            } else if (major === "그린주변샷") {
+            } else if (major === "숏게임") {
                 if (a.subCategory === "어프로치" && b.subCategory !== "어프로치") return -1;
                 if (a.subCategory !== "어프로치" && b.subCategory === "어프로치") return 1;
                 return 0;
@@ -1049,6 +1049,18 @@ export async function generateAndSaveScorecardSummary(scorecardId: string): Prom
     let totalBounceBacks = 0;
     let totalBirdieOrBetter = 0;
 
+    const par3Holes = allHoles.filter(h => h.par === 3 && h.score > 0 && h.score !== -1);
+    const par3TotalScore = par3Holes.reduce((s, h) => s + h.score, 0);
+    const par3Count = par3Holes.length;
+
+    const par4Holes = allHoles.filter(h => h.par === 4 && h.score > 0 && h.score !== -1);
+    const par4TotalScore = par4Holes.reduce((s, h) => s + h.score, 0);
+    const par4Count = par4Holes.length;
+
+    const par5Holes = allHoles.filter(h => h.par === 5 && h.score > 0 && h.score !== -1);
+    const par5TotalScore = par5Holes.reduce((s, h) => s + h.score, 0);
+    const par5Count = par5Holes.length;
+
     const sortedHoles = [...allHoles].sort((a,b) => a.holeNumber - b.holeNumber);
     for (let i = 0; i < sortedHoles.length; i++) {
         const h = sortedHoles[i];
@@ -1104,6 +1116,13 @@ export async function generateAndSaveScorecardSummary(scorecardId: string): Prom
         bounce_backs: totalBounceBacks,
         bogey_or_worse: totalBogeyOrWorseForBounceBack,
         birdie_or_better: totalBirdieOrBetter,
+        
+        par3_score_total: par3TotalScore,
+        par3_count: par3Count,
+        par4_score_total: par4TotalScore,
+        par4_count: par4Count,
+        par5_score_total: par5TotalScore,
+        par5_count: par5Count,
         
         updated_at: new Date().toISOString()
     };

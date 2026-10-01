@@ -814,7 +814,7 @@ function ScoreCreateContent() {
             setIntermediateSectors([
                 { type: "티샷", value: teeSG, items: cats.slice(0, 2) },
                 { type: "세컨샷", value: secondSG, items: cats.slice(2, 6) },
-                { type: "그린주변샷", value: greenSG, items: cats.slice(6, 9) },
+                { type: "숏게임", value: greenSG, items: cats.slice(6, 9) },
                 { type: "퍼팅", value: puttingSG, items: cats.slice(9, 13) }
             ]);
             setShowIntermediateModal(true);

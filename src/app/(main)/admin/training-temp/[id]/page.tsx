@@ -82,7 +82,7 @@ export default function TrainingDetailPage() {
 
     const CATEGORY_TO_FIELD: Record<string, string | string[]> = {
         "퍼팅": ["distSG_Putt9Plus", "distSG_Putt4_8", "distSG_Putt2_3", "distSG_Putt1"],
-        "그린주변샷": ["distSG_Approach", "distSG_Bunker"],
+        "숏게임": ["distSG_Approach", "distSG_Bunker"],
         "아이언&피치샷": ["distSG_180Plus", "distSG_150_179", "distSG_120_149", "distSG_90_119", "distSG_Pitch31_89"],
         "티샷": "distSG_DriverAcc",
     };
@@ -105,7 +105,7 @@ export default function TrainingDetailPage() {
 
 
     const PREP_CATEGORIES = [
-        "퍼팅", "그린주변샷", "아이언&피치샷", "티샷"
+        "퍼팅", "숏게임", "아이언&피치샷", "티샷"
     ];
 
     function getCategoryShots(catName: string, h: any, isPrep: boolean) {
@@ -115,7 +115,7 @@ export default function TrainingDetailPage() {
             isMatchFn = (s: any) => s.shotLabel.split('/')[0].trim().toUpperCase() === "TE" && h.par >= 4;
         } else if (catName === "아이언&피치샷") {
             isMatchFn = (s: any) => { const l = s.shotLabel.split('/')[0].trim().toUpperCase(); return l !== "GR" && l !== "GB" && (l !== "TE" || h.par === 3) && s.attemptDistance >= 31; };
-        } else if (catName === "그린주변샷") {
+        } else if (catName === "숏게임") {
             isMatchFn = (s: any) => { const l = s.shotLabel.split('/')[0].trim().toUpperCase(); return l === "GB" || (l !== "GR" && l !== "TE" && s.attemptDistance > 0 && s.attemptDistance <= 30); };
         } else if (catName === "퍼팅") {
             isMatchFn = (s: any) => s.shotLabel.split('/')[0].trim().toUpperCase() === "GR" && s.attemptDistance >= 1;
@@ -187,7 +187,7 @@ export default function TrainingDetailPage() {
                                 if (!filteredShots.some(s => Math.abs(s.attemptDistance - shot.attemptDistance) <= 50)) {
                                     filteredShots.push(shot);
                                 }
-                            } else if (catName === "그린주변샷") {
+                            } else if (catName === "숏게임") {
                                 const isCurrentBunker = shot.shotLabel.split('/')[0].trim().toUpperCase() === "GB";
                                 if (!filteredShots.some(s => {
                                     const isSBunker = s.shotLabel.split('/')[0].trim().toUpperCase() === "GB";
@@ -211,7 +211,7 @@ export default function TrainingDetailPage() {
 
                 if (catName === "티샷" || catName === "퍼팅") {
                     focusHoles.sort((a: any, b: any) => a.holeNumber - b.holeNumber);
-                } else if (catName === "그린주변샷") {
+                } else if (catName === "숏게임") {
                     focusHoles.sort((a: any, b: any) => {
                         const isBunkerA = a.worstShotInfo.attempt.includes("벙커");
                         const isBunkerB = b.worstShotInfo.attempt.includes("벙커");
@@ -1228,7 +1228,7 @@ export default function TrainingDetailPage() {
                                                 {isExpanded && (
                                                     <div className="p-4 bg-zinc-50/50 dark:bg-zinc-800/10 border-t border-zinc-200 dark:border-zinc-800 relative">
                                                         {(() => {
-                                                            const sortedHoles = catName === "그린주변샷"
+                                                            const sortedHoles = catName === "숏게임"
                                                                 ? [...uniqueFocusHoles]
                                                                 : [...uniqueFocusHoles].sort((a, b) => Number(a.holeNumber) - Number(b.holeNumber));
 

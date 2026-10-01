@@ -1384,7 +1384,7 @@ const convertDistToKorean = (str: string) => {
               return { spoken: prefixSpoken + spoken, visual };
           }
           
-          if (targetStr.includes("어프로치") || targetStr.includes("그린주변샷") || targetStr.includes("숏게임")) {
+          if (targetStr.includes("어프로치") || targetStr.includes("숏게임") || targetStr.includes("숏게임")) {
               const posArr = ["평지", "러프", "타이트한 라이", "왼발 오르막 라이", "왼발 내리막 라이", "공이 발보다 높은 라이", "공이 발보다 낮은 라이"];
               const pos = posArr[Math.floor(Math.random() * posArr.length)];
               const dists = ["10", "20", "30"];

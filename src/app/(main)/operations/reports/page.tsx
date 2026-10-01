@@ -106,9 +106,11 @@ const SummaryBox = ({ label, value, icon: Icon, colorClass = "text-brand-navy" }
 
 const IndicatorCard = ({ label, value, unit, icon: Icon, colorClass = "text-brand-navy" }: { label: string; value: string | number; unit?: string; icon: any; colorClass?: string }) => (
     <div className="bg-zinc-50/50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800/50 p-4 rounded-2xl flex flex-col justify-between h-full">
-        <div className="flex items-center gap-1.5 mb-3 text-[12px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-tight">
-            <Icon size={14} className="text-zinc-400 shrink-0" />
-            {label}
+        <div className="flex items-start gap-1.5 mb-3 text-[12px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-tight">
+            <Icon size={14} className="text-zinc-400 shrink-0 mt-0.5" />
+            <div className="leading-tight">
+                {label.split('\n').map((l, i, arr) => <span key={i}>{l}{i < arr.length - 1 && <br/>}</span>)}
+            </div>
         </div>
         <div className="flex items-baseline justify-end gap-1">
             <span className={cn("text-2xl font-black tracking-tighter", colorClass)}>{value}</span>
@@ -151,6 +153,7 @@ export default function AthleteReportPage() {
     });
     const [selectedMonth, setSelectedMonth] = useState<string>(() => {
         const d = new Date();
+        d.setMonth(d.getMonth() - 1);
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     });
 
@@ -510,82 +513,7 @@ export default function AthleteReportPage() {
             setIsDemoData(false);
             setStatsSummary(null);
 
-            const mockCats = [
-                { name: "티샷 비거리", sg: 0.21, percent: 12, maxSg: 0.5 },
-                { name: "티샷 정확도", sg: 0.14, percent: 8, maxSg: 0.2 },
-                { name: "180M이상", sg: 0.05, percent: 3, maxSg: 0.1 },
-                { name: "150-179M", sg: -0.12, percent: 7, maxSg: 0 },
-                { name: "120-149M", sg: -0.08, percent: 5, maxSg: 0 },
-                { name: "90-119M", sg: -0.03, percent: 2, maxSg: 0.1 },
-                { name: "피치샷", sg: 0.18, percent: 10, maxSg: 0.3 },
-                { name: "벙커", sg: 0.11, percent: 6, maxSg: 0.2 },
-                { name: "어프로치", sg: 0.35, percent: 20, maxSg: 0.6 },
-                { name: "9M이상", sg: 0.15, percent: 9, maxSg: 0.4 },
-                { name: "4-8M", sg: 0.22, percent: 13, maxSg: 0.5 },
-                { name: "2-3M", sg: 0.31, percent: 18, maxSg: 0.7 },
-                { name: "1M", sg: 0.14, percent: 8, maxSg: 0.2 }
-            ];
 
-            const mockContributions = [...mockCats].sort((a, b) => a.sg - b.sg);
-            const mockPositiveCats = mockContributions.filter(c => c.maxSg > 0).sort((a, b) => b.sg - a.sg);
-
-            const mockTrendData = [
-                { date: "05/03", score: 76, teeSG: 0.2, secondSG: -0.3, greenSG: 0.5, puttingSG: 0.6 },
-                { date: "05/04", score: 74, teeSG: 0.4, secondSG: -0.1, greenSG: 0.7, puttingSG: 0.8 },
-                { date: "05/04", score: 75, teeSG: 0.3, secondSG: -0.2, greenSG: 0.6, puttingSG: 0.7 },
-                { date: "05/06", score: 72, teeSG: 0.5, secondSG: 0.0, greenSG: 0.8, puttingSG: 0.9 },
-                { date: "05/07", score: 75, teeSG: 0.3, secondSG: -0.2, greenSG: 0.6, puttingSG: 0.7 },
-                { date: "05/07", score: 73, teeSG: 0.4, secondSG: -0.1, greenSG: 0.7, puttingSG: 0.8 }
-            ];
-
-            const mockTrainingPlan = mockPositiveCats.slice(0, 5).map((c, i) => ({
-                rank: `${i + 1}순위`,
-                label: c.name,
-                pct: Math.round(c.percent),
-                time: [35, 25, 25, 20, 10, 5][i] || 5,
-                color: ["bg-red-500", "bg-orange-500", "bg-emerald-500", "bg-blue-500", "bg-indigo-500", "bg-purple-500"][i] || "bg-zinc-500",
-            }));
-
-            setStatsSummary({
-                playContent: "74.8",
-                scoreVsContent: "-0.6",
-                longVsShort: "+1.2",
-                averagePar: 72,
-                avgMetrics: [
-                    { label: "페어웨이 안착률", value: "72.4", unit: "%" },
-                    { label: "그린 적중률", value: "66.7", unit: "%" },
-                    { label: "평균 퍼트수", value: "1.8", unit: "개" },
-                    { label: "평균 남은 거리", value: "3.4", unit: "m" },
-                    { label: "평균 3퍼트 이상", value: "0.2", unit: "회" },
-                    { label: "평균 패널티/OB", value: "0.4", unit: "개" }
-                ],
-                sectorChanges: [
-                    { type: "티샷", value: "+0.35", items: mockCats.slice(0, 2) },
-                    { type: "세컨샷", value: "-0.18", items: mockCats.slice(2, 6) },
-                    { type: "그린주변샷", value: "+0.64", items: mockCats.slice(6, 9) },
-                    { type: "퍼팅", value: "+0.82", items: mockCats.slice(9, 13) }
-                ],
-                avgRemainingDists: [
-                    { label: "티샷 (24)", value: "138.4" },
-                    { label: "180M이상 (12)", value: "8.4" },
-                    { label: "150-179M (18)", value: "6.2" },
-                    { label: "120-149M (14)", value: "4.8" },
-                    { label: "90-119M (20)", value: "3.1" },
-                    { label: "피치샷 (16)", value: "2.8" },
-                    { label: "벙커 (8)", value: "3.2" },
-                    { label: "어프로치 (22)", value: "1.4" },
-                    { label: "9M이상 (15)", value: "1.6" },
-                    { label: "4-8M (28)", value: "0.8" },
-                    { label: "2-3M (32)", value: "0.3" },
-                    { label: "1M (45)", value: "0.0" }
-                ],
-                contributions: mockContributions,
-                strongPoint: "어프로치",
-                challengePoint1: "2-3M",
-                challengePoint2: "4-8M",
-                trainingPlan: mockTrainingPlan,
-                trendData: mockTrendData
-            });
             return;
         }
 
@@ -749,6 +677,19 @@ export default function AthleteReportPage() {
                 const bounceBackRate = totalBogeyOrWorseForBounceBack > 0 ? (totalBounceBacks / totalBogeyOrWorseForBounceBack) * 100 : 0;
                 const avgBirdieOrBetter = numRounds > 0 ? (totalBirdieOrBetter / numRounds) : 0;
 
+                const getAvgScore = (list: any[]) => {
+                    if (list.length === 0) return 0;
+                    const s = list.reduce((acc, h) => acc + h.score, 0);
+                    return s / list.length;
+                };
+                const avgPar3 = getAvgScore(combinedResult.filter(h => h.par === 3));
+                const avgPar4 = getAvgScore(combinedResult.filter(h => h.par === 4));
+                const avgPar5 = getAvgScore(combinedResult.filter(h => h.par === 5));
+
+                const missedGirHoles = combinedResult.filter(h => h.summary.gir === 'X');
+                const parSaves = missedGirHoles.filter(h => h.score <= h.par).length;
+                const parSaveRate = missedGirHoles.length > 0 ? (parSaves / missedGirHoles.length) * 100 : 0;
+
                 const trendData = filteredScs
                     .sort((a, b) => new Date(a.round_date).getTime() - new Date(b.round_date).getTime())
                     .map(sc => {
@@ -784,19 +725,23 @@ export default function AthleteReportPage() {
                     longVsShort: formatScore(longVsShort),
                     averagePar: Math.round(combinedResult.reduce((s, h) => s + h.par, 0) / numRounds),
                     avgMetrics: [
-                        { label: "페어웨이 안착률", value: roundToOne(fairwayHitRate), unit: "%" },
+                        { label: "페어웨이\n안착률", value: roundToOne(fairwayHitRate), unit: "%" },
                         { label: "그린 적중률", value: roundToOne(girRate), unit: "%" },
-                        { label: "평균 퍼트수", value: roundToOne(totalPutts), unit: "개" },
-                        { label: "평균 남은 거리", value: roundToOne(avgFirstPuttDist), unit: "m" },
-                        { label: "평균 3퍼트 이상", value: roundToOne(threePuttCount), unit: "회" },
-                        { label: "평균 패널티/OB", value: roundToOne(totalPA + totalOB), unit: "개" },
+                        { label: "파세이브률", value: roundToOne(parSaveRate), unit: "%" },
+                        { label: "평균\n퍼트수", value: roundToOne(totalPutts), unit: "개" },
+                        { label: "평균\n남은 거리", value: roundToOne(avgFirstPuttDist), unit: "m" },
+                        { label: "평균\n3퍼트 이상", value: roundToOne(threePuttCount), unit: "회" },
+                        { label: "평균\n패널티/OB", value: roundToOne(totalPA + totalOB), unit: "개" },
                         { label: "바운스백", value: bounceBackRate.toFixed(1), unit: "%" },
-                        { label: "버디 이상수", value: roundToOne(avgBirdieOrBetter), unit: "개" }
+                        { label: "버디 이상수", value: roundToOne(avgBirdieOrBetter), unit: "개" },
+                        { label: "PAR3\n평균 타수", value: Number(avgPar3 || 0).toFixed(1), unit: "타" },
+                        { label: "PAR4\n평균 타수", value: Number(avgPar4 || 0).toFixed(1), unit: "타" },
+                        { label: "PAR5\n평균 타수", value: Number(avgPar5 || 0).toFixed(1), unit: "타" }
                     ],
                     sectorChanges: [
                         { type: "티샷", value: formatScore(teeSG), items: cats.slice(0, 2) },
                         { type: "세컨샷", value: formatScore(secondSG), items: cats.slice(2, 6) },
-                        { type: "그린주변샷", value: formatScore(greenSG), items: cats.slice(6, 9) },
+                        { type: "숏게임", value: formatScore(greenSG), items: cats.slice(6, 9) },
                         { type: "퍼팅", value: formatScore(puttingSG), items: cats.slice(9, 13) }
                     ],
                     avgRemainingDists,
@@ -1154,9 +1099,6 @@ export default function AthleteReportPage() {
                                                     <div className="absolute left-6 text-[11px] font-black uppercase tracking-widest opacity-60 text-zinc-400">Score</div>
                                                     <div className="flex items-baseline gap-2">
                                                         <span className={cn("text-4xl font-black", colorCls)}>{stats.averageScore}</span>
-                                                        <span className={cn("text-xl font-bold opacity-80", colorCls)}>
-                                                            ({rel > 0 ? `+${rel}` : rel === 0 ? "E" : rel})
-                                                        </span>
                                                     </div>
                                                 </div>
                                             );
@@ -1166,23 +1108,27 @@ export default function AthleteReportPage() {
                                         <div className="grid grid-cols-3 gap-4">
                                             <SummaryBox label={<>플레이<br />내용</>} value={statsSummary.playContent} icon={Flag} />
                                             <SummaryBox label={<>내용 대비<br />스코어</>} value={statsSummary.scoreVsContent} icon={Target} />
-                                            <SummaryBox label={<>롱/숏게임<br />대비</>} value={statsSummary.longVsShort} icon={Zap} />
+                                            <SummaryBox label={<>롱게임<br />대비 숏게임</>} value={statsSummary.longVsShort} icon={Zap} />
                                         </div>
 
+
+
+                                        {/* 담임 코치 종합 피드백 */}
                                         {coachFeedback && (
                                             <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2.5rem] p-5 sm:p-7 shadow-sm">
                                                 <div className="flex items-center justify-between pb-4 border-b border-zinc-100 dark:border-zinc-800 mb-6">
                                                     <div className="flex items-center gap-2">
-                                                        <MessageSquare size={20} className="text-brand-navy" />
-                                                        <SectionTitle>담임 코치 종합 피드백</SectionTitle>
+                                                        <MessageSquare size={20} className="text-brand-navy shrink-0" />
+                                                        <SectionTitle className="leading-snug">
+                                                            담임 코치<br />종합 피드백
+                                                        </SectionTitle>
                                                     </div>
                                                     {reportCoachName && (
-                                                        <div className="text-[13px] font-bold text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 rounded-lg">
-                                                            작성자 <span className="text-brand-navy dark:text-brand-navy-light font-black">{reportCoachName}</span>
-                                                        </div>
+                                                        <span className="text-xs font-bold text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 rounded-xl">
+                                                            작성자: {reportCoachName}
+                                                        </span>
                                                     )}
                                                 </div>
-
                                                 <div className="min-h-[100px] p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
                                                     {coachFeedback}
                                                 </div>
@@ -1365,7 +1311,7 @@ export default function AthleteReportPage() {
                                                 />
                                                 {statsSummary.contributions.map((item: any, idx: number) => {
                                                     const val = mode === "score" ? item.sg : item.percent;
-                                                    const widthPct = Math.min((Math.abs(val) / (mode === "score" ? 2.5 : 40)) * 45, 45);
+                                                    const widthPct = Math.min((Math.abs(val) / (mode === "score" ? 1.2 : 25)) * 42, 42);
                                                     return (
                                                         <div key={idx} className="relative z-10 flex items-center h-6">
                                                             <div className="w-[90px] sm:w-[100px] flex justify-start pl-3 text-[11px] sm:text-[13px] font-bold text-zinc-500 whitespace-nowrap shrink-0">{item.name}</div>
@@ -1374,19 +1320,19 @@ export default function AthleteReportPage() {
                                                                     item.sg < 0 ? (
                                                                         <>
                                                                             <div className="absolute right-[50%] h-4 bg-red-500 rounded-sm" style={{ width: `${widthPct}%` }} />
-                                                                            <span className="absolute left-[52%] text-[10px] font-black text-red-500">{formatScore(item.sg, 1)}</span>
+                                                                            <span className="absolute text-[10px] font-black text-red-500 whitespace-nowrap" style={{ right: `calc(50% + ${widthPct}% + 6px)` }}>{formatScore(item.sg, 1)}</span>
                                                                         </>
                                                                     ) : item.sg > 0 ? (
                                                                         <>
                                                                             <div className="absolute left-[50%] h-4 bg-blue-500 rounded-sm" style={{ width: `${widthPct}%` }} />
-                                                                            <span className="absolute right-[52%] text-[10px] font-black text-blue-500">{formatScore(item.sg, 1)}</span>
+                                                                            <span className="absolute text-[10px] font-black text-blue-500 whitespace-nowrap" style={{ left: `calc(50% + ${widthPct}% + 6px)` }}>{formatScore(item.sg, 1)}</span>
                                                                         </>
                                                                     ) : (
-                                                                        <span className="absolute left-[52%] text-[10px] font-black text-blue-500">{formatScore(item.sg, 1)}</span>
+                                                                        <span className="absolute left-[52%] text-[10px] font-black text-zinc-400">0.0</span>
                                                                     )
                                                                 ) : (
                                                                     <div className="flex items-center w-full">
-                                                                        <div className={cn("h-4 rounded-sm", item.sg < 0 ? "bg-red-500" : "bg-blue-500")} style={{ width: `${item.percent * 1.5}%` }} />
+                                                                        <div className={cn("h-4 rounded-sm", item.sg < 0 ? "bg-red-500" : "bg-blue-500")} style={{ width: `${Math.min(item.percent * 2.5, 80)}%` }} />
                                                                         <span className={cn("ml-2 text-[10px] font-black", item.sg < 0 ? "text-red-500" : "text-blue-500")}>{Math.round(item.percent * 10) / 10}%</span>
                                                                     </div>
                                                                 )}
@@ -1446,9 +1392,32 @@ export default function AthleteReportPage() {
 
                                     </div>
                                 ) : (
-                                    <div className="text-center py-10 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800">
-                                        <AlertCircle size={24} className="mx-auto text-zinc-300 mb-2" />
-                                        <p className="text-xs text-zinc-400">해당 월에 완료한 연습 라운드 스코어카드가 없습니다.</p>
+                                    <div className="space-y-6">
+                                        {/* 담임 코치 종합 피드백 */}
+                                        {coachFeedback && (
+                                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2.5rem] p-5 sm:p-7 shadow-sm">
+                                                <div className="flex items-center justify-between pb-4 border-b border-zinc-100 dark:border-zinc-800 mb-6">
+                                                    <div className="flex items-center gap-2">
+                                                        <MessageSquare size={20} className="text-brand-navy shrink-0" />
+                                                        <SectionTitle className="leading-snug">
+                                                            담임 코치<br />종합 피드백
+                                                        </SectionTitle>
+                                                    </div>
+                                                    {reportCoachName && (
+                                                        <span className="text-xs font-bold text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 rounded-xl">
+                                                            작성자: {reportCoachName}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="min-h-[100px] p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                                                    {coachFeedback}
+                                                </div>
+                                            </section>
+                                        )}
+                                        <div className="text-center py-10 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800">
+                                            <AlertCircle size={24} className="mx-auto text-zinc-300 mb-2" />
+                                            <p className="text-xs text-zinc-400">해당 월에 완료한 연습 라운드 스코어카드가 없습니다.</p>
+                                        </div>
                                     </div>
                                 )}
                             </section>
@@ -1478,12 +1447,6 @@ export default function AthleteReportPage() {
                                     </section>
                                 );
                             })()}
-
-
-
-
-
-
 
                         </div>
                     </>

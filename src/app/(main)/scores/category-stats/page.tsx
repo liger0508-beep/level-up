@@ -13,7 +13,8 @@ import {
     ChevronDown,
     MapPin,
     ListFilter,
-    ArrowUpDown
+    ArrowUpDown,
+    Star
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,9 @@ interface AthleteStats {
     playContent: number;
     scoreVsContent: number;
     longVsShort: number;
+    par3Score: number;
+    par4Score: number;
+    par5Score: number;
     teeTotal: number;
     teeDistance: number;
     teeAccuracy: number;
@@ -71,6 +75,9 @@ export default function CategoryStatsPage() {
     const [loading, setLoading] = useState(false);
     const [hasSearched, setHasSearched] = useState(false);
     const [athleteStatsList, setAthleteStatsList] = useState<AthleteStats[]>([]);
+
+    const [compareStep, setCompareStep] = useState<'none' | 'selecting' | 'comparing'>('none');
+    const [selectedAthleteIds, setSelectedAthleteIds] = useState<string[]>([]);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -124,13 +131,18 @@ export default function CategoryStatsPage() {
 
     // Derived sorted list
     const sortedStats = useMemo(() => {
-        if (athleteStatsList.length === 0) return [];
+        let baseList = athleteStatsList;
+        if (compareStep === 'comparing' && selectedAthleteIds.length > 0) {
+            baseList = athleteStatsList.filter(s => selectedAthleteIds.includes(s.athleteId));
+        }
+
+        if (baseList.length === 0) return [];
         
         // Define ascending vs descending based on category. 
         const isDescending = ["fairwayHitRate", "girRate", "parSaveRate", "bounceBack", "birdieOrBetter"].includes(sortCategory);
         const isAscending = !isDescending;
 
-        let sorted = [...athleteStatsList].sort((a, b) => {
+        let sorted = [...baseList].sort((a, b) => {
             const valA = (a as any)[sortCategory] || 0;
             const valB = (b as any)[sortCategory] || 0;
             
@@ -146,7 +158,7 @@ export default function CategoryStatsPage() {
         }
         
         return sorted;
-    }, [athleteStatsList, sortCategory, isSortInverted]);
+    }, [athleteStatsList, sortCategory, isSortInverted, compareStep, selectedAthleteIds]);
 
     const formatValue = (val: number, category: string) => {
         if (["fairwayHitRate", "girRate", "parSaveRate", "bounceBack"].includes(category)) {
@@ -155,8 +167,8 @@ export default function CategoryStatsPage() {
         if (["putts", "threePutt", "penaltyOB", "birdieOrBetter"].includes(category)) {
             return `${val.toFixed(1)}`;
         }
-        if (["score", "playContent"].includes(category)) {
-            return `${val.toFixed(1)}`;
+        if (["score", "playContent", "par3Score", "par4Score", "par5Score"].includes(category)) {
+            return `${val.toFixed(2)}`;
         }
         // SG values (including scoreVsContent, longVsShort)
         const sign = val > 0 ? "+" : "";
@@ -273,7 +285,13 @@ export default function CategoryStatsPage() {
                                                         : "text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700/50"
                                                 )}
                                             >
-                                                {opt.label}
+                                                {['teeTotal', 'secondTotal', 'greenTotal', 'puttingTotal'].includes(opt.value) ? (
+                                                    <span className="flex items-center justify-center gap-1.5">
+                                                        <Star size={14} className="text-brand-navy dark:text-brand-navy-light fill-brand-navy/20" /> {opt.label} <Star size={14} className="text-brand-navy dark:text-brand-navy-light fill-brand-navy/20" />
+                                                    </span>
+                                                ) : (
+                                                    opt.label
+                                                )}
                                             </button>
                                         );
                                     })}
@@ -310,10 +328,50 @@ export default function CategoryStatsPage() {
                         <h2 className="text-lg font-bold text-zinc-800 dark:text-zinc-200">
                             순위별 결과
                         </h2>
+                        {/* Compare Controls */}
+                        {hasSearched && athleteStatsList.length > 0 && (
+                            <div className="ml-2 sm:ml-4 flex items-center gap-1.5 sm:gap-2">
+                                {compareStep === 'none' && (
+                                    <button 
+                                        onClick={() => { setCompareStep('selecting'); setSelectedAthleteIds([]); }}
+                                        className="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-lg bg-pink-50 text-pink-600 dark:bg-pink-500/10 dark:text-pink-400 hover:bg-pink-100 dark:hover:bg-pink-500/20 transition-colors"
+                                    >
+                                        비교하기
+                                    </button>
+                                )}
+                                {compareStep === 'selecting' && (
+                                    <>
+                                        <button 
+                                            onClick={() => {
+                                                if (selectedAthleteIds.length > 0) setCompareStep('comparing');
+                                                else alert("비교할 선수를 선택해주세요.");
+                                            }}
+                                            className="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-lg bg-brand-navy text-white hover:bg-brand-navy-dark transition-colors shadow-sm"
+                                        >
+                                            적용
+                                        </button>
+                                        <button 
+                                            onClick={() => { setCompareStep('none'); setSelectedAthleteIds([]); }}
+                                            className="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                                        >
+                                            취소
+                                        </button>
+                                    </>
+                                )}
+                                {compareStep === 'comparing' && (
+                                    <button 
+                                        onClick={() => { setCompareStep('none'); setSelectedAthleteIds([]); }}
+                                        className="px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-lg bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors"
+                                    >
+                                        비교 해제
+                                    </button>
+                                )}
+                            </div>
+                        )}
                     </div>
                     {sortedStats.length > 0 && (
-                        <span className="text-xs font-medium text-zinc-500">
-                            총 {sortedStats.length}명 조회됨
+                        <span className="text-xs font-medium text-zinc-500 whitespace-nowrap">
+                            총 {compareStep === 'comparing' ? selectedAthleteIds.length : sortedStats.length}명 조회됨
                         </span>
                     )}
                 </div>
@@ -341,7 +399,9 @@ export default function CategoryStatsPage() {
                                 <table className="w-full text-left min-w-max relative border-collapse">
                                     <thead className="bg-zinc-50 dark:bg-zinc-800/50 border-b border-zinc-100 dark:border-zinc-800">
                                         <tr>
-                                            <th className="sticky left-0 z-20 bg-zinc-50 dark:bg-zinc-800/90 px-1 sm:px-4 py-3 text-xs font-black text-zinc-400 uppercase text-center w-12 sm:w-16 whitespace-nowrap">순위</th>
+                                            <th className="sticky left-0 z-20 bg-zinc-50 dark:bg-zinc-800/90 px-1 sm:px-4 py-3 text-xs font-black text-zinc-400 uppercase text-center w-12 sm:w-16 whitespace-nowrap">
+                                                {compareStep === 'none' ? '순위' : '선택'}
+                                            </th>
                                             <th className="sticky left-[48px] sm:left-[64px] z-20 bg-zinc-50 dark:bg-zinc-800/90 px-1 sm:px-4 py-3 text-xs font-black text-zinc-400 uppercase text-center w-20 sm:w-28 whitespace-nowrap shadow-[inset_-1px_0_0_0_rgba(0,0,0,0.05)] dark:shadow-[inset_-1px_0_0_0_rgba(255,255,255,0.05)]">선수명</th>
                                             <th className="px-1 sm:px-4 py-3 text-xs font-black text-zinc-400 uppercase text-center w-16 sm:w-20 whitespace-nowrap">지점</th>
                                             <th className="px-1 sm:px-4 py-3 text-xs font-black text-zinc-400 uppercase text-center w-12 sm:w-16 whitespace-nowrap">라운드</th>
@@ -377,19 +437,36 @@ export default function CategoryStatsPage() {
                                             const originalRank = isSortInverted ? sortedStats.length - idx : idx + 1;
                                             
                                             return (
-                                                <tr key={stat.athleteId} className="hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50 transition-colors">
-                                                    <td className="sticky left-0 z-10 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/50 px-1 sm:px-4 py-3 sm:py-4 text-center">
-                                                        <span className={cn(
-                                                            "inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold",
-                                                            originalRank === 1 ? "bg-amber-100 text-amber-700" :
-                                                            originalRank === 2 ? "bg-zinc-200 text-zinc-700" :
-                                                            originalRank === 3 ? "bg-orange-100 text-orange-800" :
-                                                            "text-zinc-500"
-                                                        )}>
-                                                            {originalRank}
-                                                        </span>
+                                                <tr key={stat.athleteId} className={cn("hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50 transition-colors group", compareStep === 'selecting' && selectedAthleteIds.includes(stat.athleteId) && "bg-brand-navy/5 dark:bg-brand-navy/10")}>
+                                                    <td className={cn("sticky left-0 z-10 px-1 sm:px-4 py-3 sm:py-4 text-center bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/50 transition-colors", compareStep === 'selecting' && selectedAthleteIds.includes(stat.athleteId) && "bg-brand-navy/5 dark:bg-brand-navy/10")}>
+                                                        {compareStep === 'none' ? (
+                                                            <span className={cn(
+                                                                "inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold",
+                                                                originalRank === 1 ? "bg-amber-100 text-amber-700" :
+                                                                originalRank === 2 ? "bg-zinc-200 text-zinc-700" :
+                                                                originalRank === 3 ? "bg-orange-100 text-orange-800" :
+                                                                "text-zinc-500"
+                                                            )}>
+                                                                {originalRank}
+                                                            </span>
+                                                        ) : (
+                                                            <input 
+                                                                type="checkbox"
+                                                                checked={selectedAthleteIds.includes(stat.athleteId)}
+                                                                onChange={(e) => {
+                                                                    if (compareStep === 'comparing') return; // Cannot change selection in compare mode
+                                                                    if (e.target.checked) {
+                                                                        setSelectedAthleteIds(prev => [...prev, stat.athleteId]);
+                                                                    } else {
+                                                                        setSelectedAthleteIds(prev => prev.filter(id => id !== stat.athleteId));
+                                                                    }
+                                                                }}
+                                                                disabled={compareStep === 'comparing'}
+                                                                className="w-4 h-4 rounded border-zinc-300 text-brand-navy focus:ring-brand-navy cursor-pointer disabled:opacity-50"
+                                                            />
+                                                        )}
                                                     </td>
-                                                    <td className="sticky left-[48px] sm:left-[64px] z-10 bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/50 px-1 sm:px-4 py-3 sm:py-4 text-center font-bold text-zinc-900 dark:text-zinc-100 text-sm sm:text-base whitespace-nowrap shadow-[inset_-1px_0_0_0_rgba(0,0,0,0.05)] dark:shadow-[inset_-1px_0_0_0_rgba(255,255,255,0.05)]">
+                                                    <td className={cn("sticky left-[48px] sm:left-[64px] z-10 px-1 sm:px-4 py-3 sm:py-4 text-center font-bold text-zinc-900 dark:text-zinc-100 text-sm sm:text-base whitespace-nowrap shadow-[inset_-1px_0_0_0_rgba(0,0,0,0.05)] dark:shadow-[inset_-1px_0_0_0_rgba(255,255,255,0.05)] bg-white dark:bg-zinc-900 group-hover:bg-zinc-50 dark:group-hover:bg-zinc-800/50 transition-colors", compareStep === 'selecting' && selectedAthleteIds.includes(stat.athleteId) && "bg-brand-navy/5 dark:bg-brand-navy/10")}>
                                                         {stat.athleteName}
                                                     </td>
                                                     <td className="px-1 sm:px-4 py-3 sm:py-4 text-center text-xs sm:text-sm font-medium text-zinc-500 whitespace-nowrap">
@@ -405,6 +482,15 @@ export default function CategoryStatsPage() {
                                                         if (cat === "score" || cat === "playContent") {
                                                             if (rawValue < 72) valueColorClass = "text-red-500";
                                                             else if (rawValue > 72) valueColorClass = "text-blue-500";
+                                                        } else if (cat === "par3Score") {
+                                                            if (rawValue < 3.0) valueColorClass = "text-red-500";
+                                                            else if (rawValue > 3.0 && rawValue > 0) valueColorClass = "text-blue-500";
+                                                        } else if (cat === "par4Score") {
+                                                            if (rawValue < 4.0) valueColorClass = "text-red-500";
+                                                            else if (rawValue > 4.0 && rawValue > 0) valueColorClass = "text-blue-500";
+                                                        } else if (cat === "par5Score") {
+                                                            if (rawValue < 5.0) valueColorClass = "text-red-500";
+                                                            else if (rawValue > 5.0 && rawValue > 0) valueColorClass = "text-blue-500";
                                                         } else if (cat === "birdieOrBetter") {
                                                             if (rawValue > 0) valueColorClass = "text-red-500";
                                                         } else if (cat === "fairwayHitRate" || cat === "girRate" || cat === "parSaveRate" || cat === "putts" || cat === "bounceBack") {

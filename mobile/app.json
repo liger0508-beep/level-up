@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Level-Up",
+    "slug": "gla-coach-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.glacoach.app"
+    },
+    "android": {
+      "package": "com.glacoach.app",
+      "softwareKeyboardLayoutMode": "pan",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "504f1584-80c6-45a0-b076-fbf7e03d2cde"
+      }
+    },
+    "plugins": [
+      "expo-font"
+    ]
+  }
+}

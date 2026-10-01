@@ -93,7 +93,7 @@ const SummaryBox = ({ label, value, icon: Icon, colorClass = "text-brand-navy" }
 };
 
 const PREP_CATEGORIES = [
-    "퍼팅", "그린주변샷", "아이언&피치샷", "티샷"
+    "퍼팅", "숏게임", "아이언&피치샷", "티샷"
 ];
 
 const LOCATION_ABBR_REV: Record<string, string> = {
@@ -134,7 +134,7 @@ function getCategoryShots(catName: string, h: any) {
         isMatchFn = (s: any) => s.shotLabel?.split('/')[0].trim().toUpperCase() === "TE" && h.par >= 4;
     } else if (catName === "아이언&피치샷") {
         isMatchFn = (s: any) => { const l = s.shotLabel?.split('/')[0].trim().toUpperCase(); return l !== "GR" && l !== "GB" && (l !== "TE" || h.par === 3) && s.attemptDistance >= 31; };
-    } else if (catName === "그린주변샷") {
+    } else if (catName === "숏게임") {
         isMatchFn = (s: any) => { const l = s.shotLabel?.split('/')[0].trim().toUpperCase(); return l === "GB" || (l !== "GR" && l !== "TE" && s.attemptDistance > 0 && s.attemptDistance <= 30); };
     } else if (catName === "퍼팅") {
         isMatchFn = (s: any) => s.shotLabel?.split('/')[0].trim().toUpperCase() === "GR" && s.attemptDistance >= 1;
@@ -405,7 +405,7 @@ export default function ReferenceDataModal({ isOpen, onClose, playerName }: { is
                         sectorChanges: [
                             { type: "티샷", value: formatScore(teeSG), items: cats.slice(0, 2) },
                             { type: "세컨샷", value: formatScore(secondSG), items: cats.slice(2, 6) },
-                            { type: "그린주변샷", value: formatScore(greenSG), items: cats.slice(6, 9) },
+                            { type: "숏게임", value: formatScore(greenSG), items: cats.slice(6, 9) },
                             { type: "퍼팅", value: formatScore(puttingSG), items: cats.slice(9, 13) }
                         ],
                         strongPlan,
@@ -437,7 +437,7 @@ export default function ReferenceDataModal({ isOpen, onClose, playerName }: { is
                         const { generateReviewFocusCategories } = await import("@/lib/score-calculations");
                         const focusCategories = generateReviewFocusCategories(analysisToUse);
                         const reviewCategories: any[] = [];
-                        const MAJORS = ["퍼팅", "그린주변샷", "아이언&피치샷", "티샷"];
+                        const MAJORS = ["퍼팅", "숏게임", "아이언&피치샷", "티샷"];
 
                         MAJORS.forEach((major) => {
                             if (focusCategories[major] && focusCategories[major].length > 0) {

@@ -233,7 +233,7 @@ export function PlayerLessonHistoryModal({ isOpen, onClose, allAthletes }: Playe
                 <div className="p-4 space-y-5 overflow-y-auto flex-1 bg-zinc-50/50 dark:bg-zinc-900 min-h-[300px]">
                     {!activePlayer ? (
                         <div className="py-12 text-center text-zinc-500 text-sm">
-                            선수를 선택하면 최근 정보가 나타납니다.
+                            여러명의 선수를 선택해서 최근 정보를 확인하세요
                         </div>
                     ) : isLoading ? (
                         <div className="py-12 text-center text-zinc-500 text-sm">

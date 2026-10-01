@@ -665,7 +665,7 @@ function CreateLessonContent() {
                                 )}
                                 <div className="flex items-center gap-4">
                                     <FileUploadButton label="파일 추가" multiple onChange={handleFileChange} accept="image/*,video/*" />
-                                    <FileUploadButton label="바로 촬영" icon={<Video size={16} className="text-zinc-500" />} accept="video/*" capture="environment" onChange={handleFileChange} />
+                                    <FileUploadButton label="바로 촬영" icon={<Video size={16} className="text-zinc-500" />} accept="video/*" onChange={handleFileChange} />
                                 </div>
                             </div>
                         </div>
@@ -711,7 +711,7 @@ function CreateLessonContent() {
                                     >
                                         <Upload size={16} className="text-zinc-500" /> 파일 추가
                                     </button>
-                                    <FileUploadButton label="바로 촬영" icon={<Video size={16} className="text-zinc-500" />} accept="video/*" capture="environment" onChange={handleAfterFileChange} />
+                                    <FileUploadButton label="바로 촬영" icon={<Video size={16} className="text-zinc-500" />} accept="video/*" onChange={handleAfterFileChange} />
                                     <input
                                         type="file"
                                         ref={afterFileInputRef}

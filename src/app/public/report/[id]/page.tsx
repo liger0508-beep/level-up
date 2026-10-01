@@ -83,14 +83,16 @@ const SectionHeader = ({ title, icon: Icon, badge }: { title: string; icon: any;
 );
 
 const IndicatorCard = ({ label, value, unit, icon: Icon, colorClass = "text-brand-navy" }: { label: string; value: string | number; unit?: string; icon: any; colorClass?: string }) => (
-    <div className="bg-zinc-50/50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800/50 p-4 rounded-2xl flex flex-col justify-between h-full">
-        <div className="flex items-center gap-1.5 mb-3 text-[12px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-tight">
-            <Icon size={14} className="text-zinc-400 shrink-0" />
-            {label}
+    <div className="bg-zinc-50/50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800/50 p-3 sm:p-4 rounded-xl sm:rounded-2xl flex flex-col justify-between h-full">
+        <div className="flex items-start gap-1 sm:gap-1.5 mb-2 sm:mb-3 text-[10px] sm:text-[12px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-tight">
+            <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-zinc-400 shrink-0 mt-[1px] sm:mt-0.5" />
+            <div className="leading-tight">
+                {label.split('\n').map((l, i, arr) => <span key={i}>{l}{i < arr.length - 1 && <br/>}</span>)}
+            </div>
         </div>
         <div className="flex items-baseline justify-end gap-1">
-            <span className={cn("text-2xl font-black tracking-tighter", colorClass)}>{value}</span>
-            {unit && <span className="text-[12px] font-bold text-zinc-400 ml-0.5">{unit}</span>}
+            <span className={cn("text-lg sm:text-2xl font-black tracking-tighter", colorClass)}>{value}</span>
+            {unit && <span className="text-[10px] sm:text-[12px] font-bold text-zinc-400 ml-0.5">{unit}</span>}
         </div>
     </div>
 );
@@ -101,15 +103,15 @@ const SummaryBox = ({ label, value, icon: Icon, colorClass = "text-brand-navy" }
     const displayColor = isPositive ? "text-blue-500" : isNegative ? "text-red-500" : colorClass;
 
     return (
-        <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 p-5 py-7 rounded-[2.5rem] shadow-sm flex flex-col items-start justify-between min-h-[190px]">
-            <div className="flex flex-col items-start gap-2 mb-2 text-[11px] font-black text-zinc-400 text-left">
-                <Icon size={20} className="text-zinc-400/80 shrink-0" />
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 p-3 sm:p-5 py-5 sm:py-7 rounded-[1.5rem] sm:rounded-[2.5rem] shadow-sm flex flex-col items-start justify-between min-h-[140px] sm:min-h-[190px]">
+            <div className="flex flex-col items-start gap-1 sm:gap-2 mb-1 sm:mb-2 text-[10px] sm:text-[11px] font-black text-zinc-400 text-left">
+                <Icon className="w-4 h-4 sm:w-5 sm:h-5 text-zinc-400/80 shrink-0" />
                 <div className="leading-tight">
                     {label}
                 </div>
             </div>
             <div className="w-full flex items-baseline justify-end">
-                <span className={cn("text-2xl font-black tracking-tighter", displayColor)}>{value}</span>
+                <span className={cn("text-[17px] sm:text-2xl font-black tracking-tighter", displayColor)}>{value}</span>
             </div>
         </div>
     );
@@ -124,6 +126,7 @@ export default function AthleteReportPage() {
     
     const [selectedMonth, setSelectedMonth] = useState<string>(() => {
         const d = new Date();
+        d.setMonth(d.getMonth() - 1);
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     });
 
@@ -152,6 +155,7 @@ export default function AthleteReportPage() {
     const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
     const [isTagsExpanded, setIsTagsExpanded] = useState(false);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
+    const [coachFeedback, setCoachFeedback] = useState("");
 
 
     const params = useParams();
@@ -174,6 +178,7 @@ export default function AthleteReportPage() {
                 setSelectedMonth(data.report.month);
                 
                 setStatsSummary(data.report.content.statsSummary || null);
+                setCoachFeedback(data.report.content.coachFeedback || "");
                 setScorecards(data.scorecards || []);
                 setLessons(data.lessons || []);
                 setAnalyses(data.analyses || []);
@@ -446,20 +451,34 @@ export default function AthleteReportPage() {
                                             <div className="absolute left-6 text-[11px] font-black uppercase tracking-widest opacity-60 text-zinc-400">Score</div>
                                             <div className="flex items-baseline gap-2">
                                                 <span className={cn("text-4xl font-black", colorCls)}>{stats.averageScore}</span>
-                                                <span className={cn("text-xl font-bold opacity-80", colorCls)}>
-                                                    ({rel > 0 ? `+${rel}` : rel === 0 ? "E" : rel})
-                                                </span>
                                             </div>
                                         </div>
                                     );
                                 })()}
 
                                 {/* Three Core Metrics Cards */}
-                                <div className="grid grid-cols-3 gap-4">
+                                <div className="grid grid-cols-3 gap-2 sm:gap-4">
                                     <SummaryBox label={<>플레이<br/>내용</>} value={statsSummary.playContent} icon={Flag} />
                                     <SummaryBox label={<>내용 대비<br/>스코어</>} value={statsSummary.scoreVsContent} icon={Target} />
-                                    <SummaryBox label={<>롱/숏게임<br/>대비</>} value={statsSummary.longVsShort} icon={Zap} />
+                                    <SummaryBox label={<>롱게임<br/>대비 숏게임</>} value={statsSummary.longVsShort} icon={Zap} />
                                 </div>
+
+                                {/* 담임 코치 종합 피드백 */}
+                                {coachFeedback && (
+                                    <section className="bg-white dark:bg-zinc-900 border border-brand-navy/20 dark:border-brand-navy-light/20 rounded-[2.5rem] p-5 sm:p-7 shadow-sm">
+                                        <div className="flex items-center justify-between pb-4 border-b border-zinc-100 dark:border-zinc-800 mb-6">
+                                            <div className="flex items-center gap-2">
+                                                <MessageSquare size={20} className="text-brand-navy shrink-0" />
+                                                <h2 className="text-base font-black text-zinc-900 dark:text-white leading-snug">
+                                                    담임 코치<br />종합 피드백
+                                                </h2>
+                                            </div>
+                                        </div>
+                                        <div className="min-h-[100px] text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap leading-relaxed text-sm">
+                                            {coachFeedback}
+                                        </div>
+                                    </section>
+                                )}
 
                                 {/* 부문별 스코어 */}
                                 <section className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60">
@@ -473,16 +492,16 @@ export default function AthleteReportPage() {
                                                     isPositive ? "bg-blue-50/30 border-blue-100 dark:bg-blue-900/10 dark:border-blue-800/30" : "bg-red-50/30 border-red-100 dark:bg-red-900/10 dark:border-red-800/30"
                                                 )}>
                                                     <div className="flex flex-col">
-                                                        <p className="text-[13px] font-black text-zinc-400 uppercase tracking-tight">{sc.type}</p>
-                                                        <p className={cn("text-2xl font-black tracking-tighter text-right mt-1", isPositive ? "text-blue-500" : "text-red-500")}>
+                                                        <p className="text-[11px] sm:text-[13px] font-black text-zinc-400 uppercase tracking-tight">{sc.type}</p>
+                                                        <p className={cn("text-[18px] sm:text-2xl font-black tracking-tighter text-right mt-0.5 sm:mt-1", isPositive ? "text-blue-500" : "text-red-500")}>
                                                             {sc.value}
                                                         </p>
                                                     </div>
-                                                    <div className="space-y-1.5 pt-3 mt-1 border-t border-zinc-100/50 dark:border-zinc-800/50">
+                                                    <div className="space-y-1 sm:space-y-1.5 pt-2 sm:pt-3 mt-1 border-t border-zinc-100/50 dark:border-zinc-800/50">
                                                         {sc.items.map((item: any, iIdx: number) => (
-                                                            <div key={iIdx} className="flex justify-between items-center text-[13px] font-bold">
-                                                                <span className="text-zinc-500 dark:text-zinc-400">{item.name}</span>
-                                                                <span className={item.sg >= 0 ? "text-blue-500" : "text-red-500"}>
+                                                            <div key={iIdx} className="flex justify-between items-center text-[10px] sm:text-[13px] font-bold">
+                                                                <span className="text-zinc-500 dark:text-zinc-400 truncate pr-1">{item.name}</span>
+                                                                <span className={cn("shrink-0", item.sg >= 0 ? "text-blue-500" : "text-red-500")}>
                                                                     {item.sg > 0 ? "+" : ""}{item.sg.toFixed(1)}
                                                                 </span>
                                                             </div>
@@ -512,19 +531,21 @@ export default function AthleteReportPage() {
                                         <div className={cn("absolute top-0 bottom-0 w-[2px] bg-zinc-200 dark:bg-zinc-800 z-0 transition-all", mode === "score" ? "left-[64%]" : "left-[28%]")} />
                                         {statsSummary.contributions.map((item: any, idx: number) => {
                                             const val = mode === "score" ? item.sg : item.percent;
-                                            const widthPct = Math.min((Math.abs(val) / (mode === "score" ? 2.0 : 40)) * 45, 45);
+                                            const widthPct = Math.min((Math.abs(val) / (mode === "score" ? 1.2 : 25)) * 42, 42);
                                             return (
                                                 <div key={idx} className="relative z-10 flex items-center h-6">
                                                     <div className="w-[28%] flex justify-end pr-2 sm:pr-4 text-[11px] sm:text-[13px] font-bold text-zinc-500 whitespace-nowrap">{item.name}</div>
                                                     <div className="flex-1 relative h-full flex items-center">
                                                         {mode === "score" ? (
                                                             item.sg < 0 ? (
-                                                                <><div className="absolute right-[50%] h-4 bg-red-500 rounded-sm" style={{ width: `${widthPct}%` }} /><span className="absolute left-[52%] text-[10px] font-black text-red-500">{formatScore(item.sg, 1)}</span></>
+                                                                <><div className="absolute right-[50%] h-4 bg-red-500 rounded-sm" style={{ width: `${widthPct}%` }} /><span className="absolute text-[10px] font-black text-red-500 whitespace-nowrap" style={{ right: `calc(50% + ${widthPct}% + 6px)` }}>{formatScore(item.sg, 1)}</span></>
+                                                            ) : item.sg > 0 ? (
+                                                                <><div className="absolute left-[50%] h-4 bg-blue-500 rounded-sm" style={{ width: `${widthPct}%` }} /><span className="absolute text-[10px] font-black text-blue-500 whitespace-nowrap" style={{ left: `calc(50% + ${widthPct}% + 6px)` }}>{formatScore(item.sg, 1)}</span></>
                                                             ) : (
-                                                                <><div className="absolute left-[50%] h-4 bg-blue-500 rounded-sm" style={{ width: `${widthPct}%` }} /><span className="absolute right-[52%] text-[10px] font-black text-blue-500">{formatScore(item.sg, 1)}</span></>
+                                                                <span className="absolute left-[52%] text-[10px] font-black text-zinc-400">0.0</span>
                                                             )
                                                         ) : (
-                                                            <div className="flex items-center w-full"><div className={cn("h-4 rounded-sm", item.sg < 0 ? "bg-red-500" : "bg-blue-500")} style={{ width: `${item.percent * 2.2}%` }} /><span className={cn("ml-2 text-[10px] font-black", item.sg < 0 ? "text-red-500" : "text-blue-500")}>{Math.round(item.percent * 10) / 10}%</span></div>
+                                                            <div className="flex items-center w-full"><div className={cn("h-4 rounded-sm", item.sg < 0 ? "bg-red-500" : "bg-blue-500")} style={{ width: `${Math.min(item.percent * 2.5, 80)}%` }} /><span className={cn("ml-2 text-[10px] font-black", item.sg < 0 ? "text-red-500" : "text-blue-500")}>{Math.round(item.percent * 10) / 10}%</span></div>
                                                         )}
                                                     </div>
                                                 </div>
@@ -641,9 +662,26 @@ export default function AthleteReportPage() {
                                 
                             </div>
                         ) : (
-                            <div className="text-center py-10 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800">
-                                <AlertCircle size={24} className="mx-auto text-zinc-300 mb-2" />
-                                <p className="text-xs text-zinc-400">해당 월에 완료한 연습 라운드 스코어카드가 없습니다.</p>
+                            <div className="space-y-6">
+                                {coachFeedback && (
+                                    <section className="bg-white dark:bg-zinc-900 border border-brand-navy/20 dark:border-brand-navy-light/20 rounded-[2.5rem] p-5 sm:p-7 shadow-sm">
+                                        <div className="flex items-center justify-between pb-4 border-b border-zinc-100 dark:border-zinc-800 mb-6">
+                                            <div className="flex items-center gap-2">
+                                                <MessageSquare size={20} className="text-brand-navy shrink-0" />
+                                                <h2 className="text-base font-black text-zinc-900 dark:text-white leading-snug">
+                                                    담임 코치<br />종합 피드백
+                                                </h2>
+                                            </div>
+                                        </div>
+                                        <div className="min-h-[100px] text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap leading-relaxed text-sm">
+                                            {coachFeedback}
+                                        </div>
+                                    </section>
+                                )}
+                                <div className="text-center py-10 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-dashed border-zinc-200 dark:border-zinc-800">
+                                    <AlertCircle size={24} className="mx-auto text-zinc-300 mb-2" />
+                                    <p className="text-xs text-zinc-400">해당 월에 완료한 연습 라운드 스코어카드가 없습니다.</p>
+                                </div>
                             </div>
                         )}
                     </section>
@@ -769,23 +807,8 @@ export default function AthleteReportPage() {
 
 
 
-                    
-
-                    {statsSummary && (
-                        <section className="bg-white dark:bg-zinc-900 border border-brand-navy/20 dark:border-brand-navy-light/20 rounded-[2.5rem] p-5 sm:p-7 shadow-sm mb-10">
-                            <div className="flex items-center justify-between pb-4 border-b border-zinc-100 dark:border-zinc-800 mb-6">
-                                <div className="flex items-center gap-2">
-                                    <MessageSquare size={20} className="text-brand-navy" />
-                                    <h2 className="text-base font-black text-zinc-900 dark:text-white">담임 코치 종합 피드백</h2>
-                                </div>
-                            </div>
-                            <div className="min-h-[100px] text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap leading-relaxed text-sm">
-                                {statsSummary?.coachFeedback || "작성된 피드백이 없습니다."}
-                            </div>
-                        </section>
-                    )}
-                                </>
-                    )}
+                </>
+            )}
                 </div>
                 </main>
         </div>

@@ -57,7 +57,10 @@ export async function GET(request: Request) {
                 gir_hits: 0, gir_total: 0,
                 par_saves: 0, missed_gir_total: 0,
                 total_putts: 0, three_putts: 0, penalty_ob: 0,
-                bounce_backs: 0, bogey_or_worse: 0, birdie_or_better: 0
+                bounce_backs: 0, bogey_or_worse: 0, birdie_or_better: 0,
+                par3_total: 0, par3_count: 0,
+                par4_total: 0, par4_count: 0,
+                par5_total: 0, par5_count: 0
             });
         }
 
@@ -89,6 +92,13 @@ export async function GET(request: Request) {
         stat.bounce_backs += row.bounce_backs;
         stat.bogey_or_worse += row.bogey_or_worse;
         stat.birdie_or_better += row.birdie_or_better;
+        
+        stat.par3_total += row.par3_score_total || 0;
+        stat.par3_count += row.par3_count || 0;
+        stat.par4_total += row.par4_score_total || 0;
+        stat.par4_count += row.par4_count || 0;
+        stat.par5_total += row.par5_score_total || 0;
+        stat.par5_count += row.par5_count || 0;
     }
 
     // Final calculation for averages
@@ -141,7 +151,10 @@ export async function GET(request: Request) {
             threePutt: stat.three_putts / rounds,
             penaltyOB: stat.penalty_ob / rounds,
             bounceBack: stat.bogey_or_worse > 0 ? (stat.bounce_backs / stat.bogey_or_worse) * 100 : 0,
-            birdieOrBetter: stat.birdie_or_better / rounds
+            birdieOrBetter: stat.birdie_or_better / rounds,
+            par3Score: stat.par3_count > 0 ? stat.par3_total / stat.par3_count : 0,
+            par4Score: stat.par4_count > 0 ? stat.par4_total / stat.par4_count : 0,
+            par5Score: stat.par5_count > 0 ? stat.par5_total / stat.par5_count : 0
         };
     });
 

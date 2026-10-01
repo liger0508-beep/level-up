@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import { Play, Pause, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +16,13 @@ export function CustomVideoPlayer({ src, className, hideCustomControls = false }
     const [playbackRate, setPlaybackRate] = useState(1);
     const [showNativeControls, setShowNativeControls] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
+
+    const videoSrc = useMemo(() => {
+        if (!src) return src;
+        if (src.startsWith('blob:')) return src;
+        if (src.includes('#t=')) return src;
+        return `${src}#t=0.001`;
+    }, [src]);
 
     const togglePlay = () => {
         if (!videoRef.current) return;
@@ -88,9 +95,18 @@ export function CustomVideoPlayer({ src, className, hideCustomControls = false }
                 <div className="relative flex-1 w-full min-h-0 flex items-center justify-center">
                     <video
                         ref={videoRef}
-                        src={src}
+                        src={videoSrc}
                         controls={showNativeControls}
                         playsInline
+                        preload="metadata"
+                        onLoadedMetadata={(e) => {
+                            const video = e.currentTarget;
+                            if (video.currentTime === 0) {
+                                try {
+                                    video.currentTime = 0.001;
+                                } catch (err) {}
+                            }
+                        }}
                         onClick={() => setShowNativeControls(true)}
                         className="flex-1 w-auto max-w-full h-full object-contain rounded-xl sm:rounded-2xl bg-black/5 [&::-webkit-media-controls-overlay-play-button]:!hidden"
                     />

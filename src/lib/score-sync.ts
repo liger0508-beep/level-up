@@ -95,7 +95,7 @@ export async function fetchScoreById(scorecardId: string): Promise<ScoreData | n
         const sectorChanges = [
             { type: "티샷", value: formatScore(teeSG), items: cats.slice(0, 2) },
             { type: "세컨샷", value: formatScore(secondSG), items: cats.slice(2, 6) },
-            { type: "그린주변샷", value: formatScore(greenSG), items: cats.slice(6, 9) },
+            { type: "숏게임", value: formatScore(greenSG), items: cats.slice(6, 9) },
             { type: "퍼팅", value: formatScore(puttingSG), items: cats.slice(9, 13) }
         ];
 
@@ -246,7 +246,7 @@ export async function fetchLatestScoreByPlayer(playerName: string, targetDate?: 
         const sectorChanges = [
             { type: "티샷", value: formatScore(teeSG), items: cats.slice(0, 2) },
             { type: "세컨샷", value: formatScore(secondSG), items: cats.slice(2, 6) },
-            { type: "그린주변샷", value: formatScore(greenSG), items: cats.slice(6, 9) },
+            { type: "숏게임", value: formatScore(greenSG), items: cats.slice(6, 9) },
             { type: "퍼팅", value: formatScore(puttingSG), items: cats.slice(9, 13) }
         ];
 

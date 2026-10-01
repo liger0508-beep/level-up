@@ -520,7 +520,7 @@ export default function ScoreStatsPage() {
                     items: cats.slice(2, 6)
                 },
                 { 
-                    type: "그린주변샷", 
+                    type: "숏게임", 
                     value: formatScore(greenSG),
                     items: cats.slice(6, 9)
                 },
@@ -872,9 +872,6 @@ export default function ScoreStatsPage() {
                                             <div className="absolute left-6 text-[11px] font-black uppercase tracking-widest opacity-60 text-zinc-400">Average Score</div>
                                             <div className="flex items-baseline gap-2">
                                                 <span className={cn("text-4xl font-black", colorCls)}>{scorecardInfo.totalScore}</span>
-                                                <span className={cn("text-xl font-bold opacity-80", colorCls)}>
-                                                    ({rel > 0 ? `+${rel}` : rel === 0 ? "E" : rel})
-                                                </span>
                                             </div>
                                         </div>
                                     );
@@ -1035,19 +1032,21 @@ export default function ScoreStatsPage() {
                                         <div className={cn("absolute top-0 bottom-0 w-[2px] bg-zinc-200 z-0", mode === "score" ? "left-[64%]" : "left-[28%]")} />
                                         {summary.contributions.map((item: any, idx: number) => {
                                             const val = mode === "score" ? item.sg : item.percent;
-                                            const widthPct = Math.min((Math.abs(val) / (mode === "score" ? 2.0 : 40)) * 45, 45);
+                                            const widthPct = Math.min((Math.abs(val) / (mode === "score" ? 1.2 : 25)) * 42, 42);
                                             return (
                                                 <div key={idx} className="relative z-10 flex items-center h-6">
                                                     <div className="w-[28%] flex justify-end pr-3 sm:pr-4 text-[11px] sm:text-[12px] font-bold text-zinc-500 truncate">{item.name}</div>
                                                     <div className="flex-1 relative h-full flex items-center">
                                                         {mode === "score" ? (
                                                             item.sg < 0 ? (
-                                                                <><div className="absolute right-[50%] h-4 bg-red-500 rounded-sm" style={{ width: `${widthPct}%` }} /><span className="absolute left-[52%] text-[10px] font-black text-red-500">{formatScore(item.sg, 1)}</span></>
+                                                                <><div className="absolute right-[50%] h-4 bg-red-500 rounded-sm" style={{ width: `${widthPct}%` }} /><span className="absolute text-[10px] font-black text-red-500 whitespace-nowrap" style={{ right: `calc(50% + ${widthPct}% + 6px)` }}>{formatScore(item.sg, 1)}</span></>
+                                                            ) : item.sg > 0 ? (
+                                                                <><div className="absolute left-[50%] h-4 bg-blue-500 rounded-sm" style={{ width: `${widthPct}%` }} /><span className="absolute text-[10px] font-black text-blue-500 whitespace-nowrap" style={{ left: `calc(50% + ${widthPct}% + 6px)` }}>{formatScore(item.sg, 1)}</span></>
                                                             ) : (
-                                                                <><div className="absolute left-[50%] h-4 bg-blue-500 rounded-sm" style={{ width: `${widthPct}%` }} /><span className="absolute right-[52%] text-[10px] font-black text-blue-500">{formatScore(item.sg, 1)}</span></>
+                                                                <span className="absolute left-[52%] text-[10px] font-black text-zinc-400">0.0</span>
                                                             )
                                                         ) : (
-                                                            <div className="flex items-center w-full"><div className={cn("h-4 rounded-sm", item.sg < 0 ? "bg-red-500" : "bg-blue-500")} style={{ width: `${item.percent * 2.2}%` }} /><span className={cn("ml-2 text-[10px] font-black", item.sg < 0 ? "text-red-500" : "text-blue-500")}>{Math.round(item.percent * 10) / 10}%</span></div>
+                                                            <div className="flex items-center w-full"><div className={cn("h-4 rounded-sm", item.sg < 0 ? "bg-red-500" : "bg-blue-500")} style={{ width: `${Math.min(item.percent * 2.5, 80)}%` }} /><span className={cn("ml-2 text-[10px] font-black", item.sg < 0 ? "text-red-500" : "text-blue-500")}>{Math.round(item.percent * 10) / 10}%</span></div>
                                                         )}
                                                     </div>
                                                 </div>

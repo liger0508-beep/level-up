@@ -36,7 +36,6 @@ export const FileUploadButton = forwardRef<HTMLInputElement, FileUploadButtonPro
           onChange={onChange}
           multiple={multiple}
           accept={accept}
-          capture={capture as any}
           disabled={disabled}
           {...props}
         />

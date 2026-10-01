@@ -496,7 +496,7 @@ export default function EditLessonPage() {
                                     >
                                         <Upload size={16} className="text-zinc-500" /> 파일 추가
                                     </button>
-                                    <FileUploadButton label="바로 촬영" icon={<Video size={16} className="text-zinc-500" />} accept="video/*" capture="environment" onChange={handleFileChange} />
+                                    <FileUploadButton label="바로 촬영" icon={<Video size={16} className="text-zinc-500" />} accept="video/*" onChange={handleFileChange} />
                                     <input
                                         type="file"
                                         ref={fileInputRef}
@@ -567,7 +567,7 @@ export default function EditLessonPage() {
                                     >
                                         <Upload size={16} className="text-zinc-500" /> 파일 추가
                                     </button>
-                                    <FileUploadButton label="바로 촬영" icon={<Video size={16} className="text-zinc-500" />} accept="video/*" capture="environment" onChange={handleAfterFileChange} />
+                                    <FileUploadButton label="바로 촬영" icon={<Video size={16} className="text-zinc-500" />} accept="video/*" onChange={handleAfterFileChange} />
                                     <input
                                         type="file"
                                         ref={afterFileInputRef}

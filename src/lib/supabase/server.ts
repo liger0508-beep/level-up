@@ -1,6 +1,15 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
+// Suppress Supabase's "Invalid Refresh Token" console error spam
+const originalConsoleError = console.error;
+console.error = (...args) => {
+    if (typeof args[0] === 'string' && args[0].includes('AuthApiError') && args[0].includes('Refresh Token Not Found')) {
+        return;
+    }
+    originalConsoleError(...args);
+};
+
 export async function createClient() {
     const cookieStore = await cookies()
 
