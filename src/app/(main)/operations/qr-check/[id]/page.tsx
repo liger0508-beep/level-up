@@ -118,25 +118,30 @@ export default function QrCheckEventDetailPage({ params }: { params: Promise<{ i
     }, [eventId]);
 
     const startScanner = async (mode = facingMode) => {
+        // If scanner is already running or active, stop it first
+        if (scannerRef.current) {
+            try {
+                await scannerRef.current.stop();
+                scannerRef.current.clear();
+            } catch (e) {}
+            scannerRef.current = null;
+        }
+
         setIsScannerOpen(true);
         setScanResult(null);
         lastScannedToken.current = "";
         
         // Wait for DOM to render the reader div
         setTimeout(() => {
+            const readerEl = document.getElementById("reader");
+            if (!readerEl) return;
+            
             const html5QrCode = new Html5Qrcode("reader");
             scannerRef.current = html5QrCode;
             
-            const cameraConfig = { facingMode: mode };
             const qrConfig = { 
-                fps: 15, 
-                qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-                    const minDim = Math.min(viewfinderWidth, viewfinderHeight);
-                    return {
-                        width: Math.floor(minDim * 0.8),
-                        height: Math.floor(minDim * 0.8)
-                    };
-                },
+                fps: 10, 
+                qrbox: { width: 250, height: 250 },
                 aspectRatio: 1.0
             };
 
@@ -168,26 +173,26 @@ export default function QrCheckEventDetailPage({ params }: { params: Promise<{ i
 
             const qrErrorCallback = () => {};
 
-            // First attempt with high performance configuration
+            // Start camera with exact facingMode string or fallback object
             html5QrCode.start(
-                { facingMode: mode, width: { min: 640, ideal: 1280 }, height: { min: 480, ideal: 720 } },
+                { facingMode: { exact: mode } },
                 qrConfig,
                 qrCallback,
                 qrErrorCallback
             ).catch(() => {
-                // Fallback attempt with simple constraints if device rejects strict resolution constraints
+                // Fallback to simple facingMode if exact mode fails
                 html5QrCode.start(
-                    cameraConfig,
+                    { facingMode: mode },
                     qrConfig,
                     qrCallback,
                     qrErrorCallback
                 ).catch((err: any) => {
                     console.error("Camera start error:", err);
-                    alert("카메라 연결 실패: " + (err?.message || "카메라 장치를 시작할 수 없습니다. 타 앱에서 사용 중인지 확인해 주세요."));
+                    alert("카메라 연결 실패: " + (err?.message || "카메라 장치를 시작할 수 없습니다. 권한을 확인해주세요."));
                     setIsScannerOpen(false);
                 });
             });
-        }, 150);
+        }, 200);
     };
 
     const stopScanner = async () => {
