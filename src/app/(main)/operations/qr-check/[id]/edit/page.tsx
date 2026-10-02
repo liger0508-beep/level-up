@@ -5,30 +5,22 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PageTitle } from "@/components/ui/Typography";
 import { ChevronLeft, Save, Search, X, Calendar } from "lucide-react";
-import { createQrEvent } from "@/lib/qr-sync";
+import { updateQrEvent, getQrEvents } from "@/lib/qr-sync";
 import { getPollVoters } from "@/lib/vote-sync";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { CustomTimePicker } from "@/components/ui/CustomTimePicker";
 
-export default function CreateQrEventPage() {
+export default function EditQrEventPage({ params }: { params: Promise<{ id: string }> }) {
     const router = useRouter();
+    const resolvedParams = React.use(params);
+    const eventId = resolvedParams.id;
+
     const [title, setTitle] = useState("");
+    const [status, setStatus] = useState<"ACTIVE" | "CLOSED">("ACTIVE");
     
     // Dates
-    const [startDate, setStartDate] = useState(() => {
-        const now = new Date();
-        const yyyy = now.getFullYear();
-        const mm = String(now.getMonth() + 1).padStart(2, '0');
-        const dd = String(now.getDate()).padStart(2, '0');
-        return `${yyyy}-${mm}-${dd}`;
-    });
-    const [endDate, setEndDate] = useState(() => {
-        const now = new Date();
-        const yyyy = now.getFullYear();
-        const mm = String(now.getMonth() + 1).padStart(2, '0');
-        const dd = String(now.getDate()).padStart(2, '0');
-        return `${yyyy}-${mm}-${dd}`;
-    });
+    const [startDate, setStartDate] = useState("");
+    const [endDate, setEndDate] = useState("");
     const [endTime, setEndTime] = useState("23:59");
 
     const [mainTarget, setMainTarget] = useState<"ALL" | "조이마루점" | "구미점" | "기타" | "POLL">("ALL");
@@ -47,10 +39,12 @@ export default function CreateQrEventPage() {
     const [allUsers, setAllUsers] = useState<any[]>([]);
 
     const [isSaving, setIsSaving] = useState(false);
+    const [isLoading, setIsLoading] = useState(true);
     const [userId, setUserId] = useState("");
 
     useEffect(() => {
         const load = async () => {
+            setIsLoading(true);
             const supabase = createClient();
             const { data: { user } } = await supabase.auth.getUser();
             if (user) setUserId(user.id);
@@ -66,9 +60,45 @@ export default function CreateQrEventPage() {
                 .select("id, name, branch, role")
                 .in("status", ["등록", "재직"]);
             if (uData) setAllUsers(uData);
+
+            // Load existing QR event
+            const { data: eData } = await supabase.from("polls").select("*").eq("id", eventId).single();
+            if (eData) {
+                setTitle(eData.title);
+                setStatus(eData.status === "ongoing" ? "ACTIVE" : "CLOSED");
+                setStartDate(eData.start_date || "");
+                setEndDate(eData.end_date || "");
+                setEndTime(eData.end_time || "23:59");
+                
+                const targetType = eData.description;
+                const targetData = eData.final_roster || {};
+                
+                if (targetType === "ALL") {
+                    setMainTarget("ALL");
+                } else if (targetType === "BRANCH") {
+                    setMainTarget(targetData.branch as any);
+                } else if (targetType === "OTHER_BRANCH") {
+                    setMainTarget("기타");
+                } else if (targetType === "POLL_PARTICIPANTS") {
+                    setMainTarget("POLL");
+                    if (targetData.pollId) {
+                        const poll = pData?.find((p: any) => p.id === targetData.pollId);
+                        if (poll) setSelectedPoll(poll);
+                    }
+                    setSelectedOptions(targetData.selectedOptions || []);
+                }
+                
+                if (targetData.extraAthletes) {
+                    setSelectedAthletes(targetData.extraAthletes);
+                }
+                if (targetData.excludedAthletes) {
+                    setExcludedAthletes(targetData.excludedAthletes);
+                }
+            }
+            setIsLoading(false);
         };
         load();
-    }, []);
+    }, [eventId]);
 
     const handlePollSelect = async (pollId: string) => {
         const poll = polls.find(p => p.id === pollId);
@@ -119,9 +149,7 @@ export default function CreateQrEventPage() {
             const uniqueVoters = Array.from(new Set(matchedVoters.map(v => v.userName)));
             list = allUsers.filter(u => uniqueVoters.includes(u.name));
         } else if (mainTarget === "ALL") {
-            list = allUsers.filter(u => 
-                u.role === "athlete" || u.role === "coach" || u.role === "office" || u.role === "headquarter"
-            );
+            list = allUsers.filter(u => u.role === "athlete" || u.role === "coach" || u.role === "office" || u.role === "headquarter");
         } else if (mainTarget === "조이마루점" || mainTarget === "구미점") {
             list = allUsers.filter(u => (u.role === "athlete" || u.role === "coach") && u.branch === mainTarget);
         } else if (mainTarget === "기타") {
@@ -166,25 +194,28 @@ export default function CreateQrEventPage() {
 
         setIsSaving(true);
         try {
-            await createQrEvent({
+            await updateQrEvent(eventId, {
                 title,
                 date: startDate,
                 endDate: endDate,
                 endTime: endTime,
                 targetType,
                 targetData,
-                status: "ACTIVE",
-                createdBy: userId
+                status
             });
-            alert("스마트 패스가 생성되었습니다.");
-            router.push("/operations/qr-check");
+            alert("스마트 패스가 수정되었습니다.");
+            router.push(`/operations/qr-check/${eventId}`);
         } catch (e) {
             console.error(e);
-            alert("생성 중 오류가 발생했습니다.");
+            alert("수정 중 오류가 발생했습니다.");
         } finally {
             setIsSaving(false);
         }
     };
+
+    if (isLoading) {
+        return <div className="max-w-2xl mx-auto px-4 py-8 text-center text-zinc-500">데이터를 불러오는 중...</div>;
+    }
 
     return (
         <div className="max-w-2xl mx-auto px-4 py-8 space-y-8 pb-20">
@@ -192,7 +223,7 @@ export default function CreateQrEventPage() {
                 <button onClick={() => router.back()} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
                     <ChevronLeft size={24} className="text-zinc-700 dark:text-zinc-300" />
                 </button>
-                <PageTitle>새로운 패스 만들기</PageTitle>
+                <PageTitle>스마트 패스 수정하기</PageTitle>
             </div>
 
             <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-6 sm:p-8 shadow-sm border border-zinc-100 dark:border-zinc-800 space-y-8">
@@ -207,6 +238,19 @@ export default function CreateQrEventPage() {
                         placeholder="예: 10/2 점심 식권 확인" 
                         className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl px-4 py-3 focus:outline-none focus:border-brand-navy focus:ring-1 focus:ring-brand-navy transition-all"
                     />
+                </div>
+
+                {/* 상태 */}
+                <div className="space-y-3">
+                    <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300">진행 상태</label>
+                    <select 
+                        value={status}
+                        onChange={e => setStatus(e.target.value as "ACTIVE" | "CLOSED")}
+                        className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-2xl px-4 py-3 focus:outline-none focus:border-brand-navy focus:ring-1 focus:ring-brand-navy transition-all"
+                    >
+                        <option value="ACTIVE">진행 중</option>
+                        <option value="CLOSED">종료됨</option>
+                    </select>
                 </div>
 
                 {/* 기간 설정 (투표와 동일한 UI) */}
@@ -245,8 +289,8 @@ export default function CreateQrEventPage() {
                 <div className="space-y-3">
                     <label className="text-sm font-bold text-zinc-700 dark:text-zinc-300">대상자</label>
                     <div className="flex flex-nowrap overflow-x-auto pb-2 scrollbar-hide gap-2">
-                        {(["ALL", "조이마루점", "구미점", "기타", "POLL"] as const).map(type => {
-                            const labels = { ALL: "전체", "조이마루점": "조이마루점", "구미점": "구미점", "기타": "기타", POLL: "투표" };
+                        {(["ALL", "조이마루점", "구미점", "POLL"] as const).map(type => {
+                            const labels = { ALL: "전체", "조이마루점": "조이마루점", "구미점": "구미점", POLL: "투표" };
                             return (
                                 <button 
                                     key={type}
@@ -429,7 +473,7 @@ export default function CreateQrEventPage() {
                     className="w-full bg-brand-navy text-white py-4 rounded-2xl font-black text-lg flex items-center justify-center gap-2 hover:bg-brand-navy-dark transition-colors shadow-lg shadow-brand-navy/20 mt-8"
                 >
                     {isSaving ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <Save size={20} />}
-                    패스 만들기
+                    저장하기
                 </button>
             </div>
         </div>

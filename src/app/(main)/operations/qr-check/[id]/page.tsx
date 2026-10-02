@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, use } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PageTitle } from "@/components/ui/Typography";
-import { ChevronLeft, Camera, CheckCircle2, XCircle, Users, RefreshCw } from "lucide-react";
+import { ChevronLeft, Camera, CheckCircle2, XCircle, Users, RefreshCw, MoreVertical } from "lucide-react";
 import { Html5QrcodeScanner, Html5Qrcode } from "html5-qrcode";
 import { getQrScanLogs, QrScanLog } from "@/lib/qr-sync";
 
@@ -52,10 +52,26 @@ export default function QrCheckEventDetailPage({ params }: { params: Promise<{ i
     const [isScannerOpen, setIsScannerOpen] = useState(false);
     const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
     const [scanResult, setScanResult] = useState<{success: boolean, msg: string} | null>(null);
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
     const scannerRef = useRef<Html5Qrcode | null>(null);
     
     // To prevent double scanning the same QR quickly
     const lastScannedToken = useRef<string>("");
+
+    const handleDeleteEvent = async () => {
+        if (!confirm("정말 이 스마트 패스를 삭제하시겠습니까? 삭제 시 모든 출석 기록도 함께 삭제됩니다.")) return;
+        
+        try {
+            const supabase = createClient();
+            const { error } = await supabase.from("polls").delete().eq("id", eventId);
+            if (error) throw error;
+            alert("삭제되었습니다.");
+            router.push("/operations/qr-check");
+        } catch (e: any) {
+            console.error(e);
+            alert("삭제 중 오류가 발생했습니다.");
+        }
+    };
 
     const loadData = async () => {
         try {
@@ -67,17 +83,23 @@ export default function QrCheckEventDetailPage({ params }: { params: Promise<{ i
             setLogs(lData);
             
             if (eData) {
-                const { data: users } = await supabase.from("users").select("id, name, branch").eq("status", "등록").eq("role", "athlete");
+                const { data: users } = await supabase.from("users").select("id, name, branch, role").in("status", ["등록", "재직"]);
                 if (users) {
                     const targetType = eData.description;
                     const targetData = eData.final_roster || {};
                     const extraAthletes = targetData.extraAthletes || [];
+                    const excludedAthletes = targetData.excludedAthletes || [];
                     
                     let eligible: any[] = [];
                     if (targetType === "ALL") {
-                        eligible = users;
+                        eligible = users.filter((u: any) => u.role === "athlete" || u.role === "coach" || u.role === "office" || u.role === "headquarter");
                     } else if (targetType === "BRANCH") {
-                        eligible = users.filter((u: any) => u.branch === targetData.branch);
+                        eligible = users.filter((u: any) => (u.role === "athlete" || u.role === "coach") && u.branch === targetData.branch);
+                    } else if (targetType === "OTHER_BRANCH") {
+                        eligible = users.filter((u: any) => 
+                            (u.role === "athlete" || u.role === "coach" || u.role === "office" || u.role === "headquarter") 
+                            && u.branch !== "조이마루점" && u.branch !== "구미점"
+                        );
                     } else if (targetType === "POLL_PARTICIPANTS") {
                         const voters = targetData.voters || [];
                         eligible = users.filter((u: any) => voters.includes(u.name));
@@ -88,6 +110,9 @@ export default function QrCheckEventDetailPage({ params }: { params: Promise<{ i
                             eligible.push(ea);
                         }
                     });
+
+                    // Remove excluded
+                    eligible = eligible.filter(u => !excludedAthletes.includes(u.id));
                     
                     setTargetAthletes(eligible);
                 }
@@ -160,6 +185,7 @@ export default function QrCheckEventDetailPage({ params }: { params: Promise<{ i
                     if (res.ok) {
                         playSuccessSound();
                         setScanResult({ success: true, msg: "출석 처리되었습니다!" });
+                        loadData(); // Manually refresh logs to ensure UI updates immediately
                     } else {
                         playErrorSound();
                         setScanResult({ success: false, msg: data.error || "스캔 실패" });
@@ -228,13 +254,85 @@ export default function QrCheckEventDetailPage({ params }: { params: Promise<{ i
 
     const unattended = targetAthletes.filter(a => !logs.some(l => l.athleteId === a.id));
 
+    const handleManualAttend = async (athleteId: string, athleteName: string) => {
+        if (!confirm(`"${athleteName}" 참가로 변경하시겠습니까?`)) return;
+        
+        try {
+            const res = await fetch("/api/qr-scan/manual", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ athleteId, eventId })
+            });
+            const data = await res.json();
+            
+            if (res.ok) {
+                playSuccessSound();
+                loadData();
+            } else {
+                playErrorSound();
+                alert("처리 실패: " + (data.error || "알 수 없는 오류"));
+            }
+        } catch (e: any) {
+            playErrorSound();
+            alert("통신 오류가 발생했습니다.");
+        }
+    };
+
+    const handleCancelAttend = async (athleteId: string, athleteName: string) => {
+        if (!confirm(`"${athleteName}" 선수를 "미참가"로 변경하시겠습니까?`)) return;
+        
+        try {
+            const res = await fetch(`/api/qr-scan/manual?eventId=${eventId}&athleteId=${athleteId}`, {
+                method: "DELETE"
+            });
+            const data = await res.json();
+            
+            if (res.ok) {
+                loadData();
+            } else {
+                alert("처리 실패: " + (data.error || "알 수 없는 오류"));
+            }
+        } catch (e: any) {
+            alert("통신 오류가 발생했습니다.");
+        }
+    };
+
     return (
-        <div className="max-w-4xl mx-auto px-4 py-8 flex flex-col h-[calc(100vh-80px)]">
-            <div className="flex items-center gap-4 mb-6 shrink-0">
+        <div className="max-w-4xl mx-auto px-4 pt-8 pb-16 md:py-8 flex flex-col h-auto md:h-[calc(100vh-80px)]">
+            <div className="flex items-center gap-4 mb-6 shrink-0 w-full relative">
                 <button onClick={() => { stopScanner(); router.back(); }} className="p-2 bg-zinc-100 dark:bg-zinc-800 rounded-full hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors">
                     <ChevronLeft size={24} className="text-zinc-700 dark:text-zinc-300" />
                 </button>
                 <PageTitle>{event?.title || "스마트 패스 방"}</PageTitle>
+                <div className="ml-auto relative">
+                    <button 
+                        onClick={() => setIsMenuOpen(!isMenuOpen)}
+                        className="p-2 text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-full transition-colors"
+                        title="메뉴 열기"
+                    >
+                        <MoreVertical size={24} />
+                    </button>
+                    
+                    {isMenuOpen && (
+                        <>
+                            <div className="fixed inset-0 z-40" onClick={() => setIsMenuOpen(false)} />
+                            <div className="absolute right-0 top-full mt-2 w-32 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl shadow-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                                <button
+                                    onClick={() => { setIsMenuOpen(false); router.push(`/operations/qr-check/${eventId}/edit`); }}
+                                    className="w-full text-left px-4 py-3 text-sm font-bold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                                >
+                                    수정
+                                </button>
+                                <button
+                                    onClick={() => { setIsMenuOpen(false); handleDeleteEvent(); }}
+                                    className="w-full text-left px-4 py-3 text-sm font-bold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                >
+                                    삭제
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
 
             <div className="flex flex-col md:flex-row gap-6 flex-1 min-h-0">
@@ -321,7 +419,11 @@ export default function QrCheckEventDetailPage({ params }: { params: Promise<{ i
                                 <div className="text-center py-8 text-zinc-400 text-sm font-medium">아직 스캔된 기록이 없습니다.</div>
                             ) : (
                                 logs.map((log, i) => (
-                                    <div key={log.id} className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700/50 animate-in slide-in-from-right-4 fade-in">
+                                    <div 
+                                        key={log.id} 
+                                        onClick={() => handleCancelAttend(log.athleteId, log.athleteName)}
+                                        className="flex items-center justify-between p-3 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-100 dark:border-zinc-700/50 animate-in slide-in-from-right-4 fade-in cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700/80 transition-colors"
+                                    >
                                         <div className="flex items-center gap-3">
                                             <div className="w-8 h-8 rounded-full bg-brand-navy/10 dark:bg-brand-navy/30 text-brand-navy flex items-center justify-center font-bold text-xs">
                                                 {logs.length - i}
@@ -342,7 +444,11 @@ export default function QrCheckEventDetailPage({ params }: { params: Promise<{ i
                                 </div>
                             ) : (
                                 unattended.map((u, i) => (
-                                    <div key={u.id} className="flex items-center justify-between p-3 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/30 animate-in slide-in-from-right-4 fade-in">
+                                    <div 
+                                        key={u.id} 
+                                        onClick={() => handleManualAttend(u.id, u.name)}
+                                        className="flex items-center justify-between p-3 bg-red-50 dark:bg-red-900/10 rounded-xl border border-red-100 dark:border-red-900/30 animate-in slide-in-from-right-4 fade-in cursor-pointer hover:bg-red-100 dark:hover:bg-red-900/20 transition-colors"
+                                    >
                                         <div className="flex items-center gap-3">
                                             <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 text-red-500 flex items-center justify-center font-bold text-xs">
                                                 {i + 1}

@@ -87,6 +87,29 @@ export async function createQrEvent(event: Omit<QrEvent, "id" | "createdAt" | "a
     return formatQrEventFromDb(data);
 }
 
+export async function updateQrEvent(id: string, event: Partial<Omit<QrEvent, "id" | "createdAt" | "authorName" | "createdBy">>) {
+    const supabase = createClient();
+    
+    const updateData: any = {};
+    if (event.status !== undefined) updateData.status = event.status === "ACTIVE" ? "ongoing" : "closed";
+    if (event.title !== undefined) updateData.title = event.title;
+    if (event.targetType !== undefined) updateData.description = event.targetType;
+    if (event.date !== undefined) updateData.start_date = event.date;
+    if (event.endDate !== undefined) updateData.end_date = event.endDate;
+    if (event.endTime !== undefined) updateData.end_time = event.endTime;
+    if (event.targetData !== undefined) updateData.final_roster = event.targetData;
+
+    const { data, error } = await supabase
+        .from("polls")
+        .update(updateData)
+        .eq("id", id)
+        .select(`*, users!polls_author_id_fkey (name)`)
+        .single();
+
+    if (error) throw error;
+    return formatQrEventFromDb(data);
+}
+
 export async function getQrScanLogs(eventId: string): Promise<QrScanLog[]> {
     const supabase = createClient();
     const { data, error } = await supabase
