@@ -140,8 +140,8 @@ export default function QrCheckEventDetailPage({ params }: { params: Promise<{ i
             scannerRef.current = html5QrCode;
             
             const qrConfig = { 
-                fps: 10, 
-                qrbox: { width: 250, height: 250 },
+                fps: 15, 
+                // By omitting qrbox or setting dynamic full-view scanning, html5-qrcode scans the entire video feed.
                 aspectRatio: 1.0
             };
 
@@ -164,11 +164,18 @@ export default function QrCheckEventDetailPage({ params }: { params: Promise<{ i
                         playErrorSound();
                         setScanResult({ success: false, msg: data.error || "스캔 실패" });
                     }
-                } catch (err) {
+                } catch (err: any) {
                     playErrorSound();
-                    setScanResult({ success: false, msg: "네트워크 오류" });
+                    console.error("QR Scan catch error:", err);
+                    setScanResult({ success: false, msg: err?.message || "서버 통신 오류" });
                 }
-                setTimeout(() => setScanResult(null), 2500);
+                
+                // Allow re-scanning after 3 seconds
+                setTimeout(() => {
+                    lastScannedToken.current = "";
+                }, 3000);
+
+                setTimeout(() => setScanResult(null), 3000);
             };
 
             const qrErrorCallback = () => {};
@@ -232,8 +239,8 @@ export default function QrCheckEventDetailPage({ params }: { params: Promise<{ i
 
             <div className="flex flex-col md:flex-row gap-6 flex-1 min-h-0">
                 {/* Scanner Section */}
-                <div className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2.5rem] p-6 flex flex-col shadow-sm">
-                    <div className="flex items-center justify-between mb-4">
+                <div className="flex-1 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[2.5rem] p-6 flex flex-col shadow-sm min-h-[420px] sm:min-h-[500px]">
+                    <div className="flex items-center justify-between mb-4 shrink-0">
                         <h2 className="text-lg font-bold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">
                             <Camera size={20} className="text-brand-navy" /> QR 스캐너
                         </h2>
@@ -256,10 +263,10 @@ export default function QrCheckEventDetailPage({ params }: { params: Promise<{ i
                         </div>
                     </div>
 
-                    <div className="flex-1 flex flex-col items-center justify-center bg-zinc-50 dark:bg-zinc-800/50 rounded-3xl overflow-hidden relative border-2 border-dashed border-zinc-200 dark:border-zinc-700">
+                    <div className="flex-1 flex flex-col items-center justify-center bg-zinc-50 dark:bg-zinc-800/50 rounded-3xl overflow-hidden relative border-2 border-dashed border-zinc-200 dark:border-zinc-700 min-h-[300px]">
                         {isScannerOpen ? (
-                            <div className="w-full h-full absolute inset-0">
-                                <div id="reader" className="w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-cover" />
+                            <div className="w-full h-full absolute inset-0 flex items-center justify-center bg-black">
+                                <div id="reader" className="w-full h-full [&>video]:w-full [&>video]:h-full [&>video]:object-cover [&>video]:rounded-3xl" />
                                 
                                 {/* Overlay scan result */}
                                 {scanResult && (

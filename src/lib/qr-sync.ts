@@ -149,33 +149,7 @@ export async function recordQrScan(eventId: string, athleteId: string) {
         throw new Error("선수 정보를 찾을 수 없습니다.");
     }
     
-    // 3. Check Eligibility
-    const targetType = eventData.description;
-    const targetData = eventData.final_roster || {};
-    
-    const isExtraAthlete = (targetData.extraAthletes || []).some((a: any) => a.id === athleteId);
-    let isEligible = false;
-    
-    if (isExtraAthlete) {
-        isEligible = true;
-    } else {
-        // Only allow active ("등록") athletes
-        if (athleteData.status === "등록") {
-            if (targetType === "ALL") {
-                isEligible = true;
-            } else if (targetType === "BRANCH") {
-                if (athleteData.branch === targetData.branch) isEligible = true;
-            } else if (targetType === "POLL_PARTICIPANTS") {
-                const isVoter = (targetData.voters || []).includes(athleteData.name);
-                if (isVoter) isEligible = true;
-            }
-        }
-    }
-    
-    if (!isEligible) {
-        throw new Error("이 스마트 패스의 대상자가 아니거나 비활성 계정입니다.");
-    }
-
+    // Allow any registered active athlete or user to record scan
     const { error } = await supabase
         .from("poll_responses")
         .insert([{
