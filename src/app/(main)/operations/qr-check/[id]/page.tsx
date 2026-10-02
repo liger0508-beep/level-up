@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, use } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { PageTitle } from "@/components/ui/Typography";
-import { ChevronLeft, Camera, CheckCircle2, XCircle, Users } from "lucide-react";
+import { ChevronLeft, Camera, CheckCircle2, XCircle, Users, RefreshCw } from "lucide-react";
 import { Html5QrcodeScanner, Html5Qrcode } from "html5-qrcode";
 import { getQrScanLogs, QrScanLog } from "@/lib/qr-sync";
 
@@ -50,6 +50,7 @@ export default function QrCheckEventDetailPage({ params }: { params: Promise<{ i
     const [activeTab, setActiveTab] = useState<"ATTENDED" | "NOT_ATTENDED">("ATTENDED");
     const [isLoading, setIsLoading] = useState(true);
     const [isScannerOpen, setIsScannerOpen] = useState(false);
+    const [facingMode, setFacingMode] = useState<"environment" | "user">("environment");
     const [scanResult, setScanResult] = useState<{success: boolean, msg: string} | null>(null);
     const scannerRef = useRef<Html5Qrcode | null>(null);
     
@@ -116,7 +117,7 @@ export default function QrCheckEventDetailPage({ params }: { params: Promise<{ i
         };
     }, [eventId]);
 
-    const startScanner = async () => {
+    const startScanner = async (mode = facingMode) => {
         setIsScannerOpen(true);
         setScanResult(null);
         lastScannedToken.current = "";
@@ -126,58 +127,91 @@ export default function QrCheckEventDetailPage({ params }: { params: Promise<{ i
             const html5QrCode = new Html5Qrcode("reader");
             scannerRef.current = html5QrCode;
             
-            html5QrCode.start(
-                { facingMode: "environment" },
-                { fps: 10, qrbox: { width: 250, height: 250 } },
-                async (decodedText) => {
-                    // Prevent duplicate scans within a short time
-                    if (lastScannedToken.current === decodedText) return;
-                    lastScannedToken.current = decodedText;
-                    
-                    try {
-                        const res = await fetch("/api/qr-scan", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ token: decodedText, eventId })
-                        });
-                        const data = await res.json();
-                        
-                        if (res.ok) {
-                            playSuccessSound();
-                            setScanResult({ success: true, msg: "출석 처리되었습니다!" });
-                            // The realtime subscription will fetch the new log.
-                            // Clear token after 3 seconds so it can be scanned again if needed?
-                            // Actually it's better to clear it when scanner is reopened.
-                        } else {
-                            playErrorSound();
-                            setScanResult({ success: false, msg: data.error || "스캔 실패" });
-                        }
-                    } catch (err) {
-                        playErrorSound();
-                        setScanResult({ success: false, msg: "네트워크 오류" });
-                    }
-                    
-                    // Clear result message after 2 seconds
-                    setTimeout(() => setScanResult(null), 2500);
+            const cameraConfig = { facingMode: mode };
+            const qrConfig = { 
+                fps: 15, 
+                qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+                    const minDim = Math.min(viewfinderWidth, viewfinderHeight);
+                    return {
+                        width: Math.floor(minDim * 0.8),
+                        height: Math.floor(minDim * 0.8)
+                    };
                 },
-                (errorMessage) => {
-                    // ignore generic scan errors (no qr found)
+                aspectRatio: 1.0
+            };
+
+            const qrCallback = async (decodedText: string) => {
+                if (lastScannedToken.current === decodedText) return;
+                lastScannedToken.current = decodedText;
+                
+                try {
+                    const res = await fetch("/api/qr-scan", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ token: decodedText, eventId })
+                    });
+                    const data = await res.json();
+                    
+                    if (res.ok) {
+                        playSuccessSound();
+                        setScanResult({ success: true, msg: "출석 처리되었습니다!" });
+                    } else {
+                        playErrorSound();
+                        setScanResult({ success: false, msg: data.error || "스캔 실패" });
+                    }
+                } catch (err) {
+                    playErrorSound();
+                    setScanResult({ success: false, msg: "네트워크 오류" });
                 }
-            ).catch(err => {
-                console.error(err);
-                alert("카메라 권한을 허용해주세요.");
-                setIsScannerOpen(false);
+                setTimeout(() => setScanResult(null), 2500);
+            };
+
+            const qrErrorCallback = () => {};
+
+            // First attempt with high performance configuration
+            html5QrCode.start(
+                { facingMode: mode, width: { min: 640, ideal: 1280 }, height: { min: 480, ideal: 720 } },
+                qrConfig,
+                qrCallback,
+                qrErrorCallback
+            ).catch(() => {
+                // Fallback attempt with simple constraints if device rejects strict resolution constraints
+                html5QrCode.start(
+                    cameraConfig,
+                    qrConfig,
+                    qrCallback,
+                    qrErrorCallback
+                ).catch((err: any) => {
+                    console.error("Camera start error:", err);
+                    alert("카메라 연결 실패: " + (err?.message || "카메라 장치를 시작할 수 없습니다. 타 앱에서 사용 중인지 확인해 주세요."));
+                    setIsScannerOpen(false);
+                });
             });
-        }, 100);
+        }, 150);
     };
 
     const stopScanner = async () => {
         if (scannerRef.current) {
             try {
                 await scannerRef.current.stop();
+                scannerRef.current.clear();
             } catch (e) {}
         }
         setIsScannerOpen(false);
+    };
+
+    const toggleCamera = async () => {
+        const newMode = facingMode === "environment" ? "user" : "environment";
+        setFacingMode(newMode);
+        if (isScannerOpen) {
+            if (scannerRef.current) {
+                try {
+                    await scannerRef.current.stop();
+                    scannerRef.current.clear();
+                } catch(e) {}
+            }
+            startScanner(newMode);
+        }
     };
 
     const unattended = targetAthletes.filter(a => !logs.some(l => l.athleteId === a.id));
@@ -198,12 +232,23 @@ export default function QrCheckEventDetailPage({ params }: { params: Promise<{ i
                         <h2 className="text-lg font-bold text-zinc-800 dark:text-zinc-100 flex items-center gap-2">
                             <Camera size={20} className="text-brand-navy" /> QR 스캐너
                         </h2>
-                        <button 
-                            onClick={isScannerOpen ? stopScanner : startScanner}
-                            className={`px-4 py-1.5 rounded-full text-sm font-bold transition-colors ${isScannerOpen ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-brand-navy text-white hover:bg-brand-navy-dark'}`}
-                        >
-                            {isScannerOpen ? "카메라 끄기" : "카메라 켜기"}
-                        </button>
+                        <div className="flex items-center gap-2">
+                            {isScannerOpen && (
+                                <button
+                                    onClick={toggleCamera}
+                                    className="p-1.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
+                                    title="카메라 전환"
+                                >
+                                    <RefreshCw size={18} />
+                                </button>
+                            )}
+                            <button 
+                                onClick={isScannerOpen ? stopScanner : () => startScanner(facingMode)}
+                                className={`px-4 py-1.5 rounded-full text-sm font-bold transition-colors ${isScannerOpen ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-brand-navy text-white hover:bg-brand-navy-dark'}`}
+                            >
+                                {isScannerOpen ? "카메라 끄기" : "카메라 켜기"}
+                            </button>
+                        </div>
                     </div>
 
                     <div className="flex-1 flex flex-col items-center justify-center bg-zinc-50 dark:bg-zinc-800/50 rounded-3xl overflow-hidden relative border-2 border-dashed border-zinc-200 dark:border-zinc-700">

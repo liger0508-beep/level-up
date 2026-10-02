@@ -82,24 +82,24 @@ export default function MyQRPage() {
                         {userBranch && <p className="text-sm font-medium text-zinc-500 mt-1">{userBranch}</p>}
                     </div>
 
-                    <div className="bg-zinc-50 dark:bg-zinc-800 p-6 rounded-[2rem] mb-8 relative">
+                    <div className="bg-white p-6 sm:p-8 rounded-[2rem] mb-8 relative shadow-inner border border-zinc-100 dark:border-zinc-800 flex items-center justify-center">
                         {isLoading ? (
-                            <div className="w-[200px] h-[200px] flex flex-col items-center justify-center gap-4 text-zinc-400">
+                            <div className="w-[260px] h-[260px] flex flex-col items-center justify-center gap-4 text-zinc-400">
                                 <RefreshCw className="animate-spin" size={32} />
                                 <span className="text-sm font-bold">QR 생성 중...</span>
                             </div>
                         ) : error ? (
-                            <div className="w-[200px] h-[200px] flex flex-col items-center justify-center gap-4 text-red-500">
+                            <div className="w-[260px] h-[260px] flex flex-col items-center justify-center gap-4 text-red-500">
                                 <ShieldAlert size={48} />
                                 <span className="text-sm font-bold text-center">오류가 발생했습니다.<br/>{error}</span>
                             </div>
                         ) : (
                             <QRCodeSVG 
                                 value={token} 
-                                size={200} 
-                                level="H"
-                                includeMargin={false}
-                                className="bg-white p-2 rounded-xl"
+                                size={280} 
+                                level="L"
+                                includeMargin={true}
+                                className="bg-white max-w-full h-auto"
                             />
                         )}
                     </div>
