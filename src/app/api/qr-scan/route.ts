@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
 import { recordQrScan } from '@/lib/qr-sync';
 import { createClient } from '@/lib/supabase/server';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
 
 const SECRET = new TextEncoder().encode(
     process.env.SUPABASE_SERVICE_ROLE_KEY || 'default-secret-key-fallback'
@@ -37,8 +38,14 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: '유효하지 않은 QR 코드입니다.' }, { status: 400 });
         }
 
+        // Admin client to bypass RLS for inserting athlete's attendance
+        const adminSupabase = createAdminClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!
+        );
+
         // Record Scan
-        const result = await recordQrScan(eventId, athleteId);
+        const result = await recordQrScan(eventId, athleteId, adminSupabase);
         return NextResponse.json(result);
     } catch (error: any) {
         console.error('QR Scan error:', error);

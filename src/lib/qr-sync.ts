@@ -112,8 +112,8 @@ export async function getQrScanLogs(eventId: string): Promise<QrScanLog[]> {
     }));
 }
 
-export async function recordQrScan(eventId: string, athleteId: string) {
-    const supabase = createClient();
+export async function recordQrScan(eventId: string, athleteId: string, adminClient?: any) {
+    const supabase = adminClient || createClient();
     
     // Check if already scanned
     const { data: existing } = await supabase
@@ -158,6 +158,6 @@ export async function recordQrScan(eventId: string, athleteId: string) {
             option_id: "attended"
         }]);
 
-    if (error) throw error;
+    if (error) throw new Error(error.message);
     return { success: true, message: "출석 완료" };
 }
