@@ -125,6 +125,10 @@ const defaultPermissions: MenuPermission[] = [
         menuKey: "coach-selection", label: "담임 코치 선택", section: "라운지",
         permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
     },
+    {
+        menuKey: "my-qr", label: "스마트 패스", section: "라운지",
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: false, write: false } }
+    },
 
     // 운영/관리
     {
@@ -137,6 +141,10 @@ const defaultPermissions: MenuPermission[] = [
     },
     {
         menuKey: "assigned-athletes", label: "담임 선수 배정", section: "운영/관리",
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
+    },
+    {
+        menuKey: "qr-check", label: "스마트 패스 관리", section: "운영/관리",
         permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {

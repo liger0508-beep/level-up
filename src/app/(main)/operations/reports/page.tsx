@@ -90,31 +90,31 @@ const SummaryBox = ({ label, value, icon: Icon, colorClass = "text-brand-navy" }
     const displayColor = isPositive ? "text-blue-500" : isNegative ? "text-red-500" : colorClass;
 
     return (
-        <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 p-5 py-7 rounded-[2.5rem] shadow-sm flex flex-col items-start justify-between min-h-[190px] print:min-h-[160px]">
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 p-5 py-7 rounded-[2.5rem] shadow-sm flex flex-col items-start justify-between min-h-[190px]">
             <div className="flex flex-col items-start gap-2 mb-2 text-[11px] font-black text-zinc-400 text-left">
                 <Icon size={20} className="text-zinc-400/80 shrink-0" />
                 <div className="leading-tight">
                     {label}
                 </div>
             </div>
-            <div className="w-full flex items-baseline justify-end">
-                <span className={cn("text-2xl font-black tracking-tighter", displayColor)}>{value}</span>
+            <div className="w-full flex items-baseline justify-end overflow-hidden">
+                <span className={cn("text-[1rem] xs:text-[1.2rem] sm:text-2xl font-black tracking-tighter truncate max-w-full", displayColor)}>{value}</span>
             </div>
         </div>
     );
 };
 
 const IndicatorCard = ({ label, value, unit, icon: Icon, colorClass = "text-brand-navy" }: { label: string; value: string | number; unit?: string; icon: any; colorClass?: string }) => (
-    <div className="bg-zinc-50/50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800/50 p-4 rounded-2xl flex flex-col justify-between h-full">
-        <div className="flex items-start gap-1.5 mb-3 text-[12px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-tight">
+    <div className="bg-zinc-50/50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800/50 p-3 sm:p-4 rounded-2xl flex flex-col justify-between h-full overflow-hidden">
+        <div className="flex items-start gap-1.5 mb-2 sm:mb-3 text-[11px] sm:text-[12px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-tight">
             <Icon size={14} className="text-zinc-400 shrink-0 mt-0.5" />
             <div className="leading-tight">
                 {label.split('\n').map((l, i, arr) => <span key={i}>{l}{i < arr.length - 1 && <br/>}</span>)}
             </div>
         </div>
-        <div className="flex items-baseline justify-end gap-1">
-            <span className={cn("text-2xl font-black tracking-tighter", colorClass)}>{value}</span>
-            {unit && <span className="text-[12px] font-bold text-zinc-400 ml-0.5">{unit}</span>}
+        <div className="flex items-baseline justify-end gap-1 overflow-hidden">
+            <span className={cn("text-[1rem] xs:text-[1.2rem] sm:text-2xl font-black tracking-tighter truncate max-w-full", colorClass)}>{value}</span>
+            {unit && <span className="text-[11px] sm:text-[12px] font-bold text-zinc-400 ml-0.5 shrink-0">{unit}</span>}
         </div>
     </div>
 );
@@ -224,8 +224,8 @@ export default function AthleteReportPage() {
                 if (profile) {
                     setUser(profile);
 
-                    // Fetch athlete list if coach or admin
-                    if (profile.role === "coach" || profile.role === "admin" || profile.role === "head_coach") {
+                    // Fetch athlete list if coach, admin, office, or headquarter
+                    if (profile.role === "coach" || profile.role === "admin" || profile.role === "head_coach" || profile.role === "headquarter" || profile.role === "office") {
                         const { data: athletesData } = await supabase
                             .from("users")
                             .select("id, name, branch")
@@ -237,6 +237,22 @@ export default function AthleteReportPage() {
                         }
                     } else if (profile.role === "athlete") {
                         setSelectedAthleteId(profile.id);
+                    } else if (profile.role === "parent") {
+                        // Extract athlete name from parent name (e.g., "홍길동 (학부모-1)" -> "홍길동")
+                        const athleteNameMatch = profile.name.match(/^(.*?) \(/);
+                        const athleteName = athleteNameMatch ? athleteNameMatch[1] : profile.name;
+                        
+                        const { data: athleteData } = await supabase
+                            .from("users")
+                            .select("id, name, branch")
+                            .eq("role", "athlete")
+                            .eq("name", athleteName)
+                            .maybeSingle();
+                            
+                        if (athleteData) {
+                            setSelectedAthleteId(athleteData.id);
+                            setAthletes([athleteData as Athlete]);
+                        }
                     }
                 }
             } catch (err) {
@@ -329,7 +345,7 @@ export default function AthleteReportPage() {
                     .select("*, tournaments(name)")
                     .eq("athlete_name", selectedAthleteName);
 
-                const filteredTours = (tourList || []).filter(t => t.round_date && t.round_date.startsWith(selectedMonth));
+                const filteredTours = (tourList || []).filter((t: any) => t.round_date && t.round_date.startsWith(selectedMonth));
 
                 // Group by tournament to keep only the final/highest round row per tournament and calculate the date span
                 const uniqueToursMap = new Map<string, any>();
@@ -416,7 +432,7 @@ export default function AthleteReportPage() {
                 let coreLessonIds = new Set<string>();
                 if (allLessonsRes.data) {
                     const lessonMap = new Map();
-                    allLessonsRes.data.forEach(l => lessonMap.set(l.id, l));
+                    allLessonsRes.data.forEach((l: any) => lessonMap.set(l.id, l));
                     const treeMap = new Map();
                     const getRootId = (id: string): string => {
                         let curr = lessonMap.get(id);
@@ -430,7 +446,7 @@ export default function AthleteReportPage() {
                         }
                         return curr?.id || id;
                     };
-                    allLessonsRes.data.forEach(l => {
+                    allLessonsRes.data.forEach((l: any) => {
                         const rootId = getRootId(l.id);
                         if (!treeMap.has(rootId)) treeMap.set(rootId, []);
                         if (rootId !== l.id) {
@@ -455,13 +471,13 @@ export default function AthleteReportPage() {
                         return `${y}-${m.toString().padStart(2, '0')}` === selectedMonth;
                     };
 
-                    const monthRecords = recordsRes.data.filter(r =>
+                    const monthRecords = recordsRes.data.filter((r: any) =>
                         isInMonth(r.created_at) ||
                         isInMonth(r.training_start)
                     );
-                    setAnalyses(monthRecords.filter(r => r.type === "analysis"));
-                    setLessons(monthRecords.filter(r => r.type === "lesson").map(l => ({ ...l, is_core_lesson: coreLessonIds.has(l.id) })));
-                    setTrainings(recordsRes.data.filter(r =>
+                    setAnalyses(monthRecords.filter((r: any) => r.type === "analysis"));
+                    setLessons(monthRecords.filter((r: any) => r.type === "lesson").map((l: any) => ({ ...l, is_core_lesson: coreLessonIds.has(l.id) })));
+                    setTrainings(recordsRes.data.filter((r: any) =>
                         r.type === "training" && (
                             isInMonth(r.created_at) ||
                             isInMonth(r.training_start) ||
@@ -471,9 +487,9 @@ export default function AthleteReportPage() {
                     ));
                 }
                 if (testsRes.data) {
-                    const filteredTests = testsRes.data.filter(r => r.created_at && r.created_at.startsWith(selectedMonth));
+                    const filteredTests = testsRes.data.filter((r: any) => r.created_at && r.created_at.startsWith(selectedMonth));
                     // Map to expected TestRecord format for UI
-                    const mappedTests = filteredTests.map(t => ({
+                    const mappedTests = filteredTests.map((t: any) => ({
                         ...t,
                         type: "test",
                         score: t.total_score,
@@ -893,7 +909,7 @@ export default function AthleteReportPage() {
                             </button>
                         </div>
 
-                        {['coach', 'total', 'superadmin', 'admin', 'office'].includes(user?.role || '') && (
+                        {['coach', 'total', 'superadmin', 'admin', 'office', 'head_coach', 'headquarter'].includes(user?.role || '') && (
                             <div className="flex flex-col sm:flex-row sm:items-center gap-3 w-full md:w-auto">
                                 <div className="w-full sm:w-64">
                                     <AthleteSearch
@@ -1105,10 +1121,10 @@ export default function AthleteReportPage() {
                                         })()}
 
                                         {/* Three Core Metrics Cards */}
-                                        <div className="grid grid-cols-3 gap-4">
+                                        <div className="grid grid-cols-3 gap-3 sm:gap-5">
                                             <SummaryBox label={<>플레이<br />내용</>} value={statsSummary.playContent} icon={Flag} />
-                                            <SummaryBox label={<>내용 대비<br />스코어</>} value={statsSummary.scoreVsContent} icon={Target} />
-                                            <SummaryBox label={<>롱게임<br />대비 숏게임</>} value={statsSummary.longVsShort} icon={Zap} />
+                                            <SummaryBox label={<>내용<br />대비<br />스코어</>} value={statsSummary.scoreVsContent} icon={Target} />
+                                            <SummaryBox label={<>롱게임<br />대비<br />숏게임</>} value={statsSummary.longVsShort} icon={Zap} />
                                         </div>
 
 
@@ -1174,15 +1190,15 @@ export default function AthleteReportPage() {
                                                             )}>
                                                                 <div className="flex flex-col">
                                                                     <p className="text-[13px] font-black text-zinc-400 uppercase tracking-tight">{sc.type}</p>
-                                                                    <p className={cn("text-2xl font-black tracking-tighter text-right mt-1", isPositive ? "text-blue-500" : "text-red-500")}>
+                                                                    <p className={cn("text-[1.1rem] sm:text-[1.3rem] md:text-2xl font-black tracking-tighter text-right mt-1 truncate max-w-full", isPositive ? "text-blue-500" : "text-red-500")}>
                                                                         {sc.value}
                                                                     </p>
                                                                 </div>
                                                                 <div className="space-y-1.5 pt-3 mt-1 border-t border-zinc-100/50 dark:border-zinc-800/50">
                                                                     {sc.items.map((item: any, iIdx: number) => (
-                                                                        <div key={iIdx} className="flex justify-between items-center text-[13px] font-bold">
-                                                                            <span className="text-zinc-500 dark:text-zinc-400">{item.name}</span>
-                                                                            <span className={item.sg >= 0 ? "text-blue-500" : "text-red-500"}>
+                                                                        <div key={iIdx} className="flex justify-between items-center text-[clamp(10px,3.5vw,13px)] font-medium whitespace-nowrap gap-0.5">
+                                                                            <span className="text-zinc-500 dark:text-zinc-400 truncate">{item.name}</span>
+                                                                            <span className={cn("shrink-0 font-bold", item.sg >= 0 ? "text-blue-500" : "text-red-500")}>
                                                                                 {item.sg > 0 ? "+" : ""}{item.sg.toFixed(1)}
                                                                             </span>
                                                                         </div>
@@ -1368,7 +1384,7 @@ export default function AthleteReportPage() {
                                                     </div>
                                                     <SectionTitle>Strong Point</SectionTitle>
                                                 </div>
-                                                <h3 className="w-full text-center text-2xl font-black text-zinc-900 dark:text-zinc-50 tracking-tighter leading-tight mt-2 flex-1 flex items-center justify-center">{statsSummary.strongPoint}</h3>
+                                                <h3 className="w-full text-center text-[15px] sm:text-[17px] font-black text-zinc-900 dark:text-zinc-50 tracking-tighter leading-tight mt-2 flex-1 flex items-center justify-center break-keep">{statsSummary.strongPoint}</h3>
                                             </div>
                                             <div className="bg-white dark:bg-zinc-900 rounded-[2.5rem] p-7 shadow-sm border border-zinc-200/60 dark:border-zinc-800/60 flex flex-col items-start justify-start gap-1">
                                                 <div className="flex items-center gap-2 mb-4">
@@ -1377,14 +1393,14 @@ export default function AthleteReportPage() {
                                                     </div>
                                                     <SectionTitle>Challenge Point</SectionTitle>
                                                 </div>
-                                                <div className="space-y-4 flex flex-col items-start w-full mt-2 flex-1 justify-center">
+                                                <div className="space-y-4 flex flex-col items-start w-full mt-2 flex-1 justify-center px-4">
                                                     <div className="flex items-center gap-4">
                                                         <span className="w-7 h-7 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[12px] font-black text-zinc-500 shrink-0">1</span>
-                                                        <span className="text-[20px] font-black text-zinc-800 dark:text-zinc-200 tracking-tight">{statsSummary.challengePoint1}</span>
+                                                        <span className="text-[15px] sm:text-[17px] font-black text-zinc-800 dark:text-zinc-200 tracking-tight break-keep">{statsSummary.challengePoint1}</span>
                                                     </div>
                                                     <div className="flex items-center gap-4">
                                                         <span className="w-7 h-7 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-[12px] font-black text-zinc-500 shrink-0">2</span>
-                                                        <span className="text-[20px] font-black text-zinc-800 dark:text-zinc-200 tracking-tight">{statsSummary.challengePoint2}</span>
+                                                        <span className="text-[15px] sm:text-[17px] font-black text-zinc-800 dark:text-zinc-200 tracking-tight break-keep">{statsSummary.challengePoint2}</span>
                                                     </div>
                                                 </div>
                                             </div>

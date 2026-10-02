@@ -56,6 +56,10 @@ export default function ScoresPage() {
                 const { data: profile } = await supabase.from("users").select("role, name").eq("id", user.id).single();
                 role = profile?.role || null;
                 userName = profile?.name || null;
+                if (role === 'parent' && userName) {
+                    const match = userName.match(/^(.*?) \(/);
+                    if (match) userName = match[1];
+                }
                 setUserRole(role);
                 setLoggedUserName(userName);
             }
@@ -162,8 +166,10 @@ export default function ScoresPage() {
                     const { data: profile } = await supabase.from("users").select("assigned_athletes").eq("id", user?.id).single();
                     if (profile?.assigned_athletes) {
                         const assignedNames = profile.assigned_athletes.split(',').map((n: string) => n.trim());
-                        filteredToday = todayData.filter(s => assignedNames.includes((s.athlete as any)?.name));
+                        filteredToday = todayData.filter((s: any) => assignedNames.includes((s.athlete as any)?.name));
                     }
+                } else if (role === 'parent' && userName) {
+                    filteredToday = todayData.filter((s: any) => (s.athlete as any)?.name === userName);
                 }
                 const mappedToday = filteredToday.map(mapScorecardRow);
                 setTodayScores(mappedToday);
@@ -220,12 +226,14 @@ export default function ScoresPage() {
                     const { data: profile } = await supabase.from("users").select("assigned_athletes").eq("id", user?.id).single();
                     if (profile?.assigned_athletes) {
                         const assignedNames = profile.assigned_athletes.split(',').map((n: string) => n.trim());
-                        relevantStats = statsData.filter(s => assignedNames.includes((s.athlete as any)?.name));
+                        relevantStats = statsData.filter((s: any) => assignedNames.includes((s.athlete as any)?.name));
                     }
+                } else if (role === 'parent' && userName) {
+                    relevantStats = statsData.filter((s: any) => (s.athlete as any)?.name === userName);
                 }
 
                 if (relevantStats.length > 0) {
-                    const fullRounds = relevantStats.filter(s => {
+                    const fullRounds = relevantStats.filter((s: any) => {
                         const holes = (s as any).holes || [];
                         const completedCount = holes.filter((h: any) => h.score > 0 && h.score !== -1).length;
                         return completedCount === 18;
@@ -233,7 +241,7 @@ export default function ScoresPage() {
 
                     let recentAvg = 0;
                     if (fullRounds.length > 0) {
-                        recentAvg = fullRounds.reduce((sum, s) => sum + (s.total_score || 0), 0) / fullRounds.length;
+                        recentAvg = fullRounds.reduce((sum: number, s: any) => sum + (s.total_score || 0), 0) / fullRounds.length;
                     }
 
                     let bestScore = 0;
@@ -243,7 +251,7 @@ export default function ScoresPage() {
                         bestScore = fullRounds[0].total_score || 0;
                         bestPlayer = (fullRounds[0].athlete as any)?.name || "";
                         bestCourse = fullRounds[0].course_name;
-                        fullRounds.forEach(s => {
+                        fullRounds.forEach((s: any) => {
                             if ((s.total_score || 0) < bestScore) {
                                 bestScore = s.total_score || 0;
                                 bestPlayer = (s.athlete as any)?.name || "";
@@ -252,7 +260,7 @@ export default function ScoresPage() {
                         });
                     }
 
-                    const thisMonth = relevantStats.filter(s => s.round_date.startsWith(currentMonth)).length;
+                    const thisMonth = relevantStats.filter((s: any) => s.round_date.startsWith(currentMonth)).length;
                     setSummaryStats({
                         avg: Math.round(recentAvg * 10) / 10,
                         avgRounds: fullRounds.length,
@@ -333,10 +341,10 @@ export default function ScoresPage() {
             if (startDate) query = query.gte("round_date", startDate);
             if (endDate) query = query.lte("round_date", endDate);
             
-            if (userRole === 'coach' || userRole === 'admin' || userRole === 'headquarter' || userRole === 'office') {
+            if (userRole === 'coach' || userRole === 'admin' || userRole === 'headquarter' || userRole === 'office' || userRole === 'parent') {
                 if (!selectAll && selectedPlayers.size > 0) {
                     const { data: usersData } = await supabase.from("users").select("id").in("name", Array.from(selectedPlayers));
-                    const userIds = usersData?.map(u => u.id) || [];
+                    const userIds = usersData?.map((u: any) => u.id) || [];
                     if (userIds.length > 0) query = query.in("athlete_id", userIds);
                     else query = query.eq("athlete_id", "00000000-0000-0000-0000-000000000000");
                 }
@@ -360,7 +368,7 @@ export default function ScoresPage() {
             const mapped = data.map(mapScorecardRow);
             
             // Deduplicate for React keys safety
-            const uniqueMapped = Array.from(new Map(mapped.map(m => [m.id, m])).values());
+            const uniqueMapped = Array.from(new Map(mapped.map((m: any) => [m.id, m])).values()) as ScoreData[];
             setAllScores(uniqueMapped);
         };
 

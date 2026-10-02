@@ -76,8 +76,18 @@ export default function TodoPage() {
                 
                 // Initially select self
                 if (profile) setSelectedUserIds(new Set([profile.id]));
+                
+                let targetId = profile?.id;
+                if (profile?.role === 'parent') {
+                    const match = profile.name.match(/^(.*?) \(/);
+                    const athleteName = match ? match[1] : profile.name;
+                    const { data: athlete } = await supabase.from('users').select('id').eq('role', 'athlete').eq('name', athleteName).maybeSingle();
+                    if (athlete) {
+                        targetId = athlete.id;
+                    }
+                }
 
-                await fetchAllItems(user.id, selectedDate, profile?.role || "athlete");
+                await fetchAllItems(targetId, selectedDate, profile?.role || "athlete");
 
                 if (profile?.role === "coach" || profile?.role === "admin" || profile?.role === "headquarter" || profile?.role === "office") {
                     const { data: users } = await supabase
@@ -160,7 +170,7 @@ export default function TodoPage() {
         const { data: scoresData } = await scoresQuery;
 
         // Map
-        const mappedTodos: UnifiedItem[] = (todoData || []).map(t => ({
+        const mappedTodos: UnifiedItem[] = (todoData || []).map((t: any) => ({
             id: t.id,
             type: 'todo',
             title: t.title,
@@ -173,12 +183,12 @@ export default function TodoPage() {
             assigner_name: t.assigner?.name
         }));
 
-        const mappedSchedules: UnifiedItem[] = (scheduleData || []).map(s => {
+        const mappedSchedules: UnifiedItem[] = (scheduleData || []).map((s: any) => {
             const dStart = new Date(s.start_time);
             const timeStr = `${dStart.getHours().toString().padStart(2, '0')}:${dStart.getMinutes().toString().padStart(2, '0')}`;
             
             // Check if there's a matching record for this schedule
-            const isCompletedByRecord = (recordsData || []).some(r => 
+            const isCompletedByRecord = (recordsData || []).some((r: any) => 
                 (r.type === s.event_type || (s.event_type === 'lesson' && (r.type === 'lesson' || r.type === 'analysis'))) &&
                 (r.title === s.title || s.title?.includes(r.title || "") || r.title?.includes(s.title || ""))
             );
@@ -197,12 +207,12 @@ export default function TodoPage() {
         });
 
         const mappedTrainings: UnifiedItem[] = (trainingData || [])
-            .filter(t => {
+            .filter((t: any) => {
                 if (role === 'admin') return false;
                 if (role === 'coach' && t.coach_id === currentUserId) return false;
                 return true;
             })
-            .map(t => {
+            .map((t: any) => {
             const isCompletedToday = t.completion_logs?.some((log: string) => {
                 try {
                     let timestamp = log;
@@ -227,16 +237,16 @@ export default function TodoPage() {
             };
         });
 
-        const mappedOtherRecords: UnifiedItem[] = (recordsData || []).filter(r => {
+        const mappedOtherRecords: UnifiedItem[] = (recordsData || []).filter((r: any) => {
             if (r.type === 'course_management' || r.type === 'score') return false;
             // Filter out journals and trainings already handled or matched to schedules
-            const isUsedInTraining = r.type === 'training' && trainingData?.some(at => r.id === at.id);
-            const matchesSchedule = (scheduleData || []).some(s => 
+            const isUsedInTraining = r.type === 'training' && trainingData?.some((at: any) => r.id === at.id);
+            const matchesSchedule = (scheduleData || []).some((s: any) => 
                 (r.type === s.event_type || (s.event_type === 'lesson' && (r.type === 'lesson' || r.type === 'analysis'))) &&
                 (r.title === s.title || s.title?.includes(r.title || "") || r.title?.includes(s.title || ""))
             );
             return !isUsedInTraining && !matchesSchedule;
-        }).map(r => {
+        }).map((r: any) => {
             const dStart = new Date(r.created_at);
             const timeStr = `${dStart.getHours().toString().padStart(2, '0')}:${dStart.getMinutes().toString().padStart(2, '0')}`;
             const typeLabels: Record<string, string> = { lesson: "레슨", training: "훈련", analysis: "분석", journal: "일지" };
@@ -253,7 +263,7 @@ export default function TodoPage() {
             };
         });
 
-        const mappedScores: UnifiedItem[] = (scoresData || []).map(s => {
+        const mappedScores: UnifiedItem[] = (scoresData || []).map((s: any) => {
             const dStart = new Date(s.created_at);
             const timeStr = `${dStart.getHours().toString().padStart(2, '0')}:${dStart.getMinutes().toString().padStart(2, '0')}`;
             return {
@@ -271,7 +281,7 @@ export default function TodoPage() {
 
         const dailyJournals: UnifiedItem[] = [];
         if (role === "athlete") {
-            const todaysJournals = (recordsData || []).filter(r => r.type === 'journal');
+            const todaysJournals = (recordsData || []).filter((r: any) => r.type === 'journal');
             if (todaysJournals.length === 0) {
                 dailyJournals.push({
                     id: `daily-journal-${date}`,

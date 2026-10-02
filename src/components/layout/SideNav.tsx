@@ -97,6 +97,7 @@ const menuItems = [
             { key: "course-info", title: "코스 정보", href: "/course-info" },
             { key: "reports", title: "선수 레포트", href: "/operations/reports" },
             { key: "coach-selection", title: "담임 코치 선택", href: "/coach-selection" },
+            { key: "my-qr", title: "스마트 패스", href: "/my-qr" },
         ],
     },
     {
@@ -110,6 +111,7 @@ const menuItems = [
             { key: "lesson-list", title: "스윙 오류 관리", href: "/system/lesson-list" },
             { key: "training-list", title: "훈련 리스트 관리", href: "/system/training-list" },
             { key: "challenge-list", title: "챌린지 컨텐츠 관리", href: "/system/challenge-list" },
+            { key: "qr-check", title: "스마트 패스 관리", href: "/operations/qr-check" },
         ],
     },
     {
@@ -208,7 +210,7 @@ export function SideNav() {
         };
         getPermissions();
 
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: any, session: any) => {
             if (session?.user) {
                 getProfile();
             }

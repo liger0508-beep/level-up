@@ -99,6 +99,7 @@ export async function getPolls(limit?: number) {
             *,
             users!polls_author_id_fkey (name)
         `)
+        .neq("type", "qr_check")
         .order("created_at", { ascending: false });
 
     if (limit) query = query.limit(limit);

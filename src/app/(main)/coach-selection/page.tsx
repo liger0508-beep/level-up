@@ -38,6 +38,8 @@ export default function CoachSelectionPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [coachCounts, setCoachCounts] = useState<Record<string, number>>({});
     const [branchFilter, setBranchFilter] = useState("조이마루점");
+    const [selectionSettings, setSelectionSettings] = useState({ enabled: true, startDay: 25, endDay: 31 });
+    const [isSavingSettings, setIsSavingSettings] = useState(false);
 
     useEffect(() => {
         const initialize = async () => {
@@ -58,9 +60,21 @@ export default function CoachSelectionPage() {
                 
                 setUser(profile);
                 
-                if (profile && (profile.role === "athlete" || profile.role === "admin")) {
+                if (profile && ["athlete", "admin", "office", "headquarter"].includes(profile.role)) {
                     await fetchData(profile, selectedMonth);
                 }
+                
+                try {
+                    const res = await fetch("/api/coach-selection-settings");
+                    if (res.ok) {
+                        const settingsData = await res.json();
+                        setSelectionSettings(settingsData);
+                    }
+                } catch (e) {
+                    console.error("Failed to load settings from API", e);
+                }
+                
+
             } catch (err) {
                 console.error("Auth init error:", err);
             } finally {
@@ -73,7 +87,7 @@ export default function CoachSelectionPage() {
     
     // When month changes, re-fetch assignments
     useEffect(() => {
-        if (user && (user.role === "athlete" || user.role === "admin")) {
+        if (user && ["athlete", "admin", "office", "headquarter"].includes(user.role)) {
             fetchData(user, selectedMonth);
         }
     }, [selectedMonth, user]);
@@ -95,14 +109,14 @@ export default function CoachSelectionPage() {
             if (coachesError) throw coachesError;
             
             let branchCoaches = coachesData || [];
-            branchCoaches = branchCoaches.filter(c => c.branch !== "오피스" && c.branch !== "총괄");
+            branchCoaches = branchCoaches.filter((c: any) => c.branch !== "오피스" && c.branch !== "총괄");
             
             // Joymaru specific filter: ONLY 6 coaches
             const allowedJoymaru = ["김규태", "김봉진", "이동진", "김종명", "박치우", "성세환"];
             // Gumi specific filter: ONLY 3 coaches
             const allowedGumi = ["이준", "문치환", "이기찬"];
             
-            branchCoaches = branchCoaches.filter(c => {
+            branchCoaches = branchCoaches.filter((c: any) => {
                 if (c.branch === "조이마루점") {
                     return allowedJoymaru.includes(c.name);
                 }
@@ -140,7 +154,7 @@ export default function CoachSelectionPage() {
                 
             const counts: Record<string, number> = {};
             if (allAssignments) {
-                allAssignments.forEach(a => {
+                allAssignments.forEach((a: any) => {
                     counts[a.coach_id] = (counts[a.coach_id] || 0) + 1;
                 });
             }
@@ -219,21 +233,55 @@ export default function CoachSelectionPage() {
         }
     };
 
+    const handleSaveSettings = async () => {
+        setIsSavingSettings(true);
+        try {
+            const res = await fetch("/api/coach-selection-settings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(selectionSettings)
+            });
+            
+            if (!res.ok) {
+                throw new Error("API responded with an error");
+            }
+            alert("설정이 정상적으로 저장되었습니다.");
+        } catch (e) {
+            console.error("Settings save error:", e);
+            alert("설정 저장 중 오류가 발생했습니다.");
+        } finally {
+            setIsSavingSettings(false);
+        }
+    };
+
+    const isSelectionAllowed = () => {
+        // 활성화 토글이 꺼져있으면 무조건 선택 불가 (관리자 포함)
+        if (!selectionSettings.enabled) return false;
+        
+        // 관리자 권한은 기간에 상관없이(또는 테스트용) 선택 가능하게 하려면 아래 주석 해제 (현재는 주석 처리)
+        // if (user && ["admin", "superadmin", "office", "headquarter"].includes(user.role)) return true;
+        
+        const now = new Date();
+        const currentDay = now.getDate();
+        return currentDay >= selectionSettings.startDay && currentDay <= selectionSettings.endDay;
+    };
+
     const renderCoachButton = (coach: Coach) => {
         const isSelected = selectedCoachId === coach.id;
         const isMyCurrentOriginal = originalCoachId === coach.id;
         const currentCount = coachCounts[coach.id] || 0;
         const isFull = currentCount >= 7 && !isMyCurrentOriginal;
+        const allowed = isSelectionAllowed();
         
         return (
             <button
                 key={coach.id}
                 onClick={() => setSelectedCoachId(isSelected ? "" : coach.id)}
-                disabled={isFull}
+                disabled={isFull || !allowed}
                 className={`flex items-center justify-between p-4 rounded-xl border text-left transition-all ${
                     isSelected
                         ? "border-brand-navy bg-brand-navy/5 dark:bg-brand-navy/10 ring-1 ring-brand-navy"
-                        : isFull
+                        : (isFull || !allowed)
                             ? "opacity-50 bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 cursor-not-allowed"
                             : "border-zinc-200 dark:border-zinc-700 hover:border-brand-navy/30 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 bg-white dark:bg-zinc-900"
                 }`}
@@ -274,11 +322,11 @@ export default function CoachSelectionPage() {
         );
     }
 
-    if (user && user.role !== "athlete" && user.role !== "admin") {
+    if (user && !["athlete", "admin", "office", "headquarter"].includes(user.role)) {
         return (
             <div className="max-w-3xl mx-auto px-4 py-8">
                 <div className="bg-white dark:bg-zinc-900 rounded-2xl p-8 text-center border border-zinc-200 dark:border-zinc-800">
-                    <p className="text-zinc-600 dark:text-zinc-400">선수 계정으로만 접근할 수 있는 페이지입니다.</p>
+                    <p className="text-zinc-600 dark:text-zinc-400">접근 권한이 없습니다.</p>
                 </div>
             </div>
         );
@@ -326,6 +374,56 @@ export default function CoachSelectionPage() {
                     </div>
                 </div>
 
+                {user && ["admin", "superadmin", "office", "headquarter"].includes(user.role) && (
+                    <div className="flex flex-col gap-4 p-4 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700">
+                        <div className="flex items-center justify-between">
+                            <label className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-brand-navy"></span>
+                                담임 코치 선택 기능 활성화
+                            </label>
+                            <button 
+                                onClick={() => setSelectionSettings(prev => ({ ...prev, enabled: !prev.enabled }))}
+                                className={`w-12 h-6 rounded-full transition-colors relative flex items-center ${selectionSettings.enabled ? "bg-emerald-500" : "bg-zinc-300 dark:bg-zinc-600"}`}
+                            >
+                                <span className={`w-5 h-5 bg-white rounded-full absolute shadow-sm transition-all ${selectionSettings.enabled ? "left-6" : "left-1"}`}></span>
+                            </button>
+                        </div>
+                        
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm font-semibold text-zinc-600 dark:text-zinc-400">시작일</span>
+                                <input 
+                                    type="number" 
+                                    min="1" max="31"
+                                    value={selectionSettings.startDay}
+                                    onChange={(e) => setSelectionSettings(prev => ({ ...prev, startDay: Number(e.target.value) }))}
+                                    className="w-16 px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm text-center focus:outline-none focus:border-brand-navy"
+                                />
+                                <span className="text-sm text-zinc-500">일</span>
+                            </div>
+                            <span className="text-zinc-300 dark:text-zinc-600 hidden sm:block">~</span>
+                            <div className="flex items-center gap-2">
+                                <span className="text-sm font-semibold text-zinc-600 dark:text-zinc-400">종료일</span>
+                                <input 
+                                    type="number" 
+                                    min="1" max="31"
+                                    value={selectionSettings.endDay}
+                                    onChange={(e) => setSelectionSettings(prev => ({ ...prev, endDay: Number(e.target.value) }))}
+                                    className="w-16 px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm text-center focus:outline-none focus:border-brand-navy"
+                                />
+                                <span className="text-sm text-zinc-500">일</span>
+                            </div>
+                            <button
+                                onClick={handleSaveSettings}
+                                disabled={isSavingSettings}
+                                className="ml-auto px-4 py-1.5 bg-zinc-800 text-white text-xs font-bold rounded-lg hover:bg-zinc-700 transition-colors"
+                            >
+                                {isSavingSettings ? "저장 중..." : "설정 저장"}
+                            </button>
+                        </div>
+                    </div>
+                )}
+
                 <hr className="border-zinc-100 dark:border-zinc-800" />
                 
                 {/* Branch Selection */}
@@ -354,10 +452,19 @@ export default function CoachSelectionPage() {
 
                 {/* Coach List */}
                 <div className="flex flex-col gap-4">
-                    <label className="text-base font-bold text-zinc-900 dark:text-zinc-100 flex justify-between items-end">
-                        <span>{branchFilter !== "전체" ? `${branchFilter} 코치진` : "전체 코치진"}</span>
-                        <span className="text-xs font-medium text-zinc-500">※ 선착순 최대 7명</span>
-                    </label>
+                    <div className="flex justify-between items-end">
+                        <label className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+                            {branchFilter !== "전체" ? `${branchFilter} 코치진` : "전체 코치진"}
+                        </label>
+                        <div className="flex items-center gap-3">
+                            {!isSelectionAllowed() && user && user.role === "athlete" && (
+                                <span className="text-xs font-bold text-red-500 bg-red-50 px-2 py-1 rounded-md">
+                                    현재는 선택 기간이 아닙니다 ({selectionSettings.startDay}일~{selectionSettings.endDay}일)
+                                </span>
+                            )}
+                            <span className="text-xs font-medium text-zinc-500">※ 선착순 최대 7명</span>
+                        </div>
+                    </div>
                     
                     {coaches.filter(c => branchFilter === "전체" || c.branch === branchFilter).length === 0 ? (
                         <div className="py-8 text-center text-sm text-zinc-500 bg-zinc-50 dark:bg-zinc-800/20 rounded-xl border border-zinc-100 dark:border-zinc-800">

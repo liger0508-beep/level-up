@@ -100,6 +100,20 @@ const initialMenus: MenuItem[] = [
         enabled: true,
         categories: [],
     },
+    {
+        id: "m_myqr",
+        title: "QR 선수 증명",
+        href: "/my-qr",
+        enabled: true,
+        categories: [],
+    },
+    {
+        id: "m_qrcheck",
+        title: "스마트 패스 관리",
+        href: "/operations/qr-check",
+        enabled: true,
+        categories: [],
+    }
 ];
 
 export default function MenuManagementPage() {

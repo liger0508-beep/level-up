@@ -106,7 +106,7 @@ const IndicatorCard = ({ label, value, unit, icon: Icon, colorClass = "text-bran
             {label}
         </div>
         <div className="flex items-baseline justify-end gap-1">
-            <span className={cn("text-2xl font-black tracking-tighter", colorClass)}>{value}</span>
+            <span className={cn("text-[1rem] xs:text-[1.2rem] sm:text-2xl font-black tracking-tighter truncate max-w-full", colorClass)}>{value}</span>
             {unit && <span className="text-[12px] font-bold text-zinc-400 ml-0.5">{unit}</span>}
         </div>
     </div>
@@ -126,8 +126,8 @@ const SummaryBox = ({ label, value, icon: Icon, colorClass = "text-brand-navy" }
                     {label}
                 </div>
             </div>
-            <div className="w-full flex items-baseline justify-end">
-                <span className={cn("text-2xl font-black tracking-tighter", displayColor)}>{value}</span>
+            <div className="w-full flex items-baseline justify-end overflow-hidden">
+                <span className={cn("text-[1rem] xs:text-[1.2rem] sm:text-2xl font-black tracking-tighter truncate max-w-full", displayColor)}>{value}</span>
             </div>
         </div>
     );
@@ -147,7 +147,7 @@ const SectorChangeBadge = ({ type, value }: { type: string; value: string | numb
                 <span className="text-[12px] font-bold text-zinc-500 dark:text-zinc-400">{type}</span>
             </div>
             <div className="w-full text-center">
-                <span className={cn("text-2xl font-black tracking-tighter", colorClass)}>
+                <span className={cn("text-[1.3rem] sm:text-2xl font-black tracking-tighter", colorClass)}>
                     {isPositive ? `+${value}` : value}
                 </span>
             </div>
@@ -862,15 +862,15 @@ export default function ScoreDetailPage() {
                                 )}>
                                     <div className="flex flex-col">
                                         <p className="text-[13px] font-black text-zinc-400 uppercase tracking-tight">{sc.type}</p>
-                                        <p className={cn("text-2xl font-black tracking-tighter text-right mt-1", isPositive ? "text-blue-500" : "text-red-500")}>
+                                        <p className={cn("text-[1.1rem] sm:text-[1.3rem] md:text-2xl font-black tracking-tighter text-right mt-1 truncate max-w-full", isPositive ? "text-blue-500" : "text-red-500")}>
                                             {sc.value}
                                         </p>
                                     </div>
                                     <div className="space-y-1.5 pt-3 mt-1 border-t border-zinc-100/50 dark:border-zinc-800/50">
                                         {sc.items.map((item: any, iIdx: number) => (
-                                            <div key={iIdx} className="flex justify-between items-center text-[clamp(10px,3.5vw,13px)] font-bold whitespace-nowrap gap-0.5">
+                                            <div key={iIdx} className="flex justify-between items-center text-[clamp(10px,3.5vw,13px)] font-medium whitespace-nowrap gap-0.5">
                                                 <span className="text-zinc-500 dark:text-zinc-400 truncate">{item.name}</span>
-                                                <span className={cn("shrink-0", item.sg >= 0 ? "text-blue-500" : "text-red-500")}>
+                                                <span className={cn("shrink-0 font-bold", item.sg >= 0 ? "text-blue-500" : "text-red-500")}>
                                                     {item.sg > 0 ? "+" : ""}{item.sg.toFixed(1)}
                                                 </span>
                                             </div>

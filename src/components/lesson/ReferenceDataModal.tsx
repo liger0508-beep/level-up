@@ -59,14 +59,14 @@ const SectionHeader = ({ title, icon: Icon, badge }: { title: string; icon: any;
 );
 
 const IndicatorCard = ({ label, value, unit, icon: Icon, colorClass = "text-brand-navy" }: { label: React.ReactNode; value: string | number; unit?: string; icon: any; colorClass?: string }) => (
-    <div className="bg-zinc-50/50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800/50 p-4 rounded-2xl flex flex-col justify-between h-full min-h-[100px]">
-        <div className="flex items-start gap-1.5 mb-3 text-[12px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-tight">
+    <div className="bg-zinc-50/50 dark:bg-zinc-900/50 border border-zinc-100 dark:border-zinc-800/50 p-3 sm:p-4 rounded-2xl flex flex-col justify-between h-full min-h-[90px] overflow-hidden">
+        <div className="flex items-start gap-1.5 mb-2 sm:mb-3 text-[11px] sm:text-[12px] font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-tight">
             <Icon size={14} className="text-zinc-400 shrink-0 mt-0.5" />
             <span className="leading-tight">{label}</span>
         </div>
-        <div className="flex items-baseline justify-end gap-1">
-            <span className={cn("text-2xl font-black tracking-tighter", colorClass)}>{value}</span>
-            {unit && <span className="text-[12px] font-bold text-zinc-400 ml-0.5">{unit}</span>}
+        <div className="flex items-baseline justify-end gap-1 overflow-hidden">
+            <span className={cn("text-base xs:text-xl sm:text-2xl font-black tracking-tighter truncate max-w-full", colorClass)}>{value}</span>
+            {unit && <span className="text-[11px] sm:text-[12px] font-bold text-zinc-400 ml-0.5 shrink-0">{unit}</span>}
         </div>
     </div>
 );
@@ -78,15 +78,15 @@ const SummaryBox = ({ label, value, icon: Icon, colorClass = "text-brand-navy" }
     const displayColor = isPositive ? "text-blue-500" : isNegative ? "text-red-500" : colorClass;
 
     return (
-        <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 p-5 py-7 rounded-[2.5rem] shadow-sm flex flex-col items-start justify-between min-h-[190px]">
-            <div className="flex flex-col items-start gap-2 mb-2 text-[11px] font-black text-zinc-400 text-left">
-                <Icon size={20} className="text-zinc-400/80 shrink-0" />
+        <div className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 p-3 sm:p-5 py-4 sm:py-7 rounded-[1.8rem] sm:rounded-[2.5rem] shadow-sm flex flex-col items-start justify-between min-h-[140px] sm:min-h-[190px] overflow-hidden">
+            <div className="flex flex-col items-start gap-1.5 sm:gap-2 mb-2 text-[10px] sm:text-[11px] font-black text-zinc-400 text-left">
+                <Icon size={18} className="text-zinc-400/80 shrink-0 sm:w-5 sm:h-5" />
                 <div className="leading-tight">
                     {label}
                 </div>
             </div>
-            <div className="w-full flex items-baseline justify-end">
-                <span className={cn("text-2xl font-black tracking-tighter", displayColor)}>{value}</span>
+            <div className="w-full flex items-baseline justify-end overflow-hidden">
+                <span className={cn("text-base xs:text-xl sm:text-2xl font-black tracking-tighter truncate max-w-full", displayColor)}>{value}</span>
             </div>
         </div>
     );
@@ -271,7 +271,7 @@ export default function ReferenceDataModal({ isOpen, onClose, playerName }: { is
                     .order("created_at", { ascending: false })
                     .limit(10);
 
-                const sc = scorecards?.find(s => s.is_final !== false);
+                const sc = scorecards?.find((s: any) => s.is_final !== false);
 
                 if (sc) {
                     const result = await calculateScorecardAnalysis(sc.id);
@@ -574,7 +574,7 @@ export default function ReferenceDataModal({ isOpen, onClose, playerName }: { is
                                                     )}>
                                                         <div className="flex flex-col">
                                                             <p className="text-[13px] font-black text-zinc-400 uppercase tracking-tight">{sc.type}</p>
-                                                            <p className={cn("text-2xl font-black tracking-tighter text-right mt-1", isPositive ? "text-blue-500" : "text-red-500")}>
+                                                            <p className={cn("text-[1.3rem] sm:text-2xl font-black tracking-tighter text-right mt-1", isPositive ? "text-blue-500" : "text-red-500")}>
                                                                 {sc.value}
                                                             </p>
                                                         </div>
@@ -582,9 +582,9 @@ export default function ReferenceDataModal({ isOpen, onClose, playerName }: { is
                                                             {sc.items.map((item: any, iIdx: number) => {
                                                                 const isItemPos = parseFloat(item.sg) > 0;
                                                                 return (
-                                                                    <div key={iIdx} className="flex justify-between items-center text-[12px] sm:text-[13px] font-bold tracking-tight">
-                                                                        <span className="text-zinc-500 whitespace-nowrap">{item.name}</span>
-                                                                        <span className={isItemPos ? "text-blue-500" : "text-red-500"}>
+                                                                    <div key={iIdx} className="flex justify-between items-center text-[clamp(10px,3.5vw,13px)] font-bold whitespace-nowrap gap-0.5">
+                                                                        <span className="text-zinc-500 truncate">{item.name}</span>
+                                                                        <span className={cn("shrink-0", isItemPos ? "text-blue-500" : "text-red-500")}>
                                                                             {isItemPos ? "+" : ""}{item.sg.toFixed(1)}
                                                                         </span>
                                                                     </div>

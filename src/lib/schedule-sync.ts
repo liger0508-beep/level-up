@@ -37,9 +37,19 @@ export async function getStoredEvents(startDate?: string, endDate?: string): Pro
         `)
         .order("start_time", { ascending: true });
 
+    let targetUserId = user.id;
+    if (role === "parent") {
+        const match = profile.name.match(/^(.*?) \(/);
+        const athleteName = match ? match[1] : profile.name;
+        const { data: athlete } = await supabase.from('users').select('id').eq('role', 'athlete').eq('name', athleteName).maybeSingle();
+        if (athlete) {
+            targetUserId = athlete.id;
+        }
+    }
+
     // Athletes only see their own schedules
     if (role === "athlete" || role === "parent") {
-        query = query.eq("user_id", user.id);
+        query = query.eq("user_id", targetUserId);
     }
 
     if (startDate) {
