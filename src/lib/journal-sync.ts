@@ -86,7 +86,7 @@ export async function fetchJournalsByAthlete(athleteName: string, limit?: number
         const { data, error } = await query;
         if (error) throw error;
 
-        const parsedJournals = (data || []).map((item: any) => ({
+        const parsedJournals: Journal[] = (data || []).map((item: any) => ({
             id: item.id,
             type: (item.category as JournalType) || "good",
             title: item.title,
@@ -111,7 +111,7 @@ export async function fetchJournalsByAthlete(athleteName: string, limit?: number
 
                 if (scorecards) {
                     fieldJournals.forEach(j => {
-                        const sc = scorecards.find(s => s.round_date <= j.date);
+                        const sc = scorecards.find((s: any) => s.round_date <= j.date);
                         if (sc) {
                             (j as any).fieldScore = sc.total_score;
                             (j as any).fieldCourse = sc.course_name;
@@ -154,7 +154,7 @@ export async function fetchJournals(): Promise<Journal[]> {
             throw error;
         }
 
-        const parsedJournals = (data || []).map((item: any) => ({
+        const parsedJournals: Journal[] = (data || []).map((item: any) => ({
             id: item.id,
             type: (item.category as JournalType) || "good",
             title: item.title,
@@ -183,7 +183,7 @@ export async function fetchJournals(): Promise<Journal[]> {
                 if (scorecards) {
                     fieldJournals.forEach(j => {
                         const userId = userMap[j.athleteName];
-                        const sc = scorecards.find(s => s.athlete_id === userId && s.round_date <= j.date);
+                        const sc = scorecards.find((s: any) => s.athlete_id === userId && s.round_date <= j.date);
                         if (sc) {
                             (j as any).fieldScore = sc.total_score;
                             (j as any).fieldCourse = sc.course_name;

@@ -72,10 +72,10 @@ export default function TrainingJournalPage() {
             if (['coach', 'admin', 'office', 'total', 'superadmin'].includes(currentRole)) {
                 const { data: athletesData } = await supabase.from("users").select("name").eq("role", "athlete").order("name");
                 if (athletesData) {
-                    const athleteNames = athletesData.map(a => a.name);
+                    const athleteNames = athletesData.map((a: any) => a.name);
                     setAllAthletes(athleteNames);
                     
-                    let initialSelected = new Set(athleteNames);
+                    let initialSelected = new Set<string>(athleteNames);
                     let initialSelectAll = true;
                     
                     if (typeof window !== "undefined") {
@@ -160,7 +160,7 @@ export default function TrainingJournalPage() {
             } else {
                 if (!selectAll && selectedPlayers.size > 0) {
                     const { data: usersData } = await supabase.from("users").select("id").in("name", Array.from(selectedPlayers));
-                    const userIds = usersData?.map(u => u.id) || [];
+                    const userIds = usersData?.map((u: any) => u.id) || [];
                     if (userIds.length > 0) query = query.in("user_id", userIds);
                     else query = query.eq("user_id", "00000000-0000-0000-0000-000000000000");
                 } else if (!selectAll && selectedPlayers.size === 0) {

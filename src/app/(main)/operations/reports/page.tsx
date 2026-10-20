@@ -586,8 +586,9 @@ export default function AthleteReportPage() {
                 const scoreVsContent = avgTotalScore - playContent;
 
                 const totalPutts = combinedResult.reduce((s, h) => s + h.summary.putts, 0) / numRounds;
-                const sumFirstPuttDist = combinedResult.reduce((s, h) => s + parseFloat(h.summary.firstPuttAttemptDist || "0"), 0);
-                const avgFirstPuttDist = combinedResult.length > 0 ? sumFirstPuttDist / combinedResult.length : 0;
+                const puttedHoles = combinedResult.filter(h => parseFloat(h.summary.firstPuttAttemptDist || "0") > 0);
+                const sumFirstPuttDist = puttedHoles.reduce((s, h) => s + parseFloat(h.summary.firstPuttAttemptDist || "0"), 0);
+                const avgFirstPuttDist = puttedHoles.length > 0 ? sumFirstPuttDist / puttedHoles.length : 0;
                 const threePuttCount = combinedResult.filter(h => h.summary.putts >= 3).length / numRounds;
                 const totalPA = combinedResult.reduce((s, h) => s + h.summary.paCount, 0) / numRounds;
                 const totalOB = combinedResult.reduce((s, h) => s + h.summary.obCount, 0) / numRounds;
@@ -745,7 +746,7 @@ export default function AthleteReportPage() {
                         { label: "그린 적중률", value: roundToOne(girRate), unit: "%" },
                         { label: "파세이브률", value: roundToOne(parSaveRate), unit: "%" },
                         { label: "평균\n퍼트수", value: roundToOne(totalPutts), unit: "개" },
-                        { label: "평균\n남은 거리", value: roundToOne(avgFirstPuttDist), unit: "m" },
+                        { label: "평균\n첫퍼트 거리", value: roundToOne(avgFirstPuttDist), unit: "m" },
                         { label: "평균\n3퍼트 이상", value: roundToOne(threePuttCount), unit: "회" },
                         { label: "평균\n패널티/OB", value: roundToOne(totalPA + totalOB), unit: "개" },
                         { label: "바운스백", value: bounceBackRate.toFixed(1), unit: "%" },

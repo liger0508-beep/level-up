@@ -92,7 +92,7 @@ export default function CommunityPage() {
             const { data: recentData } = await recentQuery;
                 
             if (recentData) {
-                setRecentNotices(recentData.map(d => ({
+                setRecentNotices(recentData.map((d: any) => ({
                     id: d.id,
                     type: d.type as NoticeType,
                     branch: d.branch,
@@ -220,7 +220,7 @@ export default function CommunityPage() {
 
             setTotalNoticeCount(count || 0);
             
-            setAllNotices(data.map(d => ({
+            setAllNotices(data.map((d: any) => ({
                 id: d.id,
                 type: d.type as NoticeType,
                 branch: d.branch,

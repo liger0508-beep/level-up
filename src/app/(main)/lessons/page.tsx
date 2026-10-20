@@ -288,7 +288,7 @@ export default function LessonsPage() {
             }
             if (!selectAll && selectedPlayers.size > 0) {
                 const { data: usersData } = await supabase.from("users").select("id").in("name", Array.from(selectedPlayers));
-                const userIds = usersData?.map(u => u.id) || [];
+                const userIds = usersData?.map((u: any) => u.id) || [];
                 if (userIds.length > 0) {
                     query = query.in("user_id", userIds);
                 } else {

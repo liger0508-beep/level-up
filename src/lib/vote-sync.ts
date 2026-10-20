@@ -71,11 +71,11 @@ export async function overrideWithTodayVotes(polls: Vote[]): Promise<Vote[]> {
     return polls.map(poll => {
         if (!poll.isRecurring) return poll;
         
-        const pollResponses = todayResponses.filter(r => r.poll_id === poll.id);
+        const pollResponses = todayResponses.filter((r: any) => r.poll_id === poll.id);
         const voteCounts: Record<string, number> = {};
         const uniqueUsers = new Set<string>();
         
-        pollResponses.forEach(r => {
+        pollResponses.forEach((r: any) => {
             voteCounts[r.option_id] = (voteCounts[r.option_id] || 0) + 1;
             if (r.user_id) uniqueUsers.add(r.user_id);
         });
@@ -399,7 +399,7 @@ export async function getUserVote(pollId: string, userId: string): Promise<strin
     const { data, error } = await query;
 
     if (error) throw error;
-    return (data || []).map(r => r.option_id);
+    return (data || []).map((r: any) => r.option_id);
 }
 
 // ── Helper ──────────────────────────────────────────────────

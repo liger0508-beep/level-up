@@ -53,7 +53,7 @@ export async function fetchMonthlyStatistics(
             return [];
         }
 
-        const athleteIds = athletes.map((a) => a.id);
+        const athleteIds = athletes.map((a: any) => a.id);
 
         // 3. Fetch Monthly Assignments (Coach)
         const { data: assignments } = await supabase
@@ -85,7 +85,7 @@ export async function fetchMonthlyStatistics(
 
         const attendanceMap: Record<string, number> = {};
         if (attendances) {
-            attendances.forEach((a) => {
+            attendances.forEach((a: any) => {
                 attendanceMap[a.athlete_id] = (attendanceMap[a.athlete_id] || 0) + 1;
             });
         }
@@ -101,12 +101,12 @@ export async function fetchMonthlyStatistics(
 
         const recordsMap: Record<string, { lesson: number, lessonByCoach: number, training: number, trainingByCoach: number, measurement: number, score: number, journal: number, challenge: number, trainingPlan: number }> = {};
         
-        athleteIds.forEach(id => {
+        athleteIds.forEach((id: string) => {
             recordsMap[id] = { lesson: 0, lessonByCoach: 0, training: 0, trainingByCoach: 0, measurement: 0, score: 0, journal: 0, challenge: 0, trainingPlan: 0 };
         });
 
         if (records) {
-            records.forEach((r) => {
+            records.forEach((r: any) => {
                 if (!r.user_id || !recordsMap[r.user_id]) return;
                 
                 const map = recordsMap[r.user_id];
@@ -138,7 +138,7 @@ export async function fetchMonthlyStatistics(
             .in('athlete_id', athleteIds);
 
         if (scorecards) {
-            scorecards.forEach(sc => {
+            scorecards.forEach((sc: any) => {
                 if (recordsMap[sc.athlete_id]) {
                     recordsMap[sc.athlete_id].score++;
                 }
@@ -154,7 +154,7 @@ export async function fetchMonthlyStatistics(
             .in('user_id', athleteIds);
 
         if (tests) {
-            tests.forEach(t => {
+            tests.forEach((t: any) => {
                 if (recordsMap[t.user_id]) {
                     recordsMap[t.user_id].challenge++;
                 }
@@ -172,7 +172,7 @@ export async function fetchMonthlyStatistics(
 
         const consultationMap: Record<string, number> = {};
         if (consultations) {
-            consultations.forEach((c) => {
+            consultations.forEach((c: any) => {
                 if (c.user_id) {
                     consultationMap[c.user_id] = (consultationMap[c.user_id] || 0) + 1;
                 }
@@ -188,10 +188,10 @@ export async function fetchMonthlyStatistics(
             .lte("created_at", endDate + "T23:59:59+09:00")
             .in("user_id", athleteIds)
             // .catch() to silently ignore if table doesn't exist yet
-            .then(res => res, err => ({ data: [] })); 
+            .then((res: any) => res, (err: any) => ({ data: [] })); 
 
         const activityMap: Record<string, { login: number, reportView: number }> = {};
-        athleteIds.forEach(id => {
+        athleteIds.forEach((id: string) => {
             activityMap[id] = { login: 0, reportView: 0 };
         });
 
@@ -208,10 +208,10 @@ export async function fetchMonthlyStatistics(
             .gte("created_at", startDate + "T00:00:00+09:00")
             .lte("created_at", endDate + "T23:59:59+09:00")
             .in("user_id", athleteIds)
-            .then(res => res, err => ({ data: [] }));
+            .then((res: any) => res, (err: any) => ({ data: [] }));
 
         if (loginLogs && !('error' in loginLogs && loginLogs.error)) {
-             (loginLogs).forEach((l) => {
+             (loginLogs).forEach((l: any) => {
                  if (!l.user_id || !activityMap[l.user_id]) return;
                  activityMap[l.user_id].login++;
              });
@@ -219,7 +219,7 @@ export async function fetchMonthlyStatistics(
 
 
         // Combine all data
-        const result: MonthlyStatistic[] = athletes.map((athlete) => {
+        const result: MonthlyStatistic[] = athletes.map((athlete: any) => {
             const rMap = recordsMap[athlete.id];
             
             // For now, trainingRate is 100% if they have training, else 0% (Since we don't have total_assigned easily)
@@ -298,10 +298,10 @@ export async function fetchCoachMonthlyStatistics(
         const { data: coaches, error: usersError } = await query;
         if (usersError || !coaches || coaches.length === 0) return [];
         
-        const coachIds = coaches.map((c) => c.id);
+        const coachIds = coaches.map((c: any) => c.id);
 
         const coachMap: Record<string, CoachMonthlyStatistic> = {};
-        coaches.forEach(c => {
+        coaches.forEach((c: any) => {
             coachMap[c.id] = {
                 id: c.id,
                 name: c.name,
@@ -325,7 +325,7 @@ export async function fetchCoachMonthlyStatistics(
             .in("coach_id", coachIds);
             
         if (records) {
-            records.forEach(r => {
+            records.forEach((r: any) => {
                 if (r.coach_id && coachMap[r.coach_id]) {
                     if (r.type === 'lesson') coachMap[r.coach_id].lesson++;
                     if (r.type === 'training') coachMap[r.coach_id].training++;
@@ -342,7 +342,7 @@ export async function fetchCoachMonthlyStatistics(
             .in("coach_id", coachIds);
             
         if (testSessions) {
-            testSessions.forEach(ts => {
+            testSessions.forEach((ts: any) => {
                 if (ts.coach_id && coachMap[ts.coach_id]) {
                     coachMap[ts.coach_id].challenge++;
                 }
@@ -358,7 +358,7 @@ export async function fetchCoachMonthlyStatistics(
             .in("coach_id", coachIds);
             
         if (consultations) {
-            consultations.forEach(c => {
+            consultations.forEach((c: any) => {
                 if (c.coach_id && coachMap[c.coach_id]) {
                     coachMap[c.coach_id].consultation++;
                 }
@@ -374,7 +374,7 @@ export async function fetchCoachMonthlyStatistics(
             .in("user_id", coachIds);
             
         if (comments) {
-            comments.forEach(c => {
+            comments.forEach((c: any) => {
                 if (c.user_id && coachMap[c.user_id]) {
                     coachMap[c.user_id].comment++;
                 }
@@ -392,7 +392,7 @@ export async function fetchCoachMonthlyStatistics(
         const assignedAthletesCount: Record<string, number> = {};
         const athleteToCoach: Record<string, string> = {};
         if (assignments) {
-            assignments.forEach(a => {
+            assignments.forEach((a: any) => {
                 if (a.coach_id && coachMap[a.coach_id]) {
                     assignedAthletesCount[a.coach_id] = (assignedAthletesCount[a.coach_id] || 0) + 1;
                     athleteToCoach[a.athlete_id] = a.coach_id;
@@ -409,7 +409,7 @@ export async function fetchCoachMonthlyStatistics(
         const reportsCount: Record<string, number> = {};
         if (reports) {
             // Count unique athlete_ids that have a report, and map them to coach
-            const reportedAthletes = new Set(reports.map(r => r.athlete_id));
+            const reportedAthletes = new Set<string>(reports.map((r: any) => r.athlete_id));
             reportedAthletes.forEach(athleteId => {
                 const coachId = athleteToCoach[athleteId];
                 if (coachId) {
@@ -419,7 +419,7 @@ export async function fetchCoachMonthlyStatistics(
         }
         
         // Calculate rate
-        coachIds.forEach(id => {
+        coachIds.forEach((id: string) => {
             const assigned = assignedAthletesCount[id] || 0;
             const written = reportsCount[id] || 0;
             if (assigned > 0) {
@@ -446,7 +446,7 @@ export async function fetchCoachMonthlyStatistics(
             
         const loginMap: Record<string, Set<string>> = {};
         if (activityLogs) {
-            activityLogs.forEach(a => {
+            activityLogs.forEach((a: any) => {
                 if (a.activity_type === "login" || a.activity_type === "daily_visit") {
                     if (!loginMap[a.user_id]) loginMap[a.user_id] = new Set();
                     loginMap[a.user_id].add(a.created_at.split("T")[0]);
@@ -454,14 +454,14 @@ export async function fetchCoachMonthlyStatistics(
             });
         }
         if (loginLogs) {
-            loginLogs.forEach(l => {
+            loginLogs.forEach((l: any) => {
                 if (!loginMap[l.user_id]) loginMap[l.user_id] = new Set();
                 const date = l.created_at.split("T")[0];
                 loginMap[l.user_id].add(date);
             });
         }
         
-        coachIds.forEach(id => {
+        coachIds.forEach((id: string) => {
             coachMap[id].login = loginMap[id] ? loginMap[id].size : 0;
         });
 

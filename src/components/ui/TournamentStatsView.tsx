@@ -78,19 +78,30 @@ export function TournamentStatsView({ tournamentId, totalRounds, tournamentStart
 
         try {
             // 1. Get scorecard IDs for this tournament from scorecards
+            // Only include scorecards that have completed both player and referee signatures
             let scQuery = supabase
                 .from('scorecards')
-                .select('id, round_date')
+                .select(`
+                    id, round_date, tournament_round, marker_id, athlete_id, player_signature, referee_signature,
+                    marker_user:users!scorecards_marker_id_fkey(id, name),
+                    athlete_user:users!scorecards_athlete_id_fkey(id, name)
+                `)
                 .eq('tournament_id', tournamentId)
-                .eq('is_final', true);
+                .eq('is_final', true)
+                .not('player_signature', 'is', null)
+                .not('referee_signature', 'is', null);
                 
-            if (selectedRoundFilter !== "ALL" && tournamentStartDate) {
-                // Calculate target date based on start_date and round number
+            if (selectedRoundFilter !== "ALL") {
                 const roundNum = parseInt(selectedRoundFilter);
-                const start = new Date(tournamentStartDate);
-                start.setDate(start.getDate() + (roundNum - 1));
-                const targetDate = start.toISOString().split('T')[0];
-                scQuery = scQuery.eq('round_date', targetDate);
+                // Filter by tournament_round, or round_date fallback if tournamentStartDate exists
+                if (tournamentStartDate) {
+                    const start = new Date(tournamentStartDate);
+                    start.setDate(start.getDate() + (roundNum - 1));
+                    const targetDate = start.toISOString().split('T')[0];
+                    scQuery = scQuery.or(`tournament_round.eq.${roundNum},round_date.eq.${targetDate}`);
+                } else {
+                    scQuery = scQuery.eq('tournament_round', roundNum);
+                }
             }
             
             const { data: scorecardsData, error: scError } = await scQuery;
@@ -101,12 +112,29 @@ export function TournamentStatsView({ tournamentId, totalRounds, tournamentStart
                 return;
             }
             
-            const scorecardIds = scorecardsData?.map(sc => sc.id) || [];
+            const scorecardIds = scorecardsData?.map((sc: { id: string }) => sc.id) || [];
             
             if (scorecardIds.length === 0) {
                 setAthleteStatsList([]);
                 return;
             }
+
+            // Map scorecard ID to the actual target athlete ID and name
+            // In tournament scorecards, marker_id is the target athlete whose score is tracked
+            const scTargetAthleteMap = new Map<string, { id: string; name: string }>();
+            scorecardsData?.forEach((sc: any) => {
+                if (sc.marker_id) {
+                    scTargetAthleteMap.set(sc.id, {
+                        id: sc.marker_id,
+                        name: sc.marker_user?.name || "선수"
+                    });
+                } else if (sc.athlete_id) {
+                    scTargetAthleteMap.set(sc.id, {
+                        id: sc.athlete_id,
+                        name: sc.athlete_user?.name || "선수"
+                    });
+                }
+            });
 
             // 2. Fetch summaries
             const { data: summaries, error } = await supabase
@@ -126,13 +154,17 @@ export function TournamentStatsView({ tournamentId, totalRounds, tournamentStart
             // Aggregate by athlete
             const athleteMap = new Map<string, any>();
             for (const row of (summaries || [])) {
-                const athlete = row.athlete as any;
-                if (!athlete) continue;
+                // If this scorecard was written by a marker for a player, associate with the target player
+                const targetAthlete = scTargetAthleteMap.get(row.scorecard_id);
+                const effectiveAthleteId = targetAthlete?.id || row.athlete_id;
+                const effectiveAthleteName = targetAthlete?.name || (row.athlete as any)?.name || "선수";
                 
-                if (!athleteMap.has(row.athlete_id)) {
-                    athleteMap.set(row.athlete_id, {
-                        athleteId: row.athlete_id,
-                        athleteName: athlete.name,
+                if (!effectiveAthleteId) continue;
+                
+                if (!athleteMap.has(effectiveAthleteId)) {
+                    athleteMap.set(effectiveAthleteId, {
+                        athleteId: effectiveAthleteId,
+                        athleteName: effectiveAthleteName,
                         rounds: 0,
                         total_score: 0,
                         tee_dist_sg: 0, tee_acc_sg: 0,
@@ -147,7 +179,7 @@ export function TournamentStatsView({ tournamentId, totalRounds, tournamentStart
                     });
                 }
 
-                const stat = athleteMap.get(row.athlete_id);
+                const stat = athleteMap.get(effectiveAthleteId);
                 stat.rounds += 1;
                 stat.total_score += row.total_score;
                 stat.tee_dist_sg += row.tee_dist_sg;

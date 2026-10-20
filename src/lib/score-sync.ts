@@ -184,7 +184,7 @@ export async function fetchLatestScoreByPlayer(playerName: string, targetDate?: 
         if (!scorecards || scorecards.length === 0) return null;
 
         // Find the most recent scorecard that is not a draft (is_final !== false)
-        const scorecard = scorecards.find(s => s.is_final !== false);
+        const scorecard = scorecards.find((s: any) => s.is_final !== false);
 
         if (!scorecard) return null;
 

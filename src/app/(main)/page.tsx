@@ -201,26 +201,26 @@ export default function Home() {
           // Super Admin: Fetch ALL athlete IDs
           const { data: allAthletes } = await supabase.from("users").select("id").eq("role", "athlete");
           if (allAthletes) {
-            targetAthleteIds = allAthletes.map(a => a.id);
-            scoreTargetAthleteIds = allAthletes.map(a => a.id);
+            targetAthleteIds = allAthletes.map((a: any) => a.id);
+            scoreTargetAthleteIds = allAthletes.map((a: any) => a.id);
           }
         } else if (profile.role === "coach") {
           // Coach: Find assigned athletes (for training)
           if (profile.assigned_athletes) {
             const names = profile.assigned_athletes.split(',').map((s: string) => s.trim());
             const { data: athletes } = await supabase.from("users").select("id").in("name", names).eq("role", "athlete");
-            if (athletes) targetAthleteIds = athletes.map(a => a.id);
+            if (athletes) targetAthleteIds = athletes.map((a: any) => a.id);
           }
           // Coach: Find branch athletes (for scores)
           if (profile.role === "headquarter" || profile.role === "office") {
               const { data: allBranchAthletes } = await supabase.from("users").select("id").eq("role", "athlete");
               if (allBranchAthletes) {
-                scoreTargetAthleteIds = allBranchAthletes.map(a => a.id);
+                scoreTargetAthleteIds = allBranchAthletes.map((a: any) => a.id);
               }
           } else if (profile.branch) {
               const { data: branchAthletes } = await supabase.from("users").select("id").eq("branch", profile.branch).eq("role", "athlete");
               if (branchAthletes) {
-                scoreTargetAthleteIds = branchAthletes.map(a => a.id);
+                scoreTargetAthleteIds = branchAthletes.map((a: any) => a.id);
               }
           }
           if (scoreTargetAthleteIds.length === 0) {
@@ -244,7 +244,7 @@ export default function Home() {
             .lte("round_date", endOfMonth);
 
           if (scoreData && scoreData.length > 0) {
-            const avg = scoreData.reduce((s, x) => s + x.total_score, 0) / scoreData.length;
+            const avg = scoreData.reduce((s: number, x: any) => s + x.total_score, 0) / scoreData.length;
             setStats(prev => ({ ...prev, avgScore: avg }));
           }
         }
@@ -261,7 +261,7 @@ export default function Home() {
 
           if (activeTrainings && activeTrainings.length > 0) {
             let totalProgress = 0;
-            activeTrainings.forEach(train => {
+            activeTrainings.forEach((train: any) => {
               let parsedLogs: string[] = [];
               if (Array.isArray(train.completion_logs)) {
                 parsedLogs = train.completion_logs;
@@ -366,10 +366,10 @@ export default function Home() {
             const dd = String(effectiveDate.getDate()).padStart(2, '0');
             const voteDateStr = `${yyyy}-${mm}-${dd}`;
 
-            const votedToday = pollResponses?.some(pr => pr.poll_id === p.id && pr.vote_date === voteDateStr);
+            const votedToday = pollResponses?.some((pr: any) => pr.poll_id === p.id && pr.vote_date === voteDateStr);
             hasNotVoted = !votedToday;
           } else {
-            hasNotVoted = !pollResponses?.some(pr => pr.poll_id === p.id);
+            hasNotVoted = !pollResponses?.some((pr: any) => pr.poll_id === p.id);
           }
 
           return hasNotVoted;
@@ -404,11 +404,11 @@ export default function Home() {
             time: "20:00",
             title: "훈련일지 작성",
             type: 'journal',
-            completed: todayRecords?.some(r => r.type === 'journal') || false
+            completed: todayRecords?.some((r: any) => r.type === 'journal') || false
           });
 
           // 2. Active Trainings
-          (activeTrainings || []).forEach(at => {
+          (activeTrainings || []).forEach((at: any) => {
             const isCompletedInLogs = at.completion_logs?.some((log: string) => {
               try {
                 const ts = log.startsWith('{') ? JSON.parse(log).timestamp : log;
@@ -426,13 +426,13 @@ export default function Home() {
           });
 
           // 3. Active Polls
-          (activePolls || []).forEach(p => {
+          (activePolls || []).forEach((p: any) => {
             autoItems.push({
               id: `poll-auto-${p.id}`,
               time: "종일",
               title: `[투표] ${p.title}`,
               type: 'poll',
-              completed: pollResponses?.some(pr => pr.poll_id === p.id) || false
+              completed: pollResponses?.some((pr: any) => pr.poll_id === p.id) || false
             });
           });
         }
@@ -441,7 +441,7 @@ export default function Home() {
           ...autoItems,
           ...todaySchedules.map(s => {
             // Check if there's a matching record today
-            const isCompletedByRecord = todayRecords?.some(r =>
+            const isCompletedByRecord = todayRecords?.some((r: any) =>
               r.type === s.type &&
               (r.title === s.title || s.title?.includes(r.title || "") || r.title?.includes(s.title || ""))
             );
@@ -453,7 +453,7 @@ export default function Home() {
               completed: s.status === 'completed' || isCompletedByRecord
             };
           }),
-          ...(todos || []).map(t => ({
+          ...(todos || []).map((t: any) => ({
             id: t.id,
             time: "종일",
             title: t.title,
@@ -461,7 +461,7 @@ export default function Home() {
             completed: t.is_completed
           })),
           // Add records that are NOT journals and NOT matched to schedules or trainings
-          ...(todayRecords || []).filter(r => {
+          ...(todayRecords || []).filter((r: any) => {
             const isJournal = r.type === 'journal';
             const isUsedInTraining = false;
             const matchesSchedule = todaySchedules.some(s =>
@@ -469,7 +469,7 @@ export default function Home() {
               (r.title === s.title || s.title?.includes(r.title || "") || r.title?.includes(s.title || ""))
             );
             return !isJournal && !isUsedInTraining && !matchesSchedule;
-          }).map(r => ({
+          }).map((r: any) => ({
             id: `record-${r.id}`,
             time: new Date(r.created_at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' }),
             title: r.title || typeLabels[r.type] || "기록",
@@ -477,7 +477,7 @@ export default function Home() {
             completed: true
           })),
           // Add scorecards from today
-          ...(todayScores || []).map(s => ({
+          ...(todayScores || []).map((s: any) => ({
             id: `score-${s.id}`,
             time: new Date(s.created_at).toLocaleTimeString('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' }),
             title: `${s.course_name} 스코어 입력`,

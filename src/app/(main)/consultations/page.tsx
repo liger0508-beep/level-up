@@ -76,7 +76,7 @@ export default function ConsultationsPage() {
                     .eq('coach_id', user.id)
                     .eq('month', currentMonth);
                 
-                coachAssignedIds = assignments?.map(a => a.athlete_id) || [];
+                coachAssignedIds = assignments?.map((a: any) => a.athlete_id) || [];
                 setAssignedAthleteIds(coachAssignedIds);
             }
 

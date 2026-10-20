@@ -17,6 +17,7 @@ interface LiveScoreModalProps {
 export function LiveScoreModal({ isOpen, onClose, tournamentId, athleteId, athleteName, usePlainNumbers = false }: LiveScoreModalProps) {
     const [loading, setLoading] = useState(true);
     const [scorecard, setScorecard] = useState<any>(null);
+    const [athleteScorecardId, setAthleteScorecardId] = useState<string | null>(null);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -25,7 +26,7 @@ export function LiveScoreModal({ isOpen, onClose, tournamentId, athleteId, athle
             setLoading(true);
             const supabase = createClient();
             
-            // Fetch the marker's scorecard for this athlete (official score)
+            // 1. Fetch the marker's scorecard for this athlete (official score)
             const { data: scData, error } = await supabase
                 .from("scorecards")
                 .select(`
@@ -38,6 +39,22 @@ export function LiveScoreModal({ isOpen, onClose, tournamentId, athleteId, athle
                 .order("created_at", { ascending: false })
                 .limit(1)
                 .maybeSingle();
+
+            // 2. Fetch the athlete's own scorecard (본인 선택으로 작성된 선수의 스코어카드)
+            const { data: ownScData } = await supabase
+                .from("scorecards")
+                .select("id")
+                .eq("tournament_id", tournamentId)
+                .eq("athlete_id", athleteId)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+
+            if (ownScData?.id) {
+                setAthleteScorecardId(ownScData.id);
+            } else {
+                setAthleteScorecardId(null);
+            }
 
             if (scData) {
                 // Map marker_scores and base_holes into a unified 'holes' array
@@ -186,22 +203,41 @@ export function LiveScoreModal({ isOpen, onClose, tournamentId, athleteId, athle
                                 const outScore = renderScore(1, 9);
                                 const inScore = renderScore(10, 18);
                                 const totalScoreSum = outScore.sum + inScore.sum;
+                                
+                                // Calculate total PAR only for holes that have a score entered
+                                let playedParSum = 0;
+                                if (scorecard.holes) {
+                                    scorecard.holes.forEach((h: any) => {
+                                        if (h.score > 0 && h.par > 0) {
+                                            playedParSum += h.par;
+                                        }
+                                    });
+                                }
+                                const totalDiff = playedParSum > 0 ? totalScoreSum - playedParSum : 0;
+                                const diffDisplay = totalDiff === 0 ? "E" : totalDiff > 0 ? `+${totalDiff}` : `${totalDiff}`;
 
                                 return (
                                     <>
                                         {/* Summary Card */}
                                         <div className="flex items-center justify-between bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl p-4 border border-zinc-100 dark:border-zinc-800">
                                             <div className="flex flex-col items-center flex-1 border-r border-zinc-200 dark:border-zinc-700">
-                                                <span className="text-[10px] font-bold text-zinc-400 mb-0.5">OUT</span>
-                                                <span className="text-sm font-black text-zinc-900 dark:text-white">{outScore.sum || "-"}</span>
+                                                <span className="text-[10px] sm:text-xs font-bold text-zinc-400 mb-0.5">OUT</span>
+                                                <span className="text-sm sm:text-base font-black text-zinc-900 dark:text-white">{outScore.sum || "-"}</span>
                                             </div>
                                             <div className="flex flex-col items-center flex-1 border-r border-zinc-200 dark:border-zinc-700">
-                                                <span className="text-[10px] font-bold text-zinc-400 mb-0.5">IN</span>
-                                                <span className="text-sm font-black text-zinc-900 dark:text-white">{inScore.sum || "-"}</span>
+                                                <span className="text-[10px] sm:text-xs font-bold text-zinc-400 mb-0.5">IN</span>
+                                                <span className="text-sm sm:text-base font-black text-zinc-900 dark:text-white">{inScore.sum || "-"}</span>
                                             </div>
                                             <div className="flex flex-col items-center flex-1">
-                                                <span className="text-[10px] font-bold text-brand-navy mb-0.5">TOTAL</span>
-                                                <span className="text-sm font-black text-brand-navy">{totalScoreSum || "-"}</span>
+                                                <span className="text-[10px] sm:text-xs font-bold text-brand-navy mb-0.5">TOTAL</span>
+                                                <span className="text-sm sm:text-base font-black text-brand-navy flex items-center justify-center gap-1">
+                                                    <span>{totalScoreSum || "-"}</span>
+                                                    {totalScoreSum > 0 && playedParSum > 0 && (
+                                                        <span className="text-xs sm:text-sm font-bold">
+                                                            ({diffDisplay})
+                                                        </span>
+                                                    )}
+                                                </span>
                                             </div>
                                         </div>
 
@@ -266,21 +302,25 @@ export function LiveScoreModal({ isOpen, onClose, tournamentId, athleteId, athle
                                         </div>
 
                                         <div className="flex justify-end pt-2">
-                                            <a 
-                                                href={`/scores/${scorecard.id}`}
+                                            <button 
+                                                type="button"
                                                 onClick={(e) => {
                                                     e.preventDefault();
+                                                    if (!athleteScorecardId) {
+                                                        alert("아직 스코어 등록 전 입니다.");
+                                                        return;
+                                                    }
                                                     const currentUrl = new URL(window.location.href);
                                                     currentUrl.searchParams.set('live_athlete', athleteId);
                                                     currentUrl.searchParams.set('live_name', athleteName);
                                                     window.history.replaceState(null, '', currentUrl.toString());
-                                                    window.location.href = `/scores/${scorecard.id}`;
+                                                    window.location.href = `/scores/${athleteScorecardId}`;
                                                 }}
-                                                className="inline-flex items-center gap-1.5 px-4 py-2 bg-brand-navy hover:bg-brand-navy/90 text-white text-[13px] font-bold rounded-xl transition-colors shadow-sm"
+                                                className="inline-flex items-center gap-1.5 px-4 py-2 bg-brand-navy hover:bg-brand-navy/90 text-white text-[13px] font-bold rounded-xl transition-colors shadow-sm cursor-pointer"
                                             >
                                                 상세 스코어 확인
                                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-                                            </a>
+                                            </button>
                                         </div>
                                     </>
                                 );

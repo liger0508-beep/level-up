@@ -120,7 +120,7 @@ export default function LessonDetailPage() {
                 // Load user profile non-blocking
                 const user = userRes.data?.user;
                 if (user) {
-                    supabase.from("users").select("role, name").eq("id", user.id).single().then(({ data: profile }) => {
+                    supabase.from("users").select("role, name").eq("id", user.id).single().then(({ data: profile }: any) => {
                         if (profile) {
                             setCurrentUser({ id: user.id, name: profile.name || 'User', role: profile.role });
                         }

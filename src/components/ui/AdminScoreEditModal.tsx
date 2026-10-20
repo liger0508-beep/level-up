@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { X, Loader2, AlertCircle, Save } from 'lucide-react';
+import { X, Loader2, AlertCircle, Save, Pencil, Edit3 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
 interface AdminScoreEditModalProps {
@@ -35,6 +35,8 @@ export function AdminScoreEditModal({
         fetchData();
     }, [isOpen, scorecardId]);
 
+    const [roundNumber, setRoundNumber] = useState<number>(1);
+
     const fetchData = async () => {
         setLoading(true);
         const supabase = createClient();
@@ -43,11 +45,16 @@ export function AdminScoreEditModal({
             .from("scorecards")
             .select(`
                 id, 
+                tournament_round,
                 marker_scores:tournament_marker_scores(*),
                 holes:scorecard_holes(*)
             `)
             .eq("id", scorecardId)
             .single();
+
+        if (officialSc?.tournament_round) {
+            setRoundNumber(officialSc.tournament_round);
+        }
 
         const { data: selfScData } = await supabase
             .from("scorecards")
@@ -161,19 +168,41 @@ export function AdminScoreEditModal({
 
             // Update total score in scorecards
             let total = 0;
+            let thruCount = 0;
             Object.values(markerScores).forEach(s => {
-                if (s > 0) total += s;
+                if (s > 0) {
+                    total += s;
+                    thruCount++;
+                }
             });
             
             const { error: updateError } = await supabase
                 .from("scorecards")
                 .update({ 
                     total_score: total,
-                    is_final: Object.values(markerScores).filter(s => s > 0).length === 18
+                    is_final: thruCount === 18
                 })
                 .eq("id", scorecardId);
 
             if (updateError) throw updateError;
+
+            // Update tournament_leaderboards for Live Leaderboard display
+            if (tournamentId && athleteId) {
+                const { error: lbError } = await supabase
+                    .from("tournament_leaderboards")
+                    .upsert({
+                        tournament_id: tournamentId,
+                        athlete_id: athleteId,
+                        round_number: roundNumber || 1,
+                        thru_hole: thruCount,
+                        total_score: total,
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: "tournament_id,athlete_id,round_number" });
+
+                if (lbError) {
+                    console.error("리더보드 업데이트 오류:", lbError);
+                }
+            }
             
             alert("수정사항이 성공적으로 저장되었습니다.");
             if (onSaveSuccess) onSaveSuccess();
@@ -194,7 +223,7 @@ export function AdminScoreEditModal({
                 
                 <div className="flex items-center justify-between px-6 py-5 border-b border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 z-10 shrink-0">
                     <h2 className="text-xl font-bold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
-                        스코어 수정 (관리자/마커) <span className="text-zinc-400 text-sm font-semibold ml-2">({athleteName})</span>
+                        스코어 수정 <span className="text-zinc-400 text-sm font-semibold ml-2">({athleteName})</span>
                     </h2>
                     <button
                         onClick={onClose}
@@ -204,7 +233,7 @@ export function AdminScoreEditModal({
                     </button>
                 </div>
 
-                <div className="p-6 overflow-y-auto flex-1 relative">
+                <div className="px-3 py-5 sm:p-6 overflow-y-auto flex-1 relative">
                     {loading ? (
                         <div className="flex flex-col items-center justify-center h-48 gap-3">
                             <Loader2 className="w-8 h-8 text-brand-navy animate-spin" />
@@ -212,13 +241,6 @@ export function AdminScoreEditModal({
                         </div>
                     ) : (
                         <div className="space-y-6">
-                            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/50 rounded-2xl p-4 flex gap-3 text-blue-600 dark:text-blue-400">
-                                <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                                <div className="text-sm font-semibold flex items-center">
-                                    <p>수정하려는 PAR 또는 스코어 숫자를 클릭하면 선택창이 나타납니다.</p>
-                                </div>
-                            </div>
-                            
                             {(() => {
                                 const renderDualScore = (start: number, end: number) => {
                                     const parCells = [];
@@ -249,7 +271,7 @@ export function AdminScoreEditModal({
                                         parCells.push(
                                             <td 
                                                 key={i} 
-                                                className={`px-1 sm:px-2 py-1.5 sm:py-2 text-[11px] sm:text-[13px] min-w-[20px] sm:min-w-[36px] cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 ${parMismatchBg}`}
+                                                className={`px-0 sm:px-1.5 py-1.5 sm:py-2 text-[10px] sm:text-[13px] cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 ${parMismatchBg}`}
                                                 onClick={() => handleCellClick(i, mPar, mScore)}
                                             >
                                                 {mPar || "-"}
@@ -258,20 +280,22 @@ export function AdminScoreEditModal({
                                         
                                         // Player Score (Read-only)
                                         pScoreCells.push(
-                                            <td key={i} className={`px-1 sm:px-2 py-2 sm:py-2.5 font-bold ${scoreMismatchBg}`}>
+                                            <td key={i} className={`px-0 sm:px-1.5 py-1.5 sm:py-2.5 font-bold text-[10px] sm:text-[13px] ${scoreMismatchBg}`}>
                                                 {pScore || "-"}
                                             </td>
                                         );
 
-                                        // Marker Score (Editable via Popup)
+                                        // Marker Score (Editable via Popup) - 회색 네모칸만 유지, 아이콘 삭제
                                         mScoreCells.push(
                                             <td 
                                                 key={i} 
-                                                className={`px-1 sm:px-2 py-1 sm:py-1.5 align-middle cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 ${scoreMismatchBg}`}
+                                                className={`px-0.5 sm:px-1 py-1 sm:py-1.5 align-middle cursor-pointer transition-colors ${scoreMismatchBg}`}
                                                 onClick={() => handleCellClick(i, mPar, mScore)}
                                             >
-                                                <div className="font-bold sm:font-black tracking-tighter text-[13px] sm:text-[15px] text-zinc-800 dark:text-zinc-200">
-                                                    {mScore || "-"}
+                                                <div className="relative flex items-center justify-center w-full max-w-[26px] sm:max-w-[34px] h-6 sm:h-7.5 rounded bg-zinc-50 dark:bg-zinc-800/80 border border-zinc-200/90 dark:border-zinc-700/80 hover:border-brand-navy hover:bg-brand-navy/5 dark:hover:bg-brand-navy/20 hover:shadow-xs transition-all mx-auto">
+                                                    <span className="font-bold sm:font-black tracking-tighter text-[11px] sm:text-[13px] text-zinc-800 dark:text-zinc-100">
+                                                        {mScore || "-"}
+                                                    </span>
                                                 </div>
                                             </td>
                                         );
@@ -281,37 +305,43 @@ export function AdminScoreEditModal({
 
                                 const outRes = renderDualScore(1, 9);
                                 const inRes = renderDualScore(10, 18);
+                                const totalScore = (outRes.mSum || 0) + (inRes.mSum || 0);
+                                const totalPar = (outRes.parSum || 0) + (inRes.parSum || 0);
+                                const totalDiff = totalPar > 0 ? totalScore - totalPar : 0;
+                                const diffDisplay = totalDiff === 0 ? "E" : totalDiff > 0 ? `+${totalDiff}` : `${totalDiff}`;
 
                                 const renderTable = (label: string, res: any) => (
-                                    <div className="border border-zinc-200 dark:border-zinc-700 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm">
-                                        <div className="overflow-x-auto">
-                                            <table className="w-full text-center text-[10px] sm:text-sm min-w-full">
+                                    <div className="border border-zinc-200 dark:border-zinc-700 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm w-full">
+                                        <div className="overflow-hidden">
+                                            <table className="w-full table-fixed text-center text-[9px] sm:text-sm">
                                                 <thead>
                                                     <tr className="bg-zinc-50 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700 font-bold text-zinc-600 dark:text-zinc-300">
-                                                        <th className="px-1 sm:px-3 py-2 w-14 sm:w-20 bg-zinc-100 dark:bg-zinc-900/50 border-r border-zinc-200 dark:border-zinc-700 whitespace-nowrap">HOLE</th>
+                                                        <th className="px-0 sm:px-2 py-2 sm:py-3 w-11 sm:w-16 bg-zinc-100 dark:bg-zinc-900/50 border-r border-zinc-200 dark:border-zinc-700 whitespace-nowrap overflow-hidden">HOLE</th>
                                                         {Array.from({length: 9}).map((_, idx) => (
-                                                            <th key={idx} className="px-1 py-2 min-w-[22px] sm:min-w-[36px]">
+                                                            <th key={idx} className="px-0 py-2 sm:py-3 truncate font-semibold">
                                                                 {label === 'OUT' ? idx + 1 : idx + 10}
                                                             </th>
                                                         ))}
-                                                        <th className="px-1 sm:px-3 py-2 bg-zinc-100 dark:bg-zinc-900/50 border-l border-zinc-200 dark:border-zinc-700 text-brand-navy w-12 sm:w-16 whitespace-nowrap">{label}</th>
+                                                        <th className="px-0 sm:px-2 py-2 sm:py-3 bg-zinc-100 dark:bg-zinc-900/50 border-l border-zinc-200 dark:border-zinc-700 text-brand-navy w-9 sm:w-14 whitespace-nowrap overflow-hidden font-bold">{label}</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
-                                                    <tr className="border-b border-zinc-100 dark:border-zinc-800 text-zinc-500 font-bold bg-white dark:bg-zinc-900">
-                                                        <td className="px-1 sm:px-3 py-1.5 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700 text-[10px] sm:text-[12px]">PAR</td>
+                                                    <tr className="border-b border-zinc-100 dark:border-zinc-800 text-zinc-500 font-semibold bg-white dark:bg-zinc-900">
+                                                        <td className="px-0 sm:px-2 py-1.5 sm:py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700 overflow-hidden text-[9px] sm:text-xs">PAR</td>
                                                         {res.parCells}
-                                                        <td className="px-1 sm:px-3 py-1.5 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700">{res.parSum || "-"}</td>
+                                                        <td className="px-0 sm:px-2 py-1.5 sm:py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700 overflow-hidden font-semibold">{res.parSum || "-"}</td>
                                                     </tr>
                                                     <tr className="border-b border-zinc-100 dark:border-zinc-800 font-bold text-blue-600 dark:text-blue-400 bg-white dark:bg-zinc-900">
-                                                        <td className="px-1 sm:px-3 py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700 whitespace-nowrap text-[10px] sm:text-xs">내 스코어</td>
+                                                        <td className="px-0 sm:px-2 py-1.5 sm:py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700 whitespace-nowrap overflow-hidden text-[9px] sm:text-xs">선수 입력</td>
                                                         {res.pScoreCells}
-                                                        <td className="px-1 sm:px-3 py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700 text-blue-700 dark:text-blue-300">{res.pSum || "-"}</td>
+                                                        <td className="px-0 sm:px-2 py-1.5 sm:py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700 text-blue-700 dark:text-blue-300 overflow-hidden font-bold">{res.pSum || "-"}</td>
                                                     </tr>
-                                                    <tr className="font-bold text-zinc-600 dark:text-zinc-400 bg-white dark:bg-zinc-900">
-                                                        <td className="px-1 sm:px-3 py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-r border-zinc-200 dark:border-zinc-700 whitespace-nowrap text-[10px] sm:text-xs">마커 입력</td>
+                                                    <tr className="font-bold text-zinc-800 dark:text-zinc-200 bg-amber-50/30 dark:bg-amber-950/10">
+                                                        <td className="px-0 sm:px-2 py-1.5 sm:py-2 bg-amber-100/50 dark:bg-amber-900/20 border-r border-zinc-200 dark:border-zinc-700 whitespace-nowrap overflow-hidden text-[9px] sm:text-xs text-amber-800 dark:text-amber-400">
+                                                            마커 입력
+                                                        </td>
                                                         {res.mScoreCells}
-                                                        <td className="px-1 sm:px-3 py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700">{res.mSum || "-"}</td>
+                                                        <td className="px-0 sm:px-2 py-1.5 sm:py-2 bg-zinc-50/50 dark:bg-zinc-800/30 border-l border-zinc-200 dark:border-zinc-700 font-black overflow-hidden">{res.mSum || "-"}</td>
                                                     </tr>
                                                 </tbody>
                                             </table>
@@ -321,6 +351,29 @@ export function AdminScoreEditModal({
 
                                 return (
                                     <>
+                                        {/* Summary Card (OUT, IN, TOTAL) */}
+                                        <div className="flex items-center justify-between bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl p-4 border border-zinc-100 dark:border-zinc-800 shadow-xs">
+                                            <div className="flex flex-col items-center flex-1 border-r border-zinc-200 dark:border-zinc-700">
+                                                <span className="text-[10px] sm:text-xs font-bold text-zinc-400 mb-0.5">OUT</span>
+                                                <span className="text-sm sm:text-base font-black text-zinc-900 dark:text-white">{outRes.mSum || "-"}</span>
+                                            </div>
+                                            <div className="flex flex-col items-center flex-1 border-r border-zinc-200 dark:border-zinc-700">
+                                                <span className="text-[10px] sm:text-xs font-bold text-zinc-400 mb-0.5">IN</span>
+                                                <span className="text-sm sm:text-base font-black text-zinc-900 dark:text-white">{inRes.mSum || "-"}</span>
+                                            </div>
+                                            <div className="flex flex-col items-center flex-1">
+                                                <span className="text-[10px] sm:text-xs font-bold text-brand-navy dark:text-brand-navy-light mb-0.5">TOTAL</span>
+                                                <span className="text-sm sm:text-base font-black text-brand-navy dark:text-brand-navy-light flex items-center justify-center gap-1">
+                                                    <span>{totalScore || "-"}</span>
+                                                    {totalScore > 0 && totalPar > 0 && (
+                                                        <span className="text-xs sm:text-sm font-bold">
+                                                            ({diffDisplay})
+                                                        </span>
+                                                    )}
+                                                </span>
+                                            </div>
+                                        </div>
+
                                         {renderTable('OUT', outRes)}
                                         {renderTable('IN', inRes)}
                                         

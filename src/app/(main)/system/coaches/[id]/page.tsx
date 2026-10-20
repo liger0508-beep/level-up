@@ -130,7 +130,7 @@ export default function CoachDetailPage() {
                 const standardBranches = ["조이마루점", "구미점"];
                 let allBranches = [...standardBranches];
                 if (branchesData) {
-                    const dynamicBranches = branchesData.map(b => b.branch).filter(v => v && v !== "미지정" && v !== "" && v !== "총괄" && v !== "오피스" && !standardBranches.includes(v));
+                    const dynamicBranches = branchesData.map((b: any) => b.branch as string).filter((v: string) => v && v !== "미지정" && v !== "" && v !== "총괄" && v !== "오피스" && !standardBranches.includes(v)) as string[];
                     allBranches = [...allBranches, ...Array.from(new Set(dynamicBranches))];
                 }
                 setAvailableBranches(allBranches as string[]);

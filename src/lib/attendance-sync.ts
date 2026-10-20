@@ -33,7 +33,7 @@ export async function fetchAttendance(date: string, branch: string = "all") {
         return [];
     }
 
-    return data.map(item => ({
+    return data.map((item: any) => ({
         ...item,
         athlete_name: (item.athlete as any)?.name || "Unknown"
     }));

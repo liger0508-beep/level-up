@@ -146,7 +146,7 @@ export default function CourseManagementDetailPage() {
             // 2. Prepare Todo Inserts
             const todayStr = getKstDateStr();
             const contentPreview = record?.content ? (record.content.length > 50 ? record.content.substring(0, 50) + '...' : record.content) : '';
-            const inserts = users.map(u => ({
+            const inserts = users.map((u: { id: string, name: string }) => ({
                 user_id: u.id,
                 assigner_id: currentUser?.id,
                 title: `[골프IQ 전달] ${record?.title || '새 내용'}:::ID:::${id}`,

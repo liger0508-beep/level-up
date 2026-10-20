@@ -9,6 +9,7 @@ import { PageTitle } from "@/components/ui/Typography";
 import { LiveScoreModal } from "@/components/ui/LiveScoreModal";
 import { CrossCheckSignatureModal } from "@/components/ui/CrossCheckSignatureModal";
 import { AdminScoreEditModal } from "@/components/ui/AdminScoreEditModal";
+import { RefereeConfirmSignatureModal } from "@/components/ui/RefereeConfirmSignatureModal";
 import { TournamentStatsView } from "@/components/ui/TournamentStatsView";
 import { SignaturePad } from "@/components/ui/SignaturePad";
 import "react-quill-new/dist/quill.snow.css";
@@ -39,6 +40,7 @@ export default function TournamentDetailPage() {
     const [selectedLiveScoreAthlete, setSelectedLiveScoreAthlete] = useState<{id: string, name: string} | null>(null);
     const [selectedCrossCheckAthlete, setSelectedCrossCheckAthlete] = useState<{id: string, name: string, scorecardId: string} | null>(null);
     const [selectedAdminEdit, setSelectedAdminEdit] = useState<{id: string, name: string, scorecardId: string} | null>(null);
+    const [selectedRefereeConfirm, setSelectedRefereeConfirm] = useState<{id: string, name: string, scorecardId: string} | null>(null);
 
     // Signature Modal State
     const [showSignatureModal, setShowSignatureModal] = useState(false);
@@ -156,7 +158,7 @@ export default function TournamentDetailPage() {
                 
             if (scData) {
                 const map: Record<string, any> = {};
-                scData.forEach(sc => {
+                scData.forEach((sc: any) => {
                     const targetId = sc.marker_id;
                     const roundNum = sc.tournament_round || 1;
                     if (targetId) {
@@ -217,10 +219,12 @@ export default function TournamentDetailPage() {
         const updateData: any = {};
         
         if (signatureType === 'player') {
-            updateData.marker_signature = tempMarkerSignature;
+            if (tempMarkerSignature) {
+                updateData.marker_signature = tempMarkerSignature;
+                updateData.marker_signed_at = new Date().toISOString();
+            }
             updateData.player_signature = finalSignatureDataUrl;
             updateData.player_signed_at = new Date().toISOString();
-            updateData.marker_signed_at = new Date().toISOString();
         } else {
             updateData.referee_signature = finalSignatureDataUrl;
             updateData.referee_signed_at = new Date().toISOString();
@@ -243,12 +247,13 @@ export default function TournamentDetailPage() {
         // Refresh scorecards map
         const { data: updatedSc } = await supabase
             .from("scorecards")
-            .select("id, athlete_id, round_number, marker_signature, player_signature, referee_signature")
+            .select("id, athlete_id, marker_id, tournament_round, marker_signature, player_signature, referee_signature")
             .eq("id", targetScorecardId)
             .single();
             
-        if (updatedSc) {
-            setScorecardsMap(prev => ({ ...prev, [`${updatedSc.athlete_id}_${updatedSc.round_number}`]: updatedSc }));
+        if (updatedSc && updatedSc.marker_id) {
+            const roundNum = updatedSc.tournament_round || 1;
+            setScorecardsMap(prev => ({ ...prev, [`${updatedSc.marker_id}_${roundNum}`]: updatedSc }));
         }
     };
 
@@ -603,7 +608,13 @@ export default function TournamentDetailPage() {
                                         {leaderboardTab === 'pending' && (
                                             <th className="px-2 sm:px-6 py-4 text-center whitespace-nowrap">상태</th>
                                         )}
-                                        <th className="px-2 sm:px-6 py-4 text-center whitespace-nowrap">관리</th>
+                                        {/* 관리 컬럼: 서명대기(pending) 탭에서만 표시 (슈퍼관리자/오피스/본부 또는 본인이 마커인 스코어카드가 있는 경우) */}
+                                        {leaderboardTab === 'pending' && (
+                                            ['admin', 'superadmin', 'super_admin', 'headquarter', 'office'].includes(userRole) ||
+                                            displayLeaderboard.some(lb => scorecardsMap[`${lb.athlete?.id}_${selectedRound}`]?.athlete_id === userId)
+                                        ) && (
+                                            <th className="px-2 sm:px-6 py-4 text-center whitespace-nowrap">관리</th>
+                                        )}
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
@@ -702,7 +713,9 @@ export default function TournamentDetailPage() {
                                                                     onClick={(e) => { 
                                                                         e.stopPropagation(); 
                                                                         if (sc) {
-                                                                            setTargetScorecardId(sc.id); setSignatureType('referee'); setSignatureStep('referee'); setShowSignatureModal(true); 
+                                                                            setSelectedRefereeConfirm({ id: lb.athlete?.id, name: lb.athlete?.name || '알 수 없음', scorecardId: sc.id });
+                                                                        } else {
+                                                                            alert('공식 스코어카드를 찾을 수 없습니다.');
                                                                         }
                                                                     }}
                                                                     className="text-[11px] font-bold bg-amber-500 text-white px-2 py-1.5 rounded-lg shadow-sm hover:bg-amber-600 transition-colors w-full max-w-[120px]"
@@ -736,19 +749,30 @@ export default function TournamentDetailPage() {
                                                     </div>
                                                 </td>
                                             )}
-                                            <td className="px-2 sm:px-6 py-4 text-center">
-                                                {(sc?.marker_id === userId || ['admin', 'superadmin', 'super_admin', 'headquarter', 'office'].includes(userRole)) && sc && (
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setSelectedAdminEdit({ id: lb.athlete?.id, name: lb.athlete?.name || '알 수 없음', scorecardId: sc.id });
-                                                        }}
-                                                        className="text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow-sm text-brand-navy bg-brand-navy/10 hover:bg-brand-navy/20 dark:text-brand-navy-light dark:bg-brand-navy/20 dark:hover:bg-brand-navy/30"
-                                                    >
-                                                        수정
-                                                    </button>
-                                                )}
-                                            </td>
+                                            {/* 관리 컬럼: 서명대기(pending) 탭에서만 표시 */}
+                                            {leaderboardTab === 'pending' && (
+                                                ['admin', 'superadmin', 'super_admin', 'headquarter', 'office'].includes(userRole) ||
+                                                displayLeaderboard.some(l => scorecardsMap[`${l.athlete?.id}_${selectedRound}`]?.athlete_id === userId)
+                                            ) && (
+                                                <td className="px-2 sm:px-6 py-4 text-center">
+                                                    {sc && (
+                                                        // 적어준 마커 본인(sc.athlete_id === userId)이거나 슈퍼관리자/오피스 권한인 경우만 수정 가능
+                                                        (sc.athlete_id === userId || ['admin', 'superadmin', 'super_admin', 'headquarter', 'office'].includes(userRole)) ? (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setSelectedAdminEdit({ id: lb.athlete?.id, name: lb.athlete?.name || '알 수 없음', scorecardId: sc.id });
+                                                                }}
+                                                                className="text-[11px] font-bold px-3 py-1.5 rounded-lg transition-colors shadow-sm text-brand-navy bg-brand-navy/10 hover:bg-brand-navy/20 dark:text-brand-navy-light dark:bg-brand-navy/20 dark:hover:bg-brand-navy/30"
+                                                            >
+                                                                수정
+                                                            </button>
+                                                        ) : (
+                                                            <span className="text-[11px] text-zinc-300 dark:text-zinc-600 font-medium">-</span>
+                                                        )
+                                                    )}
+                                                </td>
+                                            )}
                                         </tr>
                                     );
                                 })}
@@ -788,7 +812,7 @@ export default function TournamentDetailPage() {
                     athleteId={selectedCrossCheckAthlete.id}
                     athleteName={selectedCrossCheckAthlete.name}
                     scorecardId={selectedCrossCheckAthlete.scorecardId}
-                    hasPlayerSig={!!scorecardsMap[selectedCrossCheckAthlete.id]?.player_signature}
+                    hasPlayerSig={!!scorecardsMap[`${selectedCrossCheckAthlete.id}_${selectedRound}`]?.player_signature}
                     hasMarkerSig={true}
                     onSignAsPlayer={() => {
                         setSelectedCrossCheckAthlete(null);
@@ -840,6 +864,35 @@ export default function TournamentDetailPage() {
                     scorecardId={selectedAdminEdit.scorecardId}
                     onSaveSuccess={() => {
                         window.location.reload();
+                    }}
+                />
+            )}
+
+            {/* ── Referee Confirm & Signature Modal ── */}
+            {selectedRefereeConfirm && (
+                <RefereeConfirmSignatureModal
+                    isOpen={!!selectedRefereeConfirm}
+                    onClose={() => setSelectedRefereeConfirm(null)}
+                    tournamentId={tournamentId}
+                    athleteId={selectedRefereeConfirm.id}
+                    athleteName={selectedRefereeConfirm.name}
+                    scorecardId={selectedRefereeConfirm.scorecardId}
+                    onSignatureSuccess={async () => {
+                        const confirmedScorecardId = selectedRefereeConfirm.scorecardId;
+                        const confirmedAthleteId = selectedRefereeConfirm.id;
+                        setSelectedRefereeConfirm(null);
+                        const supabase = createClient();
+                        const { data: updatedSc } = await supabase
+                            .from("scorecards")
+                            .select("id, athlete_id, marker_id, tournament_round, marker_signature, player_signature, referee_signature")
+                            .eq("id", confirmedScorecardId)
+                            .single();
+                        if (updatedSc) {
+                            setScorecardsMap(prev => ({ 
+                                ...prev, 
+                                [`${confirmedAthleteId}_${selectedRound}`]: updatedSc 
+                            }));
+                        }
                     }}
                 />
             )}
