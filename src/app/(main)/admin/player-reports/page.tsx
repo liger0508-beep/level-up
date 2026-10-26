@@ -156,7 +156,9 @@ export default function AthleteReportPage() {
     });
     const [selectedMonth, setSelectedMonth] = useState<string>(() => {
         const d = new Date();
-        d.setMonth(d.getMonth() - 1);
+        if (d.getDate() <= 10) {
+            d.setMonth(d.getMonth() - 1);
+        }
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     });
 
