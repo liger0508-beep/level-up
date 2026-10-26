@@ -2128,6 +2128,7 @@ function ScoreCreateContent() {
                 <MarkerSubmitSignatureModal
                     isOpen={!!submitModalScorecardId}
                     scorecardId={submitModalScorecardId}
+                    playerName={selectedMarker}
                     onClose={() => {
                         setSubmitModalScorecardId(null);
                     }}

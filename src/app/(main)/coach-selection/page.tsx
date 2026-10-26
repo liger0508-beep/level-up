@@ -111,8 +111,8 @@ export default function CoachSelectionPage() {
             let branchCoaches = coachesData || [];
             branchCoaches = branchCoaches.filter((c: any) => c.branch !== "오피스" && c.branch !== "총괄");
             
-            // Joymaru specific filter: ONLY 6 coaches
-            const allowedJoymaru = ["김규태", "김봉진", "이동진", "김종명", "박치우", "성세환"];
+            // Joymaru specific filter: ONLY 5 coaches
+            const allowedJoymaru = ["김규태", "김봉진", "김종명", "박치우", "성세환"];
             // Gumi specific filter: ONLY 3 coaches
             const allowedGumi = ["이준", "문치환", "이기찬"];
             
@@ -481,8 +481,8 @@ export default function CoachSelectionPage() {
                                         </h3>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                             {coaches
-                                                .filter(c => c.branch === "조이마루점" && ["김규태", "김봉진", "이동진"].includes(c.name))
-                                                .sort((a, b) => ["김규태", "김봉진", "이동진"].indexOf(a.name) - ["김규태", "김봉진", "이동진"].indexOf(b.name))
+                                                .filter(c => c.branch === "조이마루점" && ["김규태", "김봉진"].includes(c.name))
+                                                .sort((a, b) => ["김규태", "김봉진"].indexOf(a.name) - ["김규태", "김봉진"].indexOf(b.name))
                                                 .map(renderCoachButton)}
                                         </div>
                                     </div>

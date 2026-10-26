@@ -10,10 +10,11 @@ interface MarkerSubmitSignatureModalProps {
     isOpen: boolean;
     onClose: () => void;
     scorecardId: string;
+    playerName?: string;
     onSignatureComplete: () => void;
 }
 
-export function MarkerSubmitSignatureModal({ isOpen, onClose, scorecardId, onSignatureComplete }: MarkerSubmitSignatureModalProps) {
+export function MarkerSubmitSignatureModal({ isOpen, onClose, scorecardId, playerName: propPlayerName, onSignatureComplete }: MarkerSubmitSignatureModalProps) {
     const [loading, setLoading] = useState(true);
     const [scorecard, setScorecard] = useState<any>(null);
     const [showSignaturePad, setShowSignaturePad] = useState(false);
@@ -28,9 +29,9 @@ export function MarkerSubmitSignatureModal({ isOpen, onClose, scorecardId, onSig
             const { data: scData, error: scErr } = await supabase
                 .from("scorecards")
                 .select(`
-                    id, total_score, marker_id,
-                    athlete:users!scorecards_athlete_id_fkey(name),
-                    marker:users!scorecards_marker_id_fkey(name),
+                    id, total_score, marker_id, athlete_id,
+                    athlete:users!scorecards_athlete_id_fkey(id, name),
+                    marker:users!scorecards_marker_id_fkey(id, name),
                     holes:scorecard_holes(hole_number, par, score),
                     marker_scores:tournament_marker_scores(hole_number, score)
                 `)
@@ -39,13 +40,30 @@ export function MarkerSubmitSignatureModal({ isOpen, onClose, scorecardId, onSig
 
             if (scData) {
                 if (scData.holes) scData.holes.sort((a: any, b: any) => a.hole_number - b.hole_number);
-                setScorecard(scData);
+
+                // Fallback for marker_id user lookup if join did not populate
+                let resolvedMarkerUserName = scData.marker?.name;
+                if (!resolvedMarkerUserName && scData.marker_id) {
+                    const { data: mUser } = await supabase
+                        .from("users")
+                        .select("name")
+                        .eq("id", scData.marker_id)
+                        .maybeSingle();
+                    if (mUser?.name) {
+                        resolvedMarkerUserName = mUser.name;
+                    }
+                }
+
+                setScorecard({
+                    ...scData,
+                    resolvedPlayerName: propPlayerName || resolvedMarkerUserName || scData.athlete?.name || '선수'
+                });
             }
             setLoading(false);
         };
 
         fetchScorecard();
-    }, [isOpen, scorecardId]);
+    }, [isOpen, scorecardId, propPlayerName]);
 
     const handleSaveSignature = async (sigDataUrl: string) => {
         const supabase = createClient();
@@ -173,7 +191,7 @@ export function MarkerSubmitSignatureModal({ isOpen, onClose, scorecardId, onSig
                                 const totalPar = outRes.parSum + inRes.parSum;
                                 const totalDiff = totalPar > 0 ? totalScore - totalPar : 0;
                                 const diffDisplay = totalDiff === 0 ? "E" : totalDiff > 0 ? `+${totalDiff}` : `${totalDiff}`;
-                                const playerName = scorecard?.athlete?.name || scorecard?.marker?.name || 'User';
+                                const playerName = scorecard?.resolvedPlayerName || propPlayerName || scorecard?.marker?.name || scorecard?.athlete?.name || 'User';
 
                                 const renderTable = (label: string, res: any) => (
                                     <div className="border border-zinc-200 dark:border-zinc-700 rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 shadow-sm w-full">
