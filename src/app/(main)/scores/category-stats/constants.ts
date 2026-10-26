@@ -31,6 +31,9 @@ export const CATEGORY_OPTIONS = [
     { label: "패널티/OB 수", value: "penaltyOB" },
     { label: "바운스백", value: "bounceBack" },
     { label: "버디 이상 수", value: "birdieOrBetter" },
+    { label: "스트롱 포인트", value: "strongPoint" },
+    { label: "위크 포인트 1", value: "weakPoint1" },
+    { label: "위크 포인트 2", value: "weakPoint2" },
 ];
 
 export const BRANCH_OPTIONS = [

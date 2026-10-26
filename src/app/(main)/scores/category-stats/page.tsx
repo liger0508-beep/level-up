@@ -55,7 +55,26 @@ interface AthleteStats {
     penaltyOB: number;
     bounceBack: number;
     birdieOrBetter: number;
+    strongPoint?: string;
+    weakPoint1?: string;
+    weakPoint2?: string;
 }
+
+const TARGET_SG_METRICS = [
+    { key: "teeDistance", label: "티샷 비거리" },
+    { key: "teeAccuracy", label: "티샷 정확도" },
+    { key: "dist180Plus", label: "180M 이상" },
+    { key: "dist150_179", label: "150-179M" },
+    { key: "dist120_149", label: "120-149M" },
+    { key: "dist90_119", label: "90-119M" },
+    { key: "pitchShot", label: "피치샷" },
+    { key: "bunker", label: "벙커" },
+    { key: "approach", label: "어프로치" },
+    { key: "putt9Plus", label: "9M 이상" },
+    { key: "putt4_8", label: "4-8M" },
+    { key: "putt2_3", label: "2-3M" },
+    { key: "putt1", label: "1M" },
+] as const;
 
 export default function CategoryStatsPage() {
     const now = new Date();
@@ -113,11 +132,30 @@ export default function CategoryStatsPage() {
             }
 
             const rawStats: AthleteStats[] = await res.json();
+
+            // Compute strongPoint, weakPoint1, weakPoint2 based on 13 SG metrics
+            const statsWithPoints = rawStats.map(stat => {
+                const sorted = TARGET_SG_METRICS.map(m => ({
+                    label: m.label,
+                    value: ((stat as any)[m.key] as number) ?? 0
+                })).sort((a, b) => a.value - b.value);
+
+                const strong = sorted[0];
+                const weak1 = sorted[sorted.length - 1];
+                const weak2 = sorted[sorted.length - 2];
+
+                return {
+                    ...stat,
+                    strongPoint: strong?.label || "-",
+                    weakPoint1: weak1?.label || "-",
+                    weakPoint2: weak2?.label || "-",
+                };
+            });
             
             // Filter by branch locally since API returns all branches
-            let filteredStats = rawStats;
+            let filteredStats = statsWithPoints;
             if (selectedBranch !== "all") {
-                filteredStats = rawStats.filter(s => s.branch === selectedBranch);
+                filteredStats = statsWithPoints.filter(s => s.branch === selectedBranch);
             }
 
             setAthleteStatsList(filteredStats);
@@ -143,13 +181,20 @@ export default function CategoryStatsPage() {
         const isAscending = !isDescending;
 
         let sorted = [...baseList].sort((a, b) => {
-            const valA = (a as any)[sortCategory] || 0;
-            const valB = (b as any)[sortCategory] || 0;
+            const valA = (a as any)[sortCategory];
+            const valB = (b as any)[sortCategory];
             
+            if (typeof valA === "string" || typeof valB === "string") {
+                return String(valA || "").localeCompare(String(valB || ""));
+            }
+
+            const numA = typeof valA === "number" ? valA : 0;
+            const numB = typeof valB === "number" ? valB : 0;
+
             if (isAscending) {
-                return valA - valB;
+                return numA - numB;
             } else {
-                return valB - valA;
+                return numB - numA;
             }
         });
         
@@ -160,7 +205,11 @@ export default function CategoryStatsPage() {
         return sorted;
     }, [athleteStatsList, sortCategory, isSortInverted, compareStep, selectedAthleteIds]);
 
-    const formatValue = (val: number, category: string) => {
+    const formatValue = (val: any, category: string) => {
+        if (category === "strongPoint" || category === "weakPoint1" || category === "weakPoint2") {
+            return String(val || "-");
+        }
+        if (typeof val !== "number") return "-";
         if (["fairwayHitRate", "girRate", "parSaveRate", "bounceBack"].includes(category)) {
             return `${val.toFixed(1)}%`;
         }
@@ -479,7 +528,9 @@ export default function CategoryStatsPage() {
                                                     {selectedCategories.map(cat => {
                                                         const rawValue = (stat as any)[cat] || 0;
                                                         let valueColorClass = "text-zinc-900 dark:text-zinc-100";
-                                                        if (cat === "score" || cat === "playContent") {
+                                                        if (cat === "strongPoint" || cat === "weakPoint1" || cat === "weakPoint2") {
+                                                            valueColorClass = "text-zinc-900 dark:text-zinc-100 font-bold text-sm sm:text-base";
+                                                        } else if (cat === "score" || cat === "playContent") {
                                                             if (rawValue < 72) valueColorClass = "text-red-500";
                                                             else if (rawValue > 72) valueColorClass = "text-blue-500";
                                                         } else if (cat === "par3Score") {
@@ -505,7 +556,12 @@ export default function CategoryStatsPage() {
                                                                 "px-3 sm:px-6 py-3 sm:py-4 text-center transition-colors",
                                                                 sortCategory === cat && "bg-red-50/90 dark:bg-red-900/90"
                                                             )}>
-                                                                <span className={cn("text-base sm:text-lg font-black whitespace-nowrap", valueColorClass)}>
+                                                                <span className={cn(
+                                                                    cat === "strongPoint" || cat === "weakPoint1" || cat === "weakPoint2"
+                                                                        ? "text-sm sm:text-base font-semibold whitespace-nowrap text-zinc-800 dark:text-zinc-200"
+                                                                        : "text-base sm:text-lg font-black whitespace-nowrap",
+                                                                    valueColorClass
+                                                                )}>
                                                                     {formatValue(rawValue, cat)}
                                                                 </span>
                                                             </td>
