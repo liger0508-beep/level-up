@@ -135,7 +135,7 @@ export default function LessonDetailPage() {
 
                 // 3. Parse media_urls and split content
                 const allMedia = parseMediaUrls(data.media_urls);
-                const beforeMediaFiles = allMedia.filter(url => !url.startsWith('after:') && !url.startsWith('material:') && !url.startsWith('template:') && url.startsWith('http')).map(url => ({
+                const beforeMediaFiles = allMedia.filter(url => url.startsWith('http')).map(url => ({
                     type: url.match(/\.(mp4|mov|webm)$/i) ? 'video' : 'image',
                     url
                 }));

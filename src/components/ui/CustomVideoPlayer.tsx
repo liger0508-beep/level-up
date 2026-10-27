@@ -17,14 +17,10 @@ export function CustomVideoPlayer({ src, className, hideCustomControls = false }
     const [showNativeControls, setShowNativeControls] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
 
-    const [hasError, setHasError] = useState(false);
-
     const videoSrc = useMemo(() => {
         if (!src) return src;
         if (src.startsWith('blob:')) return src;
         if (src.includes('#t=')) return src;
-        // Don't append #t=0.001 to .mov files as iOS/Safari/QuickTime or specific servers can fail range requests
-        if (/\.mov(\?|$)/i.test(src)) return src;
         return `${src}#t=0.001`;
     }, [src]);
 
@@ -33,9 +29,7 @@ export function CustomVideoPlayer({ src, className, hideCustomControls = false }
         if (isPlaying) {
             videoRef.current.pause();
         } else {
-            videoRef.current.play().catch(err => {
-                console.warn("Playback error:", err);
-            });
+            videoRef.current.play();
         }
     };
 
@@ -78,10 +72,6 @@ export function CustomVideoPlayer({ src, className, hideCustomControls = false }
     };
 
     useEffect(() => {
-        setHasError(false);
-    }, [src]);
-
-    useEffect(() => {
         const video = videoRef.current;
         if (!video) return;
         const onPlay = () => setIsPlaying(true);
@@ -103,42 +93,23 @@ export function CustomVideoPlayer({ src, className, hideCustomControls = false }
         <div className={cn("w-full h-full flex items-center justify-center overflow-hidden", className)}>
             <div className="flex flex-col items-center justify-center min-w-0 min-h-0 max-w-full h-full w-full">
                 <div className="relative flex-1 w-full min-h-0 flex items-center justify-center">
-                    {hasError ? (
-                        <div className="flex flex-col items-center justify-center p-6 text-center bg-zinc-900 rounded-2xl w-full h-full text-zinc-300">
-                            <p className="text-sm font-semibold mb-2">이 브라우저에서 직접 재생할 수 없는 코덱/형식입니다.</p>
-                            <p className="text-xs text-zinc-400 mb-4">(아이폰 MOV/HEVC 고화질 영상 등)</p>
-                            <button
-                                onClick={handleDownload}
-                                className="px-4 py-2 bg-brand-navy hover:bg-brand-navy/80 text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 flex items-center gap-1.5"
-                            >
-                                <Download size={14} /> 영상 다운로드하여 확인하기
-                            </button>
-                        </div>
-                    ) : (
-                        <video
-                            ref={videoRef}
-                            src={videoSrc}
-                            controls={showNativeControls}
-                            playsInline
-                            webkit-playsinline="true"
-                            preload="metadata"
-                            crossOrigin="anonymous"
-                            onError={(e) => {
-                                console.warn("Video playback error for src:", src, e);
-                                setHasError(true);
-                            }}
-                            onLoadedMetadata={(e) => {
-                                const video = e.currentTarget;
-                                if (video.currentTime === 0 && !/\.mov(\?|$)/i.test(src)) {
-                                    try {
-                                        video.currentTime = 0.001;
-                                    } catch (err) {}
-                                }
-                            }}
-                            onClick={() => setShowNativeControls(true)}
-                            className="flex-1 w-auto max-w-full h-full object-contain rounded-xl sm:rounded-2xl bg-black/5 [&::-webkit-media-controls-overlay-play-button]:!hidden"
-                        />
-                    )}
+                    <video
+                        ref={videoRef}
+                        src={videoSrc}
+                        controls={showNativeControls}
+                        playsInline
+                        preload="metadata"
+                        onLoadedMetadata={(e) => {
+                            const video = e.currentTarget;
+                            if (video.currentTime === 0) {
+                                try {
+                                    video.currentTime = 0.001;
+                                } catch (err) {}
+                            }
+                        }}
+                        onClick={() => setShowNativeControls(true)}
+                        className="flex-1 w-auto max-w-full h-full object-contain rounded-xl sm:rounded-2xl bg-black/5 [&::-webkit-media-controls-overlay-play-button]:!hidden"
+                    />
                     <button
                         onClick={handleDownload}
                         disabled={isDownloading}
