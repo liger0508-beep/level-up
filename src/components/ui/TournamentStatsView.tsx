@@ -45,7 +45,26 @@ interface AthleteStats {
     penaltyOB: number;
     bounceBack: number;
     birdieOrBetter: number;
+    strongPoint?: string;
+    weakPoint1?: string;
+    weakPoint2?: string;
 }
+
+const TARGET_SG_METRICS = [
+    { key: "teeDistance", label: "티샷 비거리" },
+    { key: "teeAccuracy", label: "티샷 정확도" },
+    { key: "dist180Plus", label: "180M 이상" },
+    { key: "dist150_179", label: "150-179M" },
+    { key: "dist120_149", label: "120-149M" },
+    { key: "dist90_119", label: "90-119M" },
+    { key: "pitchShot", label: "피치샷" },
+    { key: "bunker", label: "벙커" },
+    { key: "approach", label: "어프로치" },
+    { key: "putt9Plus", label: "9M 이상" },
+    { key: "putt4_8", label: "4-8M" },
+    { key: "putt2_3", label: "2-3M" },
+    { key: "putt1", label: "1M" },
+] as const;
 
 export function TournamentStatsView({ tournamentId, totalRounds, tournamentStartDate }: TournamentStatsViewProps) {
     const [selectedRoundFilter, setSelectedRoundFilter] = useState<string>("ALL"); // "ALL", "1", "2", ...
@@ -224,7 +243,7 @@ export function TournamentStatsView({ tournamentId, totalRounds, tournamentStart
                 const playContent = avgTotalScore + ((longVsShort * -1) / 2);
                 const scoreVsContent = avgTotalScore - playContent;
 
-                return {
+                const baseResult = {
                     athleteId: stat.athleteId,
                     athleteName: stat.athleteName,
                     rounds: stat.rounds,
@@ -258,6 +277,23 @@ export function TournamentStatsView({ tournamentId, totalRounds, tournamentStart
                     bounceBack: stat.bogey_or_worse > 0 ? (stat.bounce_backs / stat.bogey_or_worse) * 100 : 0,
                     birdieOrBetter: stat.birdie_or_better / rounds
                 };
+
+                // Compute strongPoint, weakPoint1, weakPoint2 based on 13 SG metrics
+                const sortedMetrics = TARGET_SG_METRICS.map(m => ({
+                    label: m.label,
+                    value: ((baseResult as any)[m.key] as number) ?? 0
+                })).sort((a, b) => a.value - b.value);
+
+                const strong = sortedMetrics[0];
+                const weak1 = sortedMetrics[sortedMetrics.length - 1];
+                const weak2 = sortedMetrics[sortedMetrics.length - 2];
+
+                return {
+                    ...baseResult,
+                    strongPoint: strong?.label || "-",
+                    weakPoint1: weak1?.label || "-",
+                    weakPoint2: weak2?.label || "-",
+                };
             });
 
             setAthleteStatsList(results);
@@ -274,16 +310,25 @@ export function TournamentStatsView({ tournamentId, totalRounds, tournamentStart
         const isAscending = !isDescending;
 
         let sorted = [...athleteStatsList].sort((a, b) => {
-            const valA = (a as any)[sortCategory] || 0;
-            const valB = (b as any)[sortCategory] || 0;
-            return isAscending ? valA - valB : valB - valA;
+            const valA = (a as any)[sortCategory];
+            const valB = (b as any)[sortCategory];
+            if (typeof valA === "string" || typeof valB === "string") {
+                return String(valA || "").localeCompare(String(valB || ""));
+            }
+            const numA = typeof valA === "number" ? valA : 0;
+            const numB = typeof valB === "number" ? valB : 0;
+            return isAscending ? numA - numB : numB - numA;
         });
         
         if (isSortInverted) sorted.reverse();
         return sorted;
     }, [athleteStatsList, sortCategory, isSortInverted]);
 
-    const formatValue = (val: number, category: string) => {
+    const formatValue = (val: any, category: string) => {
+        if (category === "strongPoint" || category === "weakPoint1" || category === "weakPoint2") {
+            return String(val || "-");
+        }
+        if (typeof val !== "number") return "-";
         if (["fairwayHitRate", "girRate", "parSaveRate", "bounceBack"].includes(category)) return `${val.toFixed(1)}%`;
         if (["putts", "threePutt", "penaltyOB", "birdieOrBetter"].includes(category)) return `${val.toFixed(1)}`;
         if (["score", "playContent"].includes(category)) return `${val.toFixed(1)}`;
@@ -431,9 +476,11 @@ export function TournamentStatsView({ tournamentId, totalRounds, tournamentStart
                                                 {stat.athleteName}
                                             </td>
                                             {selectedCategories.map(cat => {
-                                                const rawValue = (stat as any)[cat] || 0;
+                                                const rawValue = (stat as any)[cat];
                                                 let valueColorClass = "text-zinc-900 dark:text-zinc-100";
-                                                if (cat === "score" || cat === "playContent") {
+                                                if (cat === "strongPoint" || cat === "weakPoint1" || cat === "weakPoint2") {
+                                                    valueColorClass = "text-zinc-900 dark:text-zinc-100 font-bold text-sm sm:text-base";
+                                                } else if (cat === "score" || cat === "playContent") {
                                                     if (rawValue < 72) valueColorClass = "text-red-500";
                                                     else if (rawValue > 72) valueColorClass = "text-blue-500";
                                                 } else if (cat === "birdieOrBetter") {
@@ -446,7 +493,12 @@ export function TournamentStatsView({ tournamentId, totalRounds, tournamentStart
                                                 }
                                                 return (
                                                     <td key={cat} className={cn("px-6 py-3 text-center transition-colors", sortCategory === cat && "bg-red-50/30 dark:bg-red-900/30")}>
-                                                        <span className={cn("text-base font-black", valueColorClass)}>
+                                                        <span className={cn(
+                                                            cat === "strongPoint" || cat === "weakPoint1" || cat === "weakPoint2"
+                                                                ? "text-sm sm:text-base font-semibold whitespace-nowrap text-zinc-800 dark:text-zinc-200"
+                                                                : "text-base font-black whitespace-nowrap",
+                                                            valueColorClass
+                                                        )}>
                                                             {formatValue(rawValue, cat)}
                                                         </span>
                                                     </td>

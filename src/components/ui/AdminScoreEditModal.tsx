@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Loader2, AlertCircle, Save, Pencil, Edit3 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { SignaturePad } from '@/components/ui/SignaturePad';
 
 interface AdminScoreEditModalProps {
     isOpen: boolean;
@@ -19,6 +20,7 @@ export function AdminScoreEditModal({
 }: AdminScoreEditModalProps) {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [showSignaturePad, setShowSignaturePad] = useState(false);
     const [scorecard, setScorecard] = useState<any>(null);
     const [markerScores, setMarkerScores] = useState<Record<number, number>>({});
     const [markerPars, setMarkerPars] = useState<Record<number, number>>({});
@@ -127,7 +129,7 @@ export function AdminScoreEditModal({
         setEditTarget({ holeNumber, par, score });
     };
 
-    const saveChanges = async () => {
+    const handleSaveWithSignature = async (markerSigDataUrl: string) => {
         setSaving(true);
         try {
             const supabase = createClient();
@@ -166,7 +168,7 @@ export function AdminScoreEditModal({
                 .upsert(parsToUpsert);
             if (parsError) throw parsError;
 
-            // Update total score in scorecards
+            // Update total score & marker signature in scorecards (reset player & referee signatures)
             let total = 0;
             let thruCount = 0;
             Object.values(markerScores).forEach(s => {
@@ -180,7 +182,13 @@ export function AdminScoreEditModal({
                 .from("scorecards")
                 .update({ 
                     total_score: total,
-                    is_final: thruCount === 18
+                    is_final: thruCount === 18,
+                    marker_signature: markerSigDataUrl,
+                    marker_signed_at: new Date().toISOString(),
+                    player_signature: null,
+                    player_signed_at: null,
+                    referee_signature: null,
+                    referee_signed_at: null
                 })
                 .eq("id", scorecardId);
 
@@ -204,7 +212,8 @@ export function AdminScoreEditModal({
                 }
             }
             
-            alert("수정사항이 성공적으로 저장되었습니다.");
+            alert("스코어 수정 및 마커 재서명이 완료되었습니다.\n선수 본인 확인 단계로 전달됩니다.");
+            setShowSignaturePad(false);
             if (onSaveSuccess) onSaveSuccess();
             onClose();
         } catch(e: any) {
@@ -216,6 +225,22 @@ export function AdminScoreEditModal({
     };
 
     if (!isOpen) return null;
+
+    if (showSignaturePad) {
+        return (
+            <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
+                <div className="w-full max-w-lg bg-white dark:bg-zinc-900 rounded-[2rem] shadow-xl overflow-hidden p-6 relative">
+                    <SignaturePad
+                        title="마커 재서명"
+                        description={`${athleteName} 선수의 수정된 스코어를 확인하고 재서명합니다.`}
+                        buttonText="수정 및 서명 완료"
+                        onSave={handleSaveWithSignature}
+                        onCancel={() => setShowSignaturePad(false)}
+                    />
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
@@ -379,12 +404,12 @@ export function AdminScoreEditModal({
                                         
                                         <div className="flex items-center justify-end gap-2 sm:gap-3 pt-4 border-t border-zinc-100 dark:border-zinc-800 mt-6 overflow-x-auto no-scrollbar">
                                             <button 
-                                                onClick={saveChanges}
+                                                onClick={() => setShowSignaturePad(true)}
                                                 disabled={saving}
                                                 className="px-6 py-3 rounded-xl font-bold bg-brand-navy hover:bg-brand-navy/90 text-white shadow-sm transition-colors whitespace-nowrap text-[13px] sm:text-base flex items-center gap-2 disabled:opacity-50"
                                             >
                                                 {saving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
-                                                변경사항 저장하기
+                                                수정 확인 및 마커 서명하기
                                             </button>
                                         </div>
                                     </>

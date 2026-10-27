@@ -705,7 +705,8 @@ export default function TournamentDetailPage() {
                                             {leaderboardTab === 'pending' && (
                                                 <td className="px-2 sm:px-6 py-4 text-center">
                                                     <div className="flex flex-col gap-2 items-center justify-center">
-                                                        {hasPlayerSig ? (
+                                                        {/* 1. 마커 서명과 선수 본인 서명이 모두 완료된 경우 -> 경기위원 단계 */}
+                                                        {hasMarkerSig && hasPlayerSig ? (
                                                             hasRefereeSig ? (
                                                                 <span className="text-[11px] font-semibold text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-2 py-1.5 rounded-lg w-full max-w-[120px]">경기위원 서명 완료</span>
                                                             ) : isCoachOrAdmin ? (
@@ -726,6 +727,7 @@ export default function TournamentDetailPage() {
                                                                 <span className="text-[11px] text-zinc-400 font-semibold border border-zinc-200 dark:border-zinc-700 px-2 py-1.5 rounded-lg bg-white dark:bg-zinc-800 w-full max-w-[120px]">경기위원 확인중</span>
                                                             )
                                                         ) : (
+                                                            /* 2. 마커 서명이 없거나 선수 본인 서명이 없는 경우 */
                                                             (isOwnRow || canReviewOthers) ? (
                                                                 <button 
                                                                     onClick={(e) => { 
@@ -813,12 +815,14 @@ export default function TournamentDetailPage() {
                     athleteName={selectedCrossCheckAthlete.name}
                     scorecardId={selectedCrossCheckAthlete.scorecardId}
                     hasPlayerSig={!!scorecardsMap[`${selectedCrossCheckAthlete.id}_${selectedRound}`]?.player_signature}
-                    hasMarkerSig={true}
+                    hasMarkerSig={!!scorecardsMap[`${selectedCrossCheckAthlete.id}_${selectedRound}`]?.marker_signature}
                     onSignAsPlayer={() => {
+                        const isMarkerSigned = !!scorecardsMap[`${selectedCrossCheckAthlete.id}_${selectedRound}`]?.marker_signature;
                         setSelectedCrossCheckAthlete(null);
                         setTargetScorecardId(selectedCrossCheckAthlete.scorecardId);
                         setSignatureType('player');
-                        setSignatureStep('player'); // 마커 서명 스킵하고 선수 서명으로 직행
+                        // 마커 서명이 이미 있으면 선수 서명으로 바로 진입, 없으면 마커 서명부터 시작
+                        setSignatureStep(isMarkerSigned ? 'player' : 'marker');
                         setShowSignatureModal(true);
                     }}
                     onRequestCorrection={async () => {
