@@ -255,15 +255,20 @@ export default function CoachSelectionPage() {
     };
 
     const isSelectionAllowed = () => {
-        // 활성화 토글이 꺼져있으면 무조건 선택 불가 (관리자 포함)
+        // 활성화 토글이 꺼져있으면 무조건 선택 불가
         if (!selectionSettings.enabled) return false;
-        
-        // 관리자 권한은 기간에 상관없이(또는 테스트용) 선택 가능하게 하려면 아래 주석 해제 (현재는 주석 처리)
-        // if (user && ["admin", "superadmin", "office", "headquarter"].includes(user.role)) return true;
         
         const now = new Date();
         const currentDay = now.getDate();
-        return currentDay >= selectionSettings.startDay && currentDay <= selectionSettings.endDay;
+        const { startDay, endDay } = selectionSettings;
+
+        // 월을 넘어가는 경우 (예: 25일 ~ 익월 4일인 경우 startDay > endDay)
+        if (startDay > endDay) {
+            return currentDay >= startDay || currentDay <= endDay;
+        }
+
+        // 같은 달 내 기간인 경우 (예: 1일 ~ 15일)
+        return currentDay >= startDay && currentDay <= endDay;
     };
 
     const renderCoachButton = (coach: Coach) => {
