@@ -732,13 +732,17 @@ export default function TournamentDetailPage() {
                                             <td 
                                                 className="px-2 sm:px-6 py-4 font-semibold text-zinc-900 dark:text-zinc-100 text-[14px] sm:text-[15px] cursor-pointer text-center" 
                                                 onClick={() => {
-                                                    const ownAthleteSc = scorecardsMap[`athlete_${lb.athlete?.id}_${selectedRound}`];
+                                                    // 해당 선수(lb.athlete?.id)의 이번 라운드 공식 스코어카드
+                                                    // tournament_marker_scores와 리더보드는 marker_id(=작성자 athlete_id)인 스코어카드에 연결되어 있음
                                                     const markerSc = scorecardsMap[`${lb.athlete?.id}_${selectedRound}`];
-                                                    const athleteSc = ownAthleteSc || markerSc;
+                                                    const ownAthleteSc = scorecardsMap[`athlete_${lb.athlete?.id}_${selectedRound}`];
+                                                    const athleteSc = markerSc || ownAthleteSc;
 
-                                                    // 만약 작성 중인(is_final !== true) 스코어가 있고 본인이 선수이거나 마커인 경우
+                                                    // 작성 중인(is_final !== true) 스코어카드 여부
                                                     const isDraft = athleteSc && athleteSc.is_final === false;
-                                                    const isWriter = athleteSc && (athleteSc.athlete_id === userId || athleteSc.marker_id === userId);
+                                                    // 작성자(마커) 본인인지 확인 (스코어카드를 작성한 사용자: athleteSc.athlete_id)
+                                                    // 토너먼트에서 플레이어(lb.athlete.id) 본인은 마커가 아니므로 작성자가 아님!
+                                                    const isWriter = athleteSc && (athleteSc.athlete_id === userId) && (lb.athlete?.id !== userId);
 
                                                     if (isDraft && isWriter) {
                                                         setAthleteDraftPopup({
