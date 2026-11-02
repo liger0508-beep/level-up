@@ -352,7 +352,7 @@ export default function ScoreDetailPage() {
             const { data: sc } = await supabase
                 .from("scorecards")
                 .select(`
-                    id, round_date, course_name, total_score, distance_unit, athlete_id, coach_id,
+                    id, round_date, course_name, total_score, distance_unit, athlete_id, coach_id, tournament_id,
                     athlete:users!scorecards_athlete_id_fkey(name),
                     coach:users!scorecards_coach_id_fkey(name),
                     holes:scorecard_holes(
@@ -731,7 +731,16 @@ export default function ScoreDetailPage() {
             <header className="sticky top-0 z-40 bg-white/80 dark:bg-zinc-950/80 backdrop-blur-md border-b border-zinc-200/60 dark:border-zinc-800/60">
                 <div className="max-w-3xl lg:max-w-6xl mx-auto px-4 sm:px-8 h-16 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <button onClick={() => router.back()} className="p-2 -ml-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-900 dark:text-zinc-50 transition-colors">
+                        <button 
+                            onClick={() => {
+                                if (scorecard?.tournament_id) {
+                                    router.push(`/scores/tournaments/${scorecard.tournament_id}`);
+                                } else {
+                                    router.back();
+                                }
+                            }} 
+                            className="p-2 -ml-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-900 dark:text-zinc-50 transition-colors"
+                        >
                             <ChevronLeft size={24} />
                         </button>
                         <div className="flex items-center gap-2">

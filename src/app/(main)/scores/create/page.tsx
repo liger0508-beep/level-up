@@ -259,6 +259,13 @@ function ScoreCreateContent() {
             const { data: { user } } = await supabase.auth.getUser();
             let targetId = draftIdRef.current || editId;
 
+            // Resolve markerId if selectedMarker is present
+            let resolvedMarkerId: string | null = null;
+            if (selectedMarker) {
+                const { data: mUser } = await supabase.from("users").select("id").eq("name", selectedMarker).single();
+                if (mUser) resolvedMarkerId = mUser.id;
+            }
+
             if (targetId && targetId !== 'draft') {
                 const { error: updateErr } = await supabase.from("scorecards").update({
                     total_score: computedTotalScore,
@@ -268,6 +275,9 @@ function ScoreCreateContent() {
                     course_name: golfCourse,
                     weather: category,
                     distance_unit: distanceUnit.includes("야드") ? "yard" : "meter",
+                    tournament_id: tournamentId || null,
+                    tournament_round: tournamentId ? 1 : null,
+                    marker_id: resolvedMarkerId || null
                 }).eq("id", targetId);
                 if (updateErr) throw updateErr;
             } else {
@@ -280,7 +290,10 @@ function ScoreCreateContent() {
                     total_score: computedTotalScore,
                     distance_unit: distanceUnit.includes("야드") ? "yard" : "meter",
                     is_final: false,
-                    hole_count: holes.filter(h => h.par > 0).length
+                    hole_count: holes.filter(h => h.par > 0).length,
+                    tournament_id: tournamentId || null,
+                    tournament_round: tournamentId ? 1 : null,
+                    marker_id: resolvedMarkerId || null
                 }).select("id").single();
                 if (insertErr) throw insertErr;
                 if (sc) {
@@ -352,6 +365,45 @@ function ScoreCreateContent() {
                 if (shotsToInsert.length > 0) {
                     const { error: shotsErr } = await supabase.from("scorecard_shots").insert(shotsToInsert);
                     if (shotsErr) throw shotsErr;
+                }
+            }
+
+            // Tournament Live Leaderboard & Marker Scores Sync for Draft Mode
+            if (tournamentId) {
+                await supabase.from("tournament_marker_scores").delete().eq("scorecard_id", targetId);
+
+                const markerScoresToInsert: any[] = [];
+                holes.slice(0, saveHolesCount).forEach((h, hIdx) => {
+                    if (h.par > 0) {
+                        const finalMarkerScore = (h.markerScore && h.markerScore.trim() !== "") ? parseInt(h.markerScore, 10) : h.par;
+                        markerScoresToInsert.push({
+                            scorecard_id: targetId,
+                            hole_number: hIdx + 1,
+                            score: finalMarkerScore || 0,
+                            putts: h.markerPutts ? parseInt(h.markerPutts, 10) : 0
+                        });
+                    }
+                });
+
+                if (markerScoresToInsert.length > 0) {
+                    await supabase.from("tournament_marker_scores").insert(markerScoresToInsert);
+                }
+
+                if (resolvedMarkerId) {
+                    const markerTotalScore = markerScoresToInsert.reduce((sum, curr) => sum + curr.score, 0);
+                    const completedCount = holes.filter(h => {
+                        if (h.par === 0) return false;
+                        return h.shots.some(s => s.location === "홀인" || s.location === "HI");
+                    }).length;
+
+                    await supabase.from("tournament_leaderboards").upsert({
+                        tournament_id: tournamentId,
+                        athlete_id: resolvedMarkerId,
+                        round_number: 1,
+                        thru_hole: completedCount,
+                        total_score: markerTotalScore,
+                        updated_at: new Date().toISOString()
+                    }, { onConflict: "tournament_id,athlete_id,round_number" });
                 }
             }
 
@@ -456,7 +508,7 @@ function ScoreCreateContent() {
             const { data: sc, error } = await supabase
                 .from("scorecards")
                 .select(`
-                    id, round_date, course_name, total_score, distance_unit, weather, is_final, marker_id,
+                    id, round_date, course_name, total_score, distance_unit, weather, is_final, marker_id, tournament_id,
                     athlete:users!scorecards_athlete_id_fkey(name),
                     holes:scorecard_holes(
                         id, hole_number, par, score,
@@ -480,6 +532,10 @@ function ScoreCreateContent() {
             setCategory(sc.weather || "연습");
             setDistanceUnit(sc.distance_unit === "yard" ? "야드 (y)" : "미터 (m)");
             
+            if (sc.tournament_id) {
+                setTournamentId(sc.tournament_id);
+                setCategory("대회");
+            }
             if (sc.marker_id) {
                 const { data: markerUser } = await supabase.from("users").select("name").eq("id", sc.marker_id).single();
                 if (markerUser) {
@@ -2133,9 +2189,10 @@ function ScoreCreateContent() {
                         setSubmitModalScorecardId(null);
                     }}
                     onSignatureComplete={() => {
+                        const targetScId = submitModalScorecardId;
                         setSubmitModalScorecardId(null);
                         alert("스코어카드가 성공적으로 제출되고 서명되었습니다.");
-                        router.replace(`/scores/tournaments/${tournamentId}`);
+                        router.replace(`/scores/${targetScId}`);
                     }}
                 />
             )}

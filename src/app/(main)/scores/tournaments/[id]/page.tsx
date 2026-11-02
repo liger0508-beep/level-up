@@ -35,6 +35,7 @@ export default function TournamentDetailPage() {
     const [leaderboardTab, setLeaderboardTab] = useState<'live' | 'pending' | 'stats'>('live');
     const [selectedRound, setSelectedRound] = useState<number>(1);
     const [showDraftPopup, setShowDraftPopup] = useState(false);
+    const [athleteDraftPopup, setAthleteDraftPopup] = useState<{ athleteId: string, athleteName: string, scorecardId: string } | null>(null);
 
     // Category & Live Score State
     const [selectedLiveScoreAthlete, setSelectedLiveScoreAthlete] = useState<{id: string, name: string} | null>(null);
@@ -153,16 +154,23 @@ export default function TournamentDetailPage() {
             // 6. Load Scorecards for Signature Status & Marker Filtering
             const { data: scData } = await supabase
                 .from("scorecards")
-                .select("id, athlete_id, marker_id, tournament_round, marker_signature, player_signature, referee_signature")
+                .select(`
+                    id, athlete_id, marker_id, tournament_round, is_final, total_score, 
+                    marker_signature, player_signature, referee_signature,
+                    holes:scorecard_holes(hole_number, par, score),
+                    marker_scores:tournament_marker_scores(hole_number, score)
+                `)
                 .eq("tournament_id", tournamentId);
                 
             if (scData) {
                 const map: Record<string, any> = {};
                 scData.forEach((sc: any) => {
-                    const targetId = sc.marker_id;
                     const roundNum = sc.tournament_round || 1;
-                    if (targetId) {
-                        map[`${targetId}_${roundNum}`] = sc;
+                    if (sc.marker_id) {
+                        map[`${sc.marker_id}_${roundNum}`] = sc;
+                    }
+                    if (sc.athlete_id) {
+                        map[`athlete_${sc.athlete_id}_${roundNum}`] = sc;
                     }
                 });
                 setScorecardsMap(map);
@@ -323,7 +331,22 @@ export default function TournamentDetailPage() {
             const hasRefereeSig = !!sc?.referee_signature;
             return lb.thru_hole === 18 && (!hasPlayerSig || !hasRefereeSig);
         })
-        .sort((a, b) => a.total_score - b.total_score);
+        .sort((a, b) => {
+            const getRelScore = (item: any) => {
+                const sc = scorecardsMap[`${item.athlete?.id}_${selectedRound}`];
+                let parSum = 0;
+                if (sc?.holes && Array.isArray(sc.holes)) {
+                    sc.holes.forEach((h: any) => {
+                        if (h.hole_number <= (item.thru_hole || 0) && h.par > 0) parSum += h.par;
+                    });
+                }
+                if (parSum === 0 && item.thru_hole > 0) {
+                    parSum = item.thru_hole === 18 ? 72 : item.thru_hole === 9 ? 36 : item.thru_hole * 4;
+                }
+                return parSum > 0 ? item.total_score - parSum : 0;
+            };
+            return getRelScore(a) - getRelScore(b);
+        });
     if (loading || checkingAccess) {
         return (
             <div className="flex flex-col justify-center items-center h-64 gap-4">
@@ -624,20 +647,52 @@ export default function TournamentDetailPage() {
                                             .filter(l => l.athlete?.id === lb.athlete?.id && l.round_number <= selectedRound)
                                             .reduce((sum, l) => sum + l.total_score, 0);
 
-                                        // Calculate cumulative par
-                                        const prevRoundsPar = (selectedRound - 1) * 72;
-                                        const currentRoundPar = lb.thru_hole === 9 ? 36 : (lb.thru_hole > 0 ? 72 : 0);
-                                        const cumulativePar = prevRoundsPar + currentRoundPar;
+                                        const sc = scorecardsMap[`${lb.athlete?.id}_${selectedRound}`];
 
-                                        const cumulativeRelative = cumulativePar > 0 ? cumulativeTotal - cumulativePar : 0;
-                                        const cumulativeRelativeText = cumulativePar > 0 ? (cumulativeRelative > 0 ? `+${cumulativeRelative}` : cumulativeRelative === 0 ? "E" : `${cumulativeRelative}`) : "-";
+                                        // 현재 라운드에서 실제 플레이한 홀들의 Par 합계 계산
+                                        let currentPlayedParSum = 0;
+                                        if (sc?.holes && Array.isArray(sc.holes)) {
+                                            const playedHolesCount = lb.thru_hole || 0;
+                                            sc.holes.forEach((h: any) => {
+                                                if (h.hole_number <= playedHolesCount && h.par > 0) {
+                                                    currentPlayedParSum += h.par;
+                                                }
+                                            });
+                                        }
 
-                                        const dailyPar = lb.thru_hole === 9 ? 36 : 72;
-                                        const dailyRelative = lb.total_score - dailyPar;
-                                        const dailyRelativeText = dailyRelative > 0 ? `+${dailyRelative}` : dailyRelative === 0 ? "E" : `${dailyRelative}`;
+                                        // fallback: 만약 홀 데이터가 아직 없거나 0이면 thru_hole * 4로 추정
+                                        if (currentPlayedParSum === 0 && lb.thru_hole > 0) {
+                                            currentPlayedParSum = lb.thru_hole === 18 ? 72 : lb.thru_hole === 9 ? 36 : lb.thru_hole * 4;
+                                        }
+
+                                        // 1R (현재 선택된 라운드) 상대 스코어
+                                        const dailyRelative = currentPlayedParSum > 0 ? lb.total_score - currentPlayedParSum : 0;
+                                        const dailyRelativeText = currentPlayedParSum > 0 ? (dailyRelative > 0 ? `+${dailyRelative}` : dailyRelative === 0 ? "E" : `${dailyRelative}`) : "-";
+
+                                        // 이전 라운드들의 상대 스코어 합계 계산
+                                        let prevRoundsRelative = 0;
+                                        let hasPrevRounds = false;
+                                        for (let r = 1; r < selectedRound; r++) {
+                                            const prevLb = leaderboard.find(l => l.athlete?.id === lb.athlete?.id && l.round_number === r);
+                                            if (prevLb) {
+                                                const prevSc = scorecardsMap[`${lb.athlete?.id}_${r}`];
+                                                let prevPar = 72;
+                                                if (prevSc?.holes && Array.isArray(prevSc.holes)) {
+                                                    const parSum = prevSc.holes.reduce((sum: number, h: any) => sum + (h.par || 0), 0);
+                                                    if (parSum > 0) prevPar = parSum;
+                                                }
+                                                prevRoundsRelative += (prevLb.total_score - prevPar);
+                                                hasPrevRounds = true;
+                                            }
+                                        }
+
+                                        // 전체 누적 합계 상대 스코어
+                                        const cumulativeRelative = (hasPrevRounds ? prevRoundsRelative : 0) + (currentPlayedParSum > 0 ? dailyRelative : 0);
+                                        const cumulativeRelativeText = (currentPlayedParSum > 0 || hasPrevRounds) 
+                                            ? (cumulativeRelative > 0 ? `+${cumulativeRelative}` : cumulativeRelative === 0 ? "E" : `${cumulativeRelative}`) 
+                                            : "-";
                                         
                                         // Signature Status
-                                        const sc = scorecardsMap[`${lb.athlete?.id}_${selectedRound}`];
                                         const is18Completed = lb.thru_hole === 18;
                                         const hasMarkerSig = !!sc?.marker_signature;
                                         const hasPlayerSig = !!sc?.player_signature;
@@ -674,7 +729,28 @@ export default function TournamentDetailPage() {
                                                     )}
                                                 </div>
                                             </td>
-                                            <td className="px-2 sm:px-6 py-4 font-semibold text-zinc-900 dark:text-zinc-100 text-[14px] sm:text-[15px] cursor-pointer text-center" onClick={() => setSelectedLiveScoreAthlete({ id: lb.athlete?.id, name: lb.athlete?.name || '알 수 없음' })}>
+                                            <td 
+                                                className="px-2 sm:px-6 py-4 font-semibold text-zinc-900 dark:text-zinc-100 text-[14px] sm:text-[15px] cursor-pointer text-center" 
+                                                onClick={() => {
+                                                    const ownAthleteSc = scorecardsMap[`athlete_${lb.athlete?.id}_${selectedRound}`];
+                                                    const markerSc = scorecardsMap[`${lb.athlete?.id}_${selectedRound}`];
+                                                    const athleteSc = ownAthleteSc || markerSc;
+
+                                                    // 만약 작성 중인(is_final !== true) 스코어가 있고 본인이 선수이거나 마커인 경우
+                                                    const isDraft = athleteSc && athleteSc.is_final === false;
+                                                    const isWriter = athleteSc && (athleteSc.athlete_id === userId || athleteSc.marker_id === userId);
+
+                                                    if (isDraft && isWriter) {
+                                                        setAthleteDraftPopup({
+                                                            athleteId: lb.athlete?.id,
+                                                            athleteName: lb.athlete?.name || '알 수 없음',
+                                                            scorecardId: athleteSc.id
+                                                        });
+                                                    } else {
+                                                        setSelectedLiveScoreAthlete({ id: lb.athlete?.id, name: lb.athlete?.name || '알 수 없음' });
+                                                    }
+                                                }}
+                                            >
                                                 <span className="hover:underline">{lb.athlete?.name || "알 수 없음"}</span>
                                             </td>
                                             <td className="px-2 sm:px-6 py-4 text-center">
@@ -944,6 +1020,76 @@ export default function TournamentDetailPage() {
                                 onCancel={() => setShowSignatureModal(false)}
                             />
                         )}
+                    </div>
+                </div>
+            )}
+
+            {/* ── Draft Scorecard Popup (From Header '스코어 작성' Button) ── */}
+            {showDraftPopup && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setShowDraftPopup(false)}>
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 max-w-sm w-full shadow-xl" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-2">작성중인 스코어카드가 있습니다</h3>
+                        <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">기존 스코어카드를 이어서 작성하시겠습니까?</p>
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => {
+                                    setShowDraftPopup(false);
+                                    router.push(`/scores/create?tournament_id=${tournamentId}`);
+                                }}
+                                className="flex-1 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 font-semibold text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                            >
+                                신규 작성하기
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    setShowDraftPopup(false);
+                                    if (draftId) {
+                                        router.push(`/scores/create?id=${draftId}&tournament_id=${tournamentId}`);
+                                    }
+                                }}
+                                className="flex-1 py-2.5 rounded-xl bg-brand-navy text-white font-semibold text-sm hover:bg-brand-navy-dark transition-colors"
+                            >
+                                이어서 작성하기
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── Athlete Draft Action Popup (From Clicking Player Name in Leaderboard) ── */}
+            {athleteDraftPopup && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setAthleteDraftPopup(null)}>
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl p-6 max-w-sm w-full shadow-xl" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 mb-1">
+                            {athleteDraftPopup.athleteName} 선수
+                        </h3>
+                        <p className="text-xs text-brand-red font-semibold mb-3">현재 라운드가 진행 중(미종료)입니다.</p>
+                        <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-6">
+                            작업을 선택해 주세요.
+                        </p>
+                        <div className="flex flex-col gap-2.5">
+                            <button 
+                                onClick={() => {
+                                    const scId = athleteDraftPopup.scorecardId;
+                                    setAthleteDraftPopup(null);
+                                    router.push(`/scores/create?id=${scId}&tournament_id=${tournamentId}`);
+                                }}
+                                className="w-full py-2.5 rounded-xl bg-brand-navy text-white font-semibold text-sm hover:bg-brand-navy-dark transition-colors flex items-center justify-center gap-1.5 shadow-sm"
+                            >
+                                이어서 작성하기
+                            </button>
+                            <button 
+                                onClick={() => {
+                                    const aId = athleteDraftPopup.athleteId;
+                                    const aName = athleteDraftPopup.athleteName;
+                                    setAthleteDraftPopup(null);
+                                    setSelectedLiveScoreAthlete({ id: aId, name: aName });
+                                }}
+                                className="w-full py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 font-semibold text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                            >
+                                중간 스코어 확인
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
