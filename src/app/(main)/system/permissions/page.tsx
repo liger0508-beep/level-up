@@ -58,8 +58,12 @@ const defaultPermissions: MenuPermission[] = [
 
     // 스케쥴
     {
-        menuKey: "schedule", label: "스케쥴", section: "스케쥴",
+        menuKey: "schedule", label: "스케쥴 예약", section: "스케쥴",
         permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+    },
+    {
+        menuKey: "schedule-manage", label: "스케쥴 관리", section: "스케쥴",
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
     {
         menuKey: "coach-trip-schedule", label: "출장 스케쥴", section: "스케쥴",
@@ -83,7 +87,7 @@ const defaultPermissions: MenuPermission[] = [
         menuKey: "scores-tournaments", label: "토너먼트", section: "스코어",
         permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
     },
-    
+
     // 라운지
     {
         menuKey: "community", label: "공지사항", section: "라운지",
@@ -193,7 +197,7 @@ const defaultPermissions: MenuPermission[] = [
         menuKey: "menu-management", label: "메뉴 관리", section: "시스템 관리",
         permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: false, write: false }, athlete: { read: false, write: false }, parent: { read: false, write: false } }
     },
-    
+
     // 테스트
     {
         menuKey: "temp-swing-skeleton", label: "스윙 테스트 (임시)", section: "테스트",
@@ -276,7 +280,7 @@ export default function PermissionsPage() {
         if (data && !error && data.length > 0) {
             // Map DB data to our state structure
             const newPermissions = JSON.parse(JSON.stringify(defaultPermissions)); // deep clone
-            
+
             data.forEach((row: any) => {
                 const menuItem = newPermissions.find((p: MenuPermission) => p.menuKey === row.menu_key);
                 if (menuItem && menuItem.permissions[row.role as Role]) {
@@ -319,7 +323,7 @@ export default function PermissionsPage() {
 
     const handleSave = async () => {
         setIsSaving(true);
-        
+
         // Prepare data for upsert
         const rowsToUpsert: any[] = [];
         permissions.forEach(menu => {
@@ -389,8 +393,8 @@ export default function PermissionsPage() {
                             onClick={handleSave}
                             disabled={!hasChanges || isSaving}
                             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm ${hasChanges
-                                    ? "bg-brand-navy hover:bg-brand-navy/90 text-white"
-                                    : "bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed"
+                                ? "bg-brand-navy hover:bg-brand-navy/90 text-white"
+                                : "bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed"
                                 }`}
                         >
                             <Save size={14} />
@@ -436,8 +440,8 @@ export default function PermissionsPage() {
                                     onClick={() => setActiveTab(section)}
                                     className={`
                                         whitespace-nowrap px-6 py-4 text-sm font-semibold transition-colors
-                                        ${activeTab === section 
-                                            ? "text-brand-navy dark:text-brand-navy-light border-b-2 border-brand-navy dark:border-brand-navy-light" 
+                                        ${activeTab === section
+                                            ? "text-brand-navy dark:text-brand-navy-light border-b-2 border-brand-navy dark:border-brand-navy-light"
                                             : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200"
                                         }
                                     `}

@@ -68,7 +68,8 @@ const menuItems = [
         title: "스케쥴",
         icon: Calendar,
         subItems: [
-            { key: "schedule", title: "스케쥴", href: "/schedule" },
+            { key: "schedule", title: "스케쥴 예약", href: "/schedule" },
+            { key: "schedule-manage", title: "스케쥴 관리", href: "/schedule/manage" },
             { key: "coach-trip-schedule", title: "출장 스케쥴", href: "/schedule/coach-trips" },
         ],
     },
@@ -161,11 +162,21 @@ export function SideNav() {
             if (user) {
                 const { data: profile } = await supabase
                     .from("users")
-                    .select("id, role, name, branch")
+                    .select("id, role, name, branch, status")
                     .eq("id", user.id)
                     .single();
 
                 if (profile) {
+                    if (profile.status === "퇴직" || profile.status === "휴직") {
+                        await supabase.auth.signOut();
+                        window.location.href = `/login?message=${encodeURIComponent(
+                            profile.status === "퇴직"
+                                ? "퇴직 처리된 계정입니다. 관리자에게 문의하세요."
+                                : "휴직 상태인 계정입니다. 관리자에게 문의하세요."
+                        )}`;
+                        return;
+                    }
+
                     setUserRole(profile.role);
                     setUserName(profile.name);
                     setUserBranch(profile.branch);
@@ -256,9 +267,13 @@ export function SideNav() {
 
     const canShowSubItem = (sub: any) => {
         if (!userRole) return false;
-        
+
         const isSuperAdmin = userRole === "admin" || userRole === "super_admin" || userRole === "superadmin" || userName === "슈퍼관리자";
         if (isSuperAdmin) return true;
+
+        if (sub.key === "schedule-manage" && (userRole === "athlete" || userRole === "parent")) {
+            return false;
+        }
 
         const perm = permissions.find(p => p.menuKey === sub.key);
         if (!perm) return true;

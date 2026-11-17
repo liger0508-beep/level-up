@@ -47,12 +47,20 @@ const EVENT_COLORS: Record<ScheduleEvent["type"], { bg: string; dot: string }> =
 };
 
 const EVENT_TYPE_LABELS: Record<ScheduleEvent["type"], string> = {
-    analysis: "측정",
+    analysis: "분석",
     lesson: "레슨",
     training: "훈련",
     consultation: "상담",
     other: "기타",
 };
+
+const VISIBLE_FILTER_TABS: { type: EventTypeFilter; label: string }[] = [
+    { type: "all", label: "전체" },
+    { type: "analysis", label: "분석" },
+    { type: "lesson", label: "레슨" },
+    { type: "consultation", label: "상담" },
+    { type: "other", label: "기타" },
+];
 
 interface ScheduleCalendarProps {
     events: ScheduleEvent[];
@@ -78,10 +86,25 @@ export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEve
         setHasMounted(true);
     }, []);
 
+    React.useEffect(() => {
+        onSelectSlot?.(selectedDate);
+    }, [selectedDate, onSelectSlot]);
+
     const navigate = (direction: "prev" | "next" | "today") => {
-        if (direction === "today") { setCurrentDate(new Date()); setSelectedDate(new Date()); return; }
-        if (view === "2week") setCurrentDate(direction === "next" ? addWeeks(currentDate, 2) : addWeeks(currentDate, -2));
-        if (view === "week") setCurrentDate(direction === "next" ? addWeeks(currentDate, 1) : subWeeks(currentDate, 1));
+        if (direction === "today") {
+            const now = new Date();
+            setCurrentDate(now);
+            setSelectedDate(now);
+            return;
+        }
+        if (view === "2week") {
+            setCurrentDate(direction === "next" ? addWeeks(currentDate, 2) : addWeeks(currentDate, -2));
+            setSelectedDate(direction === "next" ? addWeeks(selectedDate, 2) : addWeeks(selectedDate, -2));
+        }
+        if (view === "week") {
+            setCurrentDate(direction === "next" ? addWeeks(currentDate, 1) : subWeeks(currentDate, 1));
+            setSelectedDate(direction === "next" ? addWeeks(selectedDate, 1) : subWeeks(selectedDate, 1));
+        }
     };
 
     const days = useMemo(() => {
@@ -172,32 +195,21 @@ export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEve
             {/* Event Type Filter */}
             {!hideFilters && (
                 <div className="flex flex-nowrap justify-start items-center gap-1.5 mb-2 overflow-x-auto scrollbar-hide pb-1">
-                    <button
-                        type="button"
-                        onClick={() => setTypeFilter("all")}
-                        className={cn(
-                            "flex items-center gap-1 px-4 py-2 rounded-full text-sm font-semibold border transition-all duration-200 shrink-0",
-                            typeFilter === "all"
-                                ? "bg-brand-navy text-white border-brand-navy shadow-md"
-                                : "bg-white text-zinc-600 border-zinc-200 hover:bg-brand-navy-light hover:text-brand-navy dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700 dark:hover:bg-brand-navy-dark dark:hover:text-white"
-                        )}
-                    >전체</button>
-                    {Object.entries(EVENT_TYPE_LABELS).map(([type, label]) => {
-                        const t = type as ScheduleEvent["type"];
-                        return (
-                            <button
-                                key={t}
-                                type="button"
-                                onClick={() => setTypeFilter(t)}
-                                className={cn(
-                                    "flex items-center gap-1 px-4 py-2 rounded-full text-sm font-semibold border transition-all duration-200 shrink-0",
-                                    typeFilter === t
-                                        ? "bg-brand-navy text-white border-brand-navy shadow-md"
-                                        : "bg-white text-zinc-600 border-zinc-200 hover:bg-brand-navy-light hover:text-brand-navy dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700 dark:hover:bg-brand-navy-dark dark:hover:text-white"
-                                )}
-                            >{label}</button>
-                        );
-                    })}
+                    {VISIBLE_FILTER_TABS.map(({ type, label }) => (
+                        <button
+                            key={type}
+                            type="button"
+                            onClick={() => setTypeFilter(type)}
+                            className={cn(
+                                "flex items-center gap-1 px-4 py-2 rounded-full text-sm font-semibold border transition-all duration-200 shrink-0",
+                                typeFilter === type
+                                    ? "bg-brand-navy text-white border-brand-navy shadow-md"
+                                    : "bg-white text-zinc-600 border-zinc-200 hover:bg-brand-navy-light hover:text-brand-navy dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700 dark:hover:bg-brand-navy-dark dark:hover:text-white"
+                            )}
+                        >
+                            {label}
+                        </button>
+                    ))}
                 </div>
             )}
 
@@ -277,30 +289,11 @@ export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEve
                         <div className="py-12 text-center text-zinc-400 text-sm font-medium bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800">등록된 일정이 없습니다.</div>
                     ) : (
                         displayEvents.map((event) => {
-                            const eventTime = format(event.start, "HH:mm");
-                            const completed = event.status === "completed";
                             const colors = EVENT_COLORS[event.type];
-                            const borderMap: Record<ScheduleEvent["type"], string> = {
-                                analysis: completed ? "border-l-zinc-300" : "border-l-orange-500",
-                                lesson: completed ? "border-l-zinc-300" : "border-l-blue-500",
-                                training: completed ? "border-l-zinc-300" : "border-l-indigo-500",
-                                consultation: completed ? "border-l-zinc-300" : "border-l-amber-500",
-                                other: "border-l-zinc-400",
-                            };
-                            const labelColorMap: Record<ScheduleEvent["type"], string> = {
-                                analysis: completed ? "text-zinc-400" : "text-orange-700 dark:text-orange-400",
-                                lesson: completed ? "text-zinc-400" : "text-blue-700 dark:text-blue-400",
-                                training: completed ? "text-zinc-400" : "text-indigo-700 dark:text-indigo-400",
-                                consultation: completed ? "text-zinc-400" : "text-amber-700 dark:text-amber-400",
-                                other: completed ? "text-zinc-400" : "text-zinc-600 dark:text-zinc-400",
-                            };
                             return (
                                 <div
                                     key={event.id}
-                                    className={cn(
-                                        "bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] py-4 px-6 transition-all hover:shadow-md w-full cursor-pointer",
-                                        completed ? "opacity-80" : ""
-                                    )}
+                                    className="bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-[2.5rem] py-4 px-6 transition-all hover:shadow-md w-full cursor-pointer"
                                     onClick={() => onEditEvent?.(event)}
                                 >
                                     <div className="flex items-center justify-between gap-2">
@@ -309,7 +302,7 @@ export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEve
                                                 <Calendar size={16} />
                                             </div>
                                             <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300">
-                                                {EVENT_TYPE_LABELS[event.type]}{event.category ? `(${event.category.slice(0, 1)})` : ""}
+                                                {EVENT_TYPE_LABELS[event.type]}
                                             </span>
                                         </div>
                                         <div className="flex items-center gap-2 shrink-0 mr-2">
@@ -322,37 +315,34 @@ export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEve
                                                 type="button"
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    if (completed) return;
                                                     const params = new URLSearchParams({
                                                         player: event.participantName || "",
                                                         type: event.category || "shot",
+                                                        date: format(event.start, "yyyy-MM-dd"),
                                                         start: format(event.start, "HH:mm"),
-                                                        end: format(event.end, "HH:mm"),
-                                                        scheduleId: event.id
+                                                        end: format(event.end, "HH:mm")
                                                     });
-                                                    if (event.type === "lesson") router.push(`/lessons/create?${params.toString()}`);
-                                                    else if (event.type === "analysis") router.push(`/analysis/create?${params.toString()}`);
-                                                    else if (event.type === "training") router.push(`/training/create?${params.toString()}`);
-                                                    else if (event.type === "consultation") router.push(`/consultations/create?${params.toString()}`);
+                                                    if (event.type === "lesson" || event.type === "analysis") {
+                                                        router.push(`/lessons/create?${params.toString()}`);
+                                                    } else if (event.type === "consultation") {
+                                                        router.push(`/consultations/create?${params.toString()}`);
+                                                    } else if (event.type === "training") {
+                                                        router.push(`/training/create?${params.toString()}`);
+                                                    }
                                                 }}
-                                                className={cn(
-                                                    "text-center text-[10px] px-3 py-1.5 rounded-lg font-bold shrink-0 transition-all",
-                                                    completed
-                                                        ? "bg-zinc-200 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-500 cursor-default"
-                                                        : "bg-brand-navy text-white hover:bg-brand-navy-dark active:scale-95 shadow-sm"
-                                                )}
+                                                className="text-center text-[10px] px-3 py-1.5 rounded-lg font-bold shrink-0 transition-all bg-brand-navy text-white hover:bg-brand-navy-dark active:scale-95 shadow-sm"
                                             >
-                                                {completed ? "완료" : EVENT_TYPE_LABELS[event.type]}
+                                                {EVENT_TYPE_LABELS[event.type]}
                                             </button>
                                         </div>
                                     </div>
 
                                     <div className="flex items-end justify-between mt-3">
                                         <span className="text-[11px] font-bold text-zinc-400 shrink-0 mb-0.5 pl-[40px]">
-                                            {format(event.start, "HH:mm")} <span className="opacity-40 font-normal mx-0.5">|</span> {event.coachName || "코치"}
+                                            {format(event.start, "HH:mm")} <span className="opacity-40 font-normal mx-0.5">|</span> {event.coachName === "성시우" ? "성시우 감독" : (event.coachName || "코치")}
                                         </span>
                                         <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 truncate mr-2">
-                                            {event.participantName || event.title}
+                                            {event.participantName || "선수 미지정"}
                                         </span>
                                     </div>
                                 </div>

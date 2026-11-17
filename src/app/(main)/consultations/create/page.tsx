@@ -161,31 +161,6 @@ function CreateConsultationContent() {
                 title: `${athleteName} 선수 상담`
             });
 
-            // 2. Schedule Sync (Legacy/Compatibility)
-            if (typeof window !== "undefined") {
-                const { saveCompletedItem, saveEvent } = require("@/lib/schedule-sync");
-
-                saveCompletedItem({
-                    participantName: athleteName,
-                    date: dateStr,
-                    type: "consultation"
-                });
-
-                const start = new Date(new Date().getTime());
-                start.setMinutes(0, 0, 0);
-                const end = new Date(start.getTime() + 60 * 60000);
-
-                saveEvent({
-                    id: crypto.randomUUID(),
-                    title: `${athleteName} 선수 상담`,
-                    start,
-                    end,
-                    type: "consultation",
-                    participantName: athleteName,
-                    coachName: currentCoach?.name || "관리자",
-                });
-            }
-
             alert("상담 일지가 등록되었습니다.");
             sessionStorage.removeItem("draftConsultationAthlete");
             sessionStorage.removeItem("draftConsultationContent");

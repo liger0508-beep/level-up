@@ -20,7 +20,6 @@ import { fetchRecentLessonsByPlayer, fetchAllLessonsByPlayer, saveLessonRecord, 
 import { LessonHistoryModal } from "@/components/lesson/LessonHistoryModal";
 import { LinkedLessonCard } from "@/components/training-plan/LinkedLessonCard";
 import { uploadFiles } from "@/lib/storage-sync";
-import { saveCompletedItem, saveEvent } from "@/lib/schedule-sync";
 import { formatLocalDate } from "@/lib/utils";
 import { CustomVideoPlayer } from "@/components/ui/CustomVideoPlayer";
 
@@ -139,9 +138,14 @@ function CreateLessonContent() {
         const typeParam = searchParams.get("type");
         const startParam = searchParams.get("start");
         const endParam = searchParams.get("end");
+        const dateParam = searchParams.get("date");
 
         if (playerParam) setSelectedPlayers([playerParam]);
         if (typeParam) setSelectedPart(typeParam as LessonType);
+        if (dateParam) {
+            setLessonDate(dateParam);
+            setIsTimeModified(true);
+        }
 
         if (startParam && ALL_SLOTS.includes(startParam)) {
             setStartSlot(startParam);
@@ -443,7 +447,6 @@ function CreateLessonContent() {
                 ...materialUploadedUrls.map(url => `material:${url}`)
             ];
 
-            const scheduleId = searchParams.get("scheduleId");
             const now = new Date();
             const currentHour = now.getHours().toString().padStart(2, '0');
             const currentMinute = now.getMinutes().toString().padStart(2, '0');
@@ -469,32 +472,6 @@ function CreateLessonContent() {
                     endTime: finalEndTime,
                     connectedLessonId
                 });
-
-                // 4. Mark as completed in schedule
-                await saveCompletedItem({
-                    participantName: player,
-                    date: finalDate,
-                    type: "lesson",
-                    scheduleId: scheduleId || undefined
-                });
-
-                // 5. Create a new completed schedule event if one doesn't exist
-                if (!scheduleId) {
-                    const start = new Date(`${finalDate}T${finalStartTime}:00`);
-                    const end = new Date(`${finalDate}T${finalEndTime}:00`);
-
-                    await saveEvent({
-                        id: crypto.randomUUID(),
-                        title: `${player} 레슨 (${selectedPart})`,
-                        start,
-                        end,
-                        type: "lesson",
-                        category: selectedPart as string,
-                        participantName: player,
-                        coachName: currentCoachName,
-                        status: "completed"
-                    });
-                }
             }
 
             // Clear Draft on success

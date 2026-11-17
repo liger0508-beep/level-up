@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 
 // ── Types ──
-type CoachStatus = "active" | "paused";
+type CoachStatus = "active" | "paused" | "retired";
 
 interface Coach {
     id: string;
@@ -61,7 +61,7 @@ export default function CoachesListPage() {
                             phone: d.phone || "",
                             email: "",
                             branch: (d.role === "headquarter" || d.role === "office") ? "전체" : (d.branch || "미지정"),
-                            status: d.status === "휴직" ? "paused" : "active",
+                            status: d.status === "휴직" ? "paused" : d.status === "퇴직" ? "retired" : "active",
                             gender: d.gender === 'male' ? '남' : d.gender === 'female' ? '여' : (d.gender === 'other' ? '기타' : '미지정'),
                             assignedAthletes: [],
                         }));
@@ -141,6 +141,7 @@ export default function CoachesListPage() {
         total: branchFiltered.length,
         active: branchFiltered.filter(c => c.status === "active").length,
         paused: branchFiltered.filter(c => c.status === "paused").length,
+        retired: branchFiltered.filter(c => c.status === "retired").length,
     }), [branchFiltered]);
 
     return (
@@ -183,7 +184,7 @@ export default function CoachesListPage() {
                 </div>
 
                 {/* Stats Summary Cards */}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-center">
                         <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">{stats.active}</p>
                         <p className="text-xs font-medium text-zinc-500 mt-1">재직</p>
@@ -191,6 +192,10 @@ export default function CoachesListPage() {
                     <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-center">
                         <p className="text-2xl font-black text-amber-600 dark:text-amber-400">{stats.paused}</p>
                         <p className="text-xs font-medium text-zinc-500 mt-1">휴직</p>
+                    </div>
+                    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-center">
+                        <p className="text-2xl font-black text-rose-600 dark:text-rose-400">{stats.retired}</p>
+                        <p className="text-xs font-medium text-zinc-500 mt-1">퇴직</p>
                     </div>
                 </div>
 
@@ -234,9 +239,21 @@ export default function CoachesListPage() {
 
                                     {/* Main Info (Simple as requested: Name and Branch) */}
                                     <div className="flex-1 min-w-0">
-                                        <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 mb-0.5">
-                                            {coach.name} <span className="ml-1 text-xs font-medium text-zinc-400">{coach.gender}</span>
-                                        </h3>
+                                        <div className="flex items-center gap-1.5 mb-0.5">
+                                            <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                                                {coach.name} <span className="ml-1 text-xs font-medium text-zinc-400">{coach.gender}</span>
+                                            </h3>
+                                            {coach.status === "paused" && (
+                                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 border border-amber-200 dark:border-amber-500/20">
+                                                    휴직
+                                                </span>
+                                            )}
+                                            {coach.status === "retired" && (
+                                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-600 border border-rose-200 dark:border-rose-500/20">
+                                                    퇴직
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400">
                                             <MapPin size={12} className="text-zinc-400" />
                                             {coach.branch}

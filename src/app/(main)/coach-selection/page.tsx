@@ -21,7 +21,7 @@ interface User {
 export default function CoachSelectionPage() {
     const router = useRouter();
     const supabase = createClient();
-    
+
     const [user, setUser] = useState<User | null>(null);
     const [selectedMonth, setSelectedMonth] = useState(() => {
         const now = new Date();
@@ -46,7 +46,7 @@ export default function CoachSelectionPage() {
             setIsLoading(true);
             try {
                 const { data: { user: authUser } } = await supabase.auth.getUser();
-                
+
                 if (!authUser) {
                     router.push("/login");
                     return;
@@ -57,13 +57,13 @@ export default function CoachSelectionPage() {
                     .select("id, role, branch")
                     .eq("id", authUser.id)
                     .single();
-                
+
                 setUser(profile);
-                
+
                 if (profile && ["athlete", "admin", "office", "headquarter"].includes(profile.role)) {
                     await fetchData(profile, selectedMonth);
                 }
-                
+
                 try {
                     const res = await fetch("/api/coach-selection-settings");
                     if (res.ok) {
@@ -73,7 +73,7 @@ export default function CoachSelectionPage() {
                 } catch (e) {
                     console.error("Failed to load settings from API", e);
                 }
-                
+
 
             } catch (err) {
                 console.error("Auth init error:", err);
@@ -81,10 +81,10 @@ export default function CoachSelectionPage() {
                 setIsLoading(false);
             }
         };
-        
+
         initialize();
     }, [router]);
-    
+
     // When month changes, re-fetch assignments
     useEffect(() => {
         if (user && ["athlete", "admin", "office", "headquarter"].includes(user.role)) {
@@ -103,19 +103,19 @@ export default function CoachSelectionPage() {
             // 1. Fetch Coaches
             const { data: coachesData, error: coachesError } = await supabase
                 .from("users")
-                .select("id, name, branch")
+                .select("id, name, branch, status")
                 .in("role", ["coach", "head_coach"]);
-                
+
             if (coachesError) throw coachesError;
-            
-            let branchCoaches = coachesData || [];
+
+            let branchCoaches = (coachesData || []).filter((c: any) => c.status !== "휴직" && c.status !== "퇴직");
             branchCoaches = branchCoaches.filter((c: any) => c.branch !== "오피스" && c.branch !== "총괄");
-            
+
             // Joymaru specific filter: ONLY 5 coaches
             const allowedJoymaru = ["김규태", "김봉진", "김종명", "박치우", "성세환"];
             // Gumi specific filter: ONLY 3 coaches
             const allowedGumi = ["이준", "문치환", "이기찬"];
-            
+
             branchCoaches = branchCoaches.filter((c: any) => {
                 if (c.branch === "조이마루점") {
                     return allowedJoymaru.includes(c.name);
@@ -125,7 +125,7 @@ export default function CoachSelectionPage() {
                 }
                 return true;
             });
-            
+
             setCoaches(branchCoaches);
 
             // 2. Fetch current assignment for the selected month
@@ -135,9 +135,9 @@ export default function CoachSelectionPage() {
                 .eq("athlete_id", currentUser.id)
                 .eq("month", month)
                 .maybeSingle();
-                
+
             if (assignmentError) throw assignmentError;
-            
+
             if (assignmentData && assignmentData.coach_id) {
                 setSelectedCoachId(assignmentData.coach_id);
                 setOriginalCoachId(assignmentData.coach_id);
@@ -145,13 +145,13 @@ export default function CoachSelectionPage() {
                 setSelectedCoachId("");
                 setOriginalCoachId("");
             }
-            
+
             // 3. Fetch all assignments for the month to calculate limits
             const { data: allAssignments } = await supabase
                 .from("monthly_assignments")
                 .select("coach_id")
                 .eq("month", month);
-                
+
             const counts: Record<string, number> = {};
             if (allAssignments) {
                 allAssignments.forEach((a: any) => {
@@ -166,7 +166,7 @@ export default function CoachSelectionPage() {
 
     const handleSave = async () => {
         if (!user) return;
-        
+
         setIsSaving(true);
         try {
             // Re-check count before saving to prevent race conditions
@@ -176,7 +176,7 @@ export default function CoachSelectionPage() {
                     .select("id")
                     .eq("coach_id", selectedCoachId)
                     .eq("month", selectedMonth);
-                    
+
                 if (latestAssignments && latestAssignments.length >= 7) {
                     alert("선택하신 코치님은 이미 최대 정원(7명)이 마감되었습니다. 다른 코치님을 선택해 주세요.");
                     await fetchData(user, selectedMonth); // Refresh list
@@ -191,7 +191,7 @@ export default function CoachSelectionPage() {
                 .delete()
                 .eq("athlete_id", user.id)
                 .eq("month", selectedMonth);
-                
+
             if (deleteError) {
                 console.error("Delete error:", deleteError);
                 throw deleteError;
@@ -207,18 +207,18 @@ export default function CoachSelectionPage() {
                         month: selectedMonth,
                         branch: user.branch || "전체"
                     });
-                    
+
                 if (insertError) {
                     console.error("Insert error:", insertError);
                     throw insertError;
                 }
             }
-            
+
             setOriginalCoachId(selectedCoachId);
             alert("담임 코치가 성공적으로 저장되었습니다.");
         } catch (error: any) {
             console.error("Save error:", error);
-            
+
             // Extract detailed error info if available
             const detailedError = {
                 message: error.message || "알 수 없는 오류",
@@ -226,7 +226,7 @@ export default function CoachSelectionPage() {
                 hint: error.hint || "힌트 없음",
                 code: error.code || "코드 없음",
             };
-            
+
             alert(`저장 중 오류가 발생했습니다: ${detailedError.message}\n상세: ${detailedError.details}`);
         } finally {
             setIsSaving(false);
@@ -241,7 +241,7 @@ export default function CoachSelectionPage() {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(selectionSettings)
             });
-            
+
             if (!res.ok) {
                 throw new Error("API responded with an error");
             }
@@ -257,7 +257,7 @@ export default function CoachSelectionPage() {
     const isSelectionAllowed = () => {
         // 활성화 토글이 꺼져있으면 무조건 선택 불가
         if (!selectionSettings.enabled) return false;
-        
+
         const now = new Date();
         const currentDay = now.getDate();
         const { startDay, endDay } = selectionSettings;
@@ -277,24 +277,22 @@ export default function CoachSelectionPage() {
         const currentCount = coachCounts[coach.id] || 0;
         const isFull = currentCount >= 7 && !isMyCurrentOriginal;
         const allowed = isSelectionAllowed();
-        
+
         return (
             <button
                 key={coach.id}
                 onClick={() => setSelectedCoachId(isSelected ? "" : coach.id)}
                 disabled={isFull || !allowed}
-                className={`flex items-center justify-between p-4 rounded-xl border text-left transition-all ${
-                    isSelected
+                className={`flex items-center justify-between p-4 rounded-xl border text-left transition-all ${isSelected
                         ? "border-brand-navy bg-brand-navy/5 dark:bg-brand-navy/10 ring-1 ring-brand-navy"
                         : (isFull || !allowed)
                             ? "opacity-50 bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 cursor-not-allowed"
                             : "border-zinc-200 dark:border-zinc-700 hover:border-brand-navy/30 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 bg-white dark:bg-zinc-900"
-                }`}
+                    }`}
             >
                 <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                        isSelected ? "bg-brand-navy text-white" : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
-                    }`}>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${isSelected ? "bg-brand-navy text-white" : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400"
+                        }`}>
                         <UserCircle size={20} />
                     </div>
                     <div>
@@ -348,9 +346,9 @@ export default function CoachSelectionPage() {
                     매월 나의 훈련과 기록을 전담할 코치를 직접 선택하세요. 소속 지점의 코치님들 중에서 선택할 수 있습니다.
                 </p>
             </div>
-            
+
             <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-5 sm:p-6 shadow-sm flex flex-col gap-6">
-                
+
                 {/* Month Selection */}
                 <div className="flex flex-col gap-2">
                     <label className="text-base font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
@@ -386,19 +384,19 @@ export default function CoachSelectionPage() {
                                 <span className="w-2 h-2 rounded-full bg-brand-navy"></span>
                                 담임 코치 선택 기능 활성화
                             </label>
-                            <button 
+                            <button
                                 onClick={() => setSelectionSettings(prev => ({ ...prev, enabled: !prev.enabled }))}
                                 className={`w-12 h-6 rounded-full transition-colors relative flex items-center ${selectionSettings.enabled ? "bg-emerald-500" : "bg-zinc-300 dark:bg-zinc-600"}`}
                             >
                                 <span className={`w-5 h-5 bg-white rounded-full absolute shadow-sm transition-all ${selectionSettings.enabled ? "left-6" : "left-1"}`}></span>
                             </button>
                         </div>
-                        
+
                         <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                             <div className="flex items-center gap-2">
                                 <span className="text-sm font-semibold text-zinc-600 dark:text-zinc-400">시작일</span>
-                                <input 
-                                    type="number" 
+                                <input
+                                    type="number"
                                     min="1" max="31"
                                     value={selectionSettings.startDay}
                                     onChange={(e) => setSelectionSettings(prev => ({ ...prev, startDay: Number(e.target.value) }))}
@@ -409,8 +407,8 @@ export default function CoachSelectionPage() {
                             <span className="text-zinc-300 dark:text-zinc-600 hidden sm:block">~</span>
                             <div className="flex items-center gap-2">
                                 <span className="text-sm font-semibold text-zinc-600 dark:text-zinc-400">종료일</span>
-                                <input 
-                                    type="number" 
+                                <input
+                                    type="number"
                                     min="1" max="31"
                                     value={selectionSettings.endDay}
                                     onChange={(e) => setSelectionSettings(prev => ({ ...prev, endDay: Number(e.target.value) }))}
@@ -430,7 +428,7 @@ export default function CoachSelectionPage() {
                 )}
 
                 <hr className="border-zinc-100 dark:border-zinc-800" />
-                
+
                 {/* Branch Selection */}
                 <div className="flex flex-col gap-2">
                     <label className="text-base font-bold text-zinc-900 dark:text-zinc-100">
@@ -441,11 +439,10 @@ export default function CoachSelectionPage() {
                             <button
                                 key={branch}
                                 onClick={() => setBranchFilter(branch)}
-                                className={`px-5 py-2 rounded-xl text-sm font-bold transition-all border ${
-                                    branchFilter === branch
+                                className={`px-5 py-2 rounded-xl text-sm font-bold transition-all border ${branchFilter === branch
                                         ? "bg-brand-navy border-brand-navy text-white shadow-md"
                                         : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800"
-                                }`}
+                                    }`}
                             >
                                 {branch}
                             </button>
@@ -470,7 +467,7 @@ export default function CoachSelectionPage() {
                             <span className="text-xs font-medium text-zinc-500">※ 선착순 최대 7명</span>
                         </div>
                     </div>
-                    
+
                     {coaches.filter(c => branchFilter === "전체" || c.branch === branchFilter).length === 0 ? (
                         <div className="py-8 text-center text-sm text-zinc-500 bg-zinc-50 dark:bg-zinc-800/20 rounded-xl border border-zinc-100 dark:border-zinc-800">
                             선택 가능한 코치가 없습니다.

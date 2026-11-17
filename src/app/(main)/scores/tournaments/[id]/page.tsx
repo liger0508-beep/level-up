@@ -3,7 +3,10 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Trophy, Calendar, MapPin, Lock, ChevronLeft, ChevronDown, ChevronUp, Loader2, KeyRound, Plus, FileSignature, CheckCircle2, FileText, Medal, Users } from "lucide-react";
+import { 
+    Trophy, Calendar, MapPin, Lock, ChevronLeft, ChevronDown, ChevronUp, 
+    Loader2, KeyRound, Plus, FileSignature, CheckCircle2, FileText, Medal, Users, RotateCw 
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { PageTitle } from "@/components/ui/Typography";
 import { LiveScoreModal } from "@/components/ui/LiveScoreModal";
@@ -36,6 +39,80 @@ export default function TournamentDetailPage() {
     const [selectedRound, setSelectedRound] = useState<number>(1);
     const [showDraftPopup, setShowDraftPopup] = useState(false);
     const [athleteDraftPopup, setAthleteDraftPopup] = useState<{ athleteId: string, athleteName: string, scorecardId: string } | null>(null);
+    const [refreshing, setRefreshing] = useState(false);
+
+    const handleRefresh = async () => {
+        if (refreshing) return;
+        setRefreshing(true);
+        try {
+            const supabase = createClient();
+
+            // 1. Leaderboard 새로고침
+            const { data: lbData } = await supabase
+                .from("tournament_leaderboards")
+                .select(`
+                    id,
+                    round_number,
+                    thru_hole,
+                    total_score,
+                    rank_score,
+                    rank_tee_shot,
+                    rank_second_shot,
+                    rank_around_green,
+                    rank_putting,
+                    athlete:users!tournament_leaderboards_athlete_id_fkey(id, name, branch)
+                `)
+                .eq("tournament_id", tournamentId);
+
+            if (lbData) {
+                setLeaderboard(lbData);
+            }
+
+            // 2. Scorecards 새로고침 (서명 상태 및 마커 스코어 반영)
+            const { data: scData } = await supabase
+                .from("scorecards")
+                .select(`
+                    id, athlete_id, marker_id, tournament_round, is_final, total_score, 
+                    marker_signature, player_signature, referee_signature,
+                    holes:scorecard_holes(hole_number, par, score),
+                    marker_scores:tournament_marker_scores(hole_number, score)
+                `)
+                .eq("tournament_id", tournamentId);
+
+            if (scData) {
+                const map: Record<string, any> = {};
+                scData.forEach((sc: any) => {
+                    const roundNum = sc.tournament_round || 1;
+                    if (sc.marker_id) {
+                        map[`${sc.marker_id}_${roundNum}`] = sc;
+                    }
+                    if (sc.athlete_id) {
+                        map[`athlete_${sc.athlete_id}_${roundNum}`] = sc;
+                    }
+                });
+                setScorecardsMap(map);
+            }
+
+            // 3. Draft 새로고침
+            if (userId) {
+                const { data: draftData } = await supabase
+                    .from("scorecards")
+                    .select("id")
+                    .eq("tournament_id", tournamentId)
+                    .eq("athlete_id", userId)
+                    .eq("tournament_round", selectedRound)
+                    .eq("is_final", false)
+                    .limit(1)
+                    .maybeSingle();
+
+                setDraftId(draftData?.id || null);
+            }
+        } catch (err) {
+            console.error("새로고침 오류:", err);
+        } finally {
+            setTimeout(() => setRefreshing(false), 300);
+        }
+    };
 
     // Category & Live Score State
     const [selectedLiveScoreAthlete, setSelectedLiveScoreAthlete] = useState<{id: string, name: string} | null>(null);
@@ -116,18 +193,21 @@ export default function TournamentDetailPage() {
                 setHasAccess(true);
             }
 
-            // 4. Check for existing draft scorecard for this tournament
+            // 4. Check for existing draft scorecard for this tournament round
             const { data: draftData } = await supabase
                 .from("scorecards")
                 .select("id")
                 .eq("tournament_id", tournamentId)
                 .eq("athlete_id", user.id)
+                .eq("tournament_round", selectedRound)
                 .eq("is_final", false)
                 .limit(1)
                 .maybeSingle();
 
             if (draftData) {
                 setDraftId(draftData.id);
+            } else {
+                setDraftId(null);
             }
 
             // 5. Load Leaderboard
@@ -181,6 +261,26 @@ export default function TournamentDetailPage() {
         };
         load();
     }, [tournamentId, router]);
+
+    // Update draftId when selectedRound or userId changes
+    useEffect(() => {
+        if (!userId || !tournamentId) return;
+        const checkRoundDraft = async () => {
+            const supabase = createClient();
+            const { data: draftData } = await supabase
+                .from("scorecards")
+                .select("id")
+                .eq("tournament_id", tournamentId)
+                .eq("athlete_id", userId)
+                .eq("tournament_round", selectedRound)
+                .eq("is_final", false)
+                .limit(1)
+                .maybeSingle();
+
+            setDraftId(draftData?.id || null);
+        };
+        checkRoundDraft();
+    }, [tournamentId, userId, selectedRound]);
 
     const handleJoin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -526,16 +626,27 @@ export default function TournamentDetailPage() {
             )}
 
             <div className="flex items-center justify-between mb-6 px-1">
-                <PageTitle className="flex items-center gap-2">
-                    <Medal size={20} className="text-brand-navy dark:text-brand-navy-light" />
-                    리더보드
-                </PageTitle>
+                <div className="flex items-center gap-2">
+                    <PageTitle className="flex items-center gap-2">
+                        <Medal size={20} className="text-brand-navy dark:text-brand-navy-light" />
+                        리더보드
+                    </PageTitle>
+                    <button
+                        type="button"
+                        onClick={handleRefresh}
+                        disabled={refreshing}
+                        className="p-1.5 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-zinc-500 hover:text-brand-navy dark:hover:text-zinc-200 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all shadow-xs active:scale-90 flex items-center justify-center"
+                        title="리더보드 및 서명 상태 새로고침"
+                    >
+                        <RotateCw size={16} className={refreshing ? "animate-spin text-brand-navy" : ""} />
+                    </button>
+                </div>
                 <button
                     onClick={() => {
                         if (draftId) {
                             setShowDraftPopup(true);
                         } else {
-                            router.push(`/scores/create?tournament_id=${tournamentId}`);
+                            router.push(`/scores/create?tournament_id=${tournamentId}&round=${selectedRound}`);
                         }
                     }}
                     className="bg-brand-red hover:bg-brand-red-dark text-white px-4 sm:px-5 py-2.5 rounded-xl text-[13px] sm:text-sm font-bold transition-all shadow-sm active:scale-95 flex items-center gap-1.5 shrink-0"
@@ -1038,7 +1149,7 @@ export default function TournamentDetailPage() {
                             <button 
                                 onClick={() => {
                                     setShowDraftPopup(false);
-                                    router.push(`/scores/create?tournament_id=${tournamentId}`);
+                                    router.push(`/scores/create?tournament_id=${tournamentId}&round=${selectedRound}`);
                                 }}
                                 className="flex-1 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 font-semibold text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
                             >
@@ -1048,7 +1159,7 @@ export default function TournamentDetailPage() {
                                 onClick={() => {
                                     setShowDraftPopup(false);
                                     if (draftId) {
-                                        router.push(`/scores/create?id=${draftId}&tournament_id=${tournamentId}`);
+                                        router.push(`/scores/create?id=${draftId}&tournament_id=${tournamentId}&round=${selectedRound}`);
                                     }
                                 }}
                                 className="flex-1 py-2.5 rounded-xl bg-brand-navy text-white font-semibold text-sm hover:bg-brand-navy-dark transition-colors"

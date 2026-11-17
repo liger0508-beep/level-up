@@ -27,7 +27,7 @@ import {
 import { cn } from "@/lib/utils";
 
 // ── Types ──
-type CoachStatus = "active" | "paused";
+type CoachStatus = "active" | "paused" | "retired";
 
 interface CoachDetail {
     id: string;
@@ -49,6 +49,7 @@ interface CoachDetail {
 const statusConfig: Record<string, { label: string; color: string; bgColor: string; icon: typeof UserCheck }> = {
     active: { label: "재직", color: "text-emerald-600 dark:text-emerald-400", bgColor: "bg-emerald-500/10 border-emerald-200 dark:border-emerald-500/20", icon: UserCheck },
     paused: { label: "휴직", color: "text-amber-600 dark:text-amber-400", bgColor: "bg-amber-500/10 border-amber-200 dark:border-amber-500/20", icon: UserMinus },
+    retired: { label: "퇴직", color: "text-rose-600 dark:text-rose-400", bgColor: "bg-rose-500/10 border-rose-200 dark:border-rose-500/20", icon: UserX },
 };
 
 
@@ -158,7 +159,7 @@ export default function CoachDetailPage() {
                         loginId: data.login_id || "",
                         branch: (data.role === "headquarter" || data.role === "office") ? "전체" : (data.branch || "미지정"),
                         registeredAt: data.created_at ? ((data.created_at) ? new Date(data.created_at).toLocaleDateString('en-CA', {timeZone: 'Asia/Seoul'}) : "") : "",
-                        status: data.status === "휴직" ? "paused" : "active",
+                        status: data.status === "휴직" ? "paused" : data.status === "퇴직" ? "retired" : "active",
                         gender: data.gender === "male" ? "남" : data.gender === "female" ? "여" : (data.gender === "other" ? "기타" : "미지정"),
                         birthDate: data.dob || "",
                         assignedAthletes: data.assigned_athletes || "",
@@ -194,7 +195,7 @@ export default function CoachDetailPage() {
                     phone: editData.phone,
                     branch: saveBranch,
                     gender: saveGender,
-                    status: editData.status === "paused" ? "휴직" : "재직",
+                    status: editData.status === "paused" ? "휴직" : editData.status === "retired" ? "퇴직" : "재직",
                     memo: editData.memo || null,
                     assigned_athletes: editData.assignedAthletes || null,
                     dob: editData.birthDate || null,
@@ -380,7 +381,7 @@ export default function CoachDetailPage() {
                             <div className="mt-4 pt-4 border-t border-zinc-100 dark:border-zinc-800/50">
                                 <p className="text-[11px] font-medium text-zinc-400 uppercase tracking-wider mb-2">근무 현황 변경</p>
                                 <div className="flex gap-2">
-                                    {(["active", "paused"] as const).map(s => {
+                                    {(["active", "paused", "retired"] as const).map(s => {
                                         const sc = statusConfig[s];
                                         const ScIcon = sc.icon;
                                         return (

@@ -60,7 +60,7 @@ export default function BranchesPage() {
             setIsLoading(true);
             const { data, error } = await supabase
                 .from("users")
-                .select("id, name, role, branch");
+                .select("id, name, role, branch, status");
             
             if (error) {
                 console.error("Error fetching members:", error);
@@ -88,7 +88,7 @@ export default function BranchesPage() {
 
     // Unassigned members (or members from other branches that could be transferred)
     const unassignedAthletes = members.filter(m => m.role === "athlete" && m.branch !== activeBranchId && m.name.includes(searchQuery));
-    const unassignedCoaches = members.filter(m => (m.role === "coach" || m.role === "admin") && m.branch !== activeBranchId && m.name.includes(searchQuery));
+    const unassignedCoaches = members.filter(m => (m.role === "coach" || m.role === "admin") && m.branch !== activeBranchId && m.name.includes(searchQuery) && (m as any).status !== "휴직" && (m as any).status !== "퇴직");
 
     // Handlers
     const handleAssignMember = async (memberId: string) => {

@@ -77,9 +77,9 @@ export default function AssignedAthletesPage() {
                 // 2. Fetch all coaches (for selection or admin view)
                 const { data: coachesData } = await supabase
                     .from('users')
-                    .select('id, name, role, branch')
+                    .select('id, name, role, branch, status')
                     .in('role', ['coach', 'admin', 'head_coach', 'office', 'headquarter']);
-                setCoaches(coachesData || []);
+                setCoaches((coachesData || []).filter((c: any) => c.status !== '휴직' && c.status !== '퇴직'));
 
                 // 3. Fetch all athletes (for management view)
                 if (profile?.role === 'admin' || profile?.role === 'coach' || profile?.role === 'head_coach' || profile?.role === 'office' || profile?.role === 'headquarter') {

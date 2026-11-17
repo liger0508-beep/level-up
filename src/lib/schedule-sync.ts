@@ -27,6 +27,8 @@ export async function getStoredEvents(startDate?: string, endDate?: string): Pro
         .from("schedules")
         .select(`
             id,
+            user_id,
+            creator_id,
             title,
             event_type,
             start_time,
@@ -39,8 +41,8 @@ export async function getStoredEvents(startDate?: string, endDate?: string): Pro
 
     let targetUserId = user.id;
     if (role === "parent") {
-        const match = profile.name.match(/^(.*?) \(/);
-        const athleteName = match ? match[1] : profile.name;
+        const match = profile?.name?.match(/^(.*?) \(/);
+        const athleteName = match ? match[1] : profile?.name;
         const { data: athlete } = await supabase.from('users').select('id').eq('role', 'athlete').eq('name', athleteName).maybeSingle();
         if (athlete) {
             targetUserId = athlete.id;
@@ -53,23 +55,32 @@ export async function getStoredEvents(startDate?: string, endDate?: string): Pro
     }
 
     if (startDate) {
-        query = query.gte("start_time", `${startDate}T00:00:00Z`);
+        query = query.gte("start_time", `${startDate}T00:00:00+09:00`);
     }
     if (endDate) {
-        query = query.lte("start_time", `${endDate}T23:59:59Z`);
+        query = query.lte("start_time", `${endDate}T23:59:59+09:00`);
     }
 
-    const { data, error } = await query;
-    if (error) {
-        console.error("Error fetching schedules:", error);
-        return [];
+    let allData: any[] = [];
+    let from = 0;
+    const pageSize = 1000;
+    while (true) {
+        const { data, error } = await query.range(from, from + pageSize - 1);
+        if (error) {
+            console.error("Error fetching schedules:", error);
+            break;
+        }
+        if (!data || data.length === 0) break;
+        allData = allData.concat(data);
+        if (data.length < pageSize) break;
+        from += pageSize;
     }
 
     const stored = typeof window !== "undefined" ? localStorage.getItem("gla_coach_completed_items") : null;
     const localCompleted = stored ? JSON.parse(stored) : [];
 
-    return (data || []).map((item: any) => {
-        const isLocalCompleted = localCompleted.some((c: any) => 
+    return allData.map((item: any) => {
+        const isLocalCompleted = localCompleted.some((c: any) =>
             c.participantName === (item.users?.name || "") &&
             c.date === getKstDateStr(item.start_time) &&
             c.type === mapEventType(item.event_type, item.title)
@@ -85,6 +96,7 @@ export async function getStoredEvents(startDate?: string, endDate?: string): Pro
             category: extractCategory(item.title),
             participantName: item.users?.name || "",
             coachName: item.creator?.name || "",
+            ownerRole: (item.user_id === user.id || item.creator_id === user.id) ? "me" : (role === "coach" || role === "admin" ? "athlete" : "coach"),
         };
     });
 }
@@ -97,51 +109,29 @@ export async function saveEvent(event: ScheduleEvent): Promise<string | null> {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
 
-    // Resolve participant user_id by name
-    const participantName = event.participantName?.split(", ")[0]?.trim();
-    let userId = user.id; // default to self
-    
-    if (participantName) {
-        const { data: participantUser } = await supabase
-            .from("users")
-            .select("id")
-            .eq("name", participantName)
-            .maybeSingle();
-        if (participantUser) userId = participantUser.id;
-    }
-
-    // Handle multiple participants
-    const participants = event.participantName?.split(", ").map(n => n.trim()).filter(Boolean) || [];
-    
-    const insertPromises = (participants.length > 0 ? participants : [""]).map(async (name) => {
-        let pUserId = user.id;
-        if (name) {
-            const { data: pUser } = await supabase
-                .from("users")
-                .select("id")
-                .eq("name", name)
-                .maybeSingle();
-            if (pUser) pUserId = pUser.id;
-        }
-
-        return supabase.from("schedules").insert({
-            user_id: pUserId,
-            creator_id: user.id,
-            event_type: mapToDbEventType(event.type),
-            title: getTitleWithType(event.type, event.title),
-            start_time: event.start.toISOString(),
-            end_time: event.end.toISOString(),
-            status: event.status || "scheduled",
+    try {
+        const res = await fetch("/api/schedules", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                event: {
+                    ...event,
+                    start: event.start.toISOString(),
+                    end: event.end.toISOString(),
+                },
+                userId: user.id
+            }),
         });
-    });
-
-    const results = await Promise.all(insertPromises);
-    const firstError = results.find(r => r.error);
-    if (firstError?.error) {
-        console.error("Error saving schedule:", firstError.error);
+        const json = await res.json();
+        if (!res.ok || json.error) {
+            console.error("Error saving schedule via API:", json.error);
+            return null;
+        }
+        return event.id;
+    } catch (err) {
+        console.error("Failed to save schedule:", err);
         return null;
     }
-    return event.id;
 }
 
 /**
@@ -149,54 +139,54 @@ export async function saveEvent(event: ScheduleEvent): Promise<string | null> {
  */
 export async function updateEvent(updatedEvent: ScheduleEvent): Promise<boolean> {
     const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return false;
 
-    // Resolve participant
-    let userId: string | undefined;
-    const participantName = updatedEvent.participantName?.split(", ")[0]?.trim();
-    if (participantName) {
-        const { data: pUser } = await supabase
-            .from("users")
-            .select("id")
-            .eq("name", participantName)
-            .maybeSingle();
-        if (pUser) userId = pUser.id;
-    }
-
-    const updateData: any = {
-        title: getTitleWithType(updatedEvent.type, updatedEvent.title),
-        event_type: mapToDbEventType(updatedEvent.type),
-        start_time: updatedEvent.start.toISOString(),
-        end_time: updatedEvent.end.toISOString(),
-    };
-    if (userId) updateData.user_id = userId;
-
-    const { error } = await supabase
-        .from("schedules")
-        .update(updateData)
-        .eq("id", updatedEvent.id);
-
-    if (error) {
-        console.error("Error updating schedule:", error);
+    try {
+        const res = await fetch("/api/schedules", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                event: {
+                    ...updatedEvent,
+                    start: updatedEvent.start.toISOString(),
+                    end: updatedEvent.end.toISOString(),
+                },
+                userId: user.id
+            }),
+        });
+        const json = await res.json();
+        if (!res.ok || json.error) {
+            console.error("Error updating schedule via API:", json.error);
+            return false;
+        }
+        return true;
+    } catch (err) {
+        console.error("Failed to update schedule:", err);
         return false;
     }
-    return true;
 }
 
 /**
  * Delete an event from the database.
  */
 export async function deleteEvent(id: string): Promise<boolean> {
-    const supabase = createClient();
-    const { error } = await supabase
-        .from("schedules")
-        .delete()
-        .eq("id", id);
-
-    if (error) {
-        console.error("Error deleting schedule:", error);
+    try {
+        const res = await fetch("/api/schedules", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id }),
+        });
+        const json = await res.json();
+        if (!res.ok || json.error) {
+            console.error("Error deleting schedule via API:", json.error);
+            return false;
+        }
+        return true;
+    } catch (err) {
+        console.error("Failed to delete schedule:", err);
         return false;
     }
-    return true;
 }
 
 /**
@@ -212,14 +202,14 @@ export function getTodayScheduledItems(type: "lesson" | "analysis" | "training")
  */
 export async function completeScheduleItem(participantName: string, date: string, type: string, time?: string, scheduleId?: string) {
     const supabase = createClient();
-    
+
     // 1. If scheduleId is provided, use it directly (most reliable)
     if (scheduleId) {
         const { error } = await supabase
             .from("schedules")
             .update({ status: "completed" })
             .eq("id", scheduleId);
-        
+
         if (!error) return;
         console.error("Error updating schedule by ID:", error);
     }
@@ -230,11 +220,11 @@ export async function completeScheduleItem(participantName: string, date: string
         .select("id")
         .eq("name", participantName)
         .maybeSingle();
-    
+
     if (!user) return;
 
-    const startOfDay = `${date}T00:00:00Z`;
-    const endOfDay = `${date}T23:59:59Z`;
+    const startOfDay = `${date}T00:00:00+09:00`;
+    const endOfDay = `${date}T23:59:59+09:00`;
 
     let query = supabase
         .from("schedules")
@@ -252,7 +242,7 @@ export async function completeScheduleItem(participantName: string, date: string
             hint: error.hint,
             code: error.code
         });
-        
+
         // Fallback to localStorage
         const dateStr = date;
         const COMPLETED_KEY = "gla_coach_completed_items";
@@ -277,7 +267,7 @@ export function isCompleted(participantName: string, date: Date, type: string, t
         const completed = JSON.parse(stored);
         const dateStr = getKstDateStr(date);
         const timeStr = time || getKstTimeStr(date);
-        
+
         return completed.some((c: any) =>
             c.participantName === participantName &&
             c.date === dateStr &&
@@ -295,7 +285,7 @@ function mapEventType(dbType: string, title: string): ScheduleEvent["type"] {
     // Check title prefix first for precise types
     if (title.startsWith("[분석]")) return "analysis";
     if (title.startsWith("[상담]")) return "consultation";
-    
+
     const map: Record<string, ScheduleEvent["type"]> = {
         lesson: "lesson",
         training: "training",

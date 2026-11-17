@@ -173,12 +173,36 @@ function ScoreCreateContent() {
     const [selectedPlayer, setSelectedPlayer] = useState("");
 
     // Form fields
+    const initialRoundParam = searchParams.get("round");
+    const [tournamentRound, setTournamentRound] = useState<number>(() => {
+        const r = initialRoundParam ? parseInt(initialRoundParam, 10) : 1;
+        return isNaN(r) || r < 1 ? 1 : r;
+    });
+    const [tournamentInfo, setTournamentInfo] = useState<{
+        id: string;
+        name: string;
+        location: string;
+        start_date: string;
+        end_date: string;
+        total_rounds: number;
+    } | null>(null);
+
     const [distanceUnit, setDistanceUnit] = useState("미터 (m)");
     const [roundDate, setRoundDate] = useState(() => formatLocalDate(new Date()));
     const [category, setCategory] = useState(searchParams.get("tournament_id") ? "대회" : "연습");
     const [golfCourse, setGolfCourse] = useState("");
     const [tournamentId, setTournamentId] = useState<string | null>(searchParams.get("tournament_id"));
     const [selectedMarker, setSelectedMarker] = useState("");
+
+    const handleRoundChange = (rNum: number) => {
+        if (isEditMode) return;
+        setTournamentRound(rNum);
+        if (tournamentInfo?.start_date) {
+            const d = new Date(tournamentInfo.start_date);
+            d.setDate(d.getDate() + (rNum - 1));
+            setRoundDate(formatLocalDate(d));
+        }
+    };
 
     // Hole data
     const [currentHole, setCurrentHole] = useState(1);
@@ -216,13 +240,37 @@ function ScoreCreateContent() {
                 if (tournamentId) {
                     const { data: tData } = await supabase
                         .from("score_tournaments")
-                        .select("location")
+                        .select("id, name, location, start_date, end_date, total_rounds")
                         .eq("id", tournamentId)
                         .single();
                         
                     if (tData) {
-                        setGolfCourse(tData.location);
+                        setTournamentInfo(tData);
+                        if (tData.location) setGolfCourse(tData.location);
                         setCategory("대회");
+
+                        // 디폴트 라운드 판정 (날짜 기반 또는 URL query 기반)
+                        let chosenRound = 1;
+                        if (initialRoundParam) {
+                            chosenRound = parseInt(initialRoundParam, 10) || 1;
+                        } else if (tData.start_date) {
+                            const todayStr = formatLocalDate(new Date());
+                            const start = new Date(tData.start_date);
+                            const today = new Date(todayStr);
+                            const diffTime = today.getTime() - start.getTime();
+                            const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+                            const maxRounds = tData.total_rounds || 1;
+                            chosenRound = Math.max(1, Math.min(diffDays, maxRounds));
+                        }
+                        const validRound = Math.max(1, Math.min(chosenRound, tData.total_rounds || 1));
+                        setTournamentRound(validRound);
+
+                        // 해당 라운드 날짜로 roundDate 자동 동기화
+                        if (tData.start_date) {
+                            const d = new Date(tData.start_date);
+                            d.setDate(d.getDate() + (validRound - 1));
+                            setRoundDate(formatLocalDate(d));
+                        }
                     }
                 }
             } catch (error) {
@@ -276,7 +324,7 @@ function ScoreCreateContent() {
                     weather: category,
                     distance_unit: distanceUnit.includes("야드") ? "yard" : "meter",
                     tournament_id: tournamentId || null,
-                    tournament_round: tournamentId ? 1 : null,
+                    tournament_round: tournamentId ? tournamentRound : null,
                     marker_id: resolvedMarkerId || null
                 }).eq("id", targetId);
                 if (updateErr) throw updateErr;
@@ -292,7 +340,7 @@ function ScoreCreateContent() {
                     is_final: false,
                     hole_count: holes.filter(h => h.par > 0).length,
                     tournament_id: tournamentId || null,
-                    tournament_round: tournamentId ? 1 : null,
+                    tournament_round: tournamentId ? tournamentRound : null,
                     marker_id: resolvedMarkerId || null
                 }).select("id").single();
                 if (insertErr) throw insertErr;
@@ -399,7 +447,7 @@ function ScoreCreateContent() {
                     await supabase.from("tournament_leaderboards").upsert({
                         tournament_id: tournamentId,
                         athlete_id: resolvedMarkerId,
-                        round_number: 1,
+                        round_number: tournamentRound,
                         thru_hole: completedCount,
                         total_score: markerTotalScore,
                         updated_at: new Date().toISOString()
@@ -508,7 +556,7 @@ function ScoreCreateContent() {
             const { data: sc, error } = await supabase
                 .from("scorecards")
                 .select(`
-                    id, round_date, course_name, total_score, distance_unit, weather, is_final, marker_id, tournament_id,
+                    id, round_date, course_name, total_score, distance_unit, weather, is_final, marker_id, tournament_id, tournament_round,
                     athlete:users!scorecards_athlete_id_fkey(name),
                     holes:scorecard_holes(
                         id, hole_number, par, score,
@@ -535,6 +583,17 @@ function ScoreCreateContent() {
             if (sc.tournament_id) {
                 setTournamentId(sc.tournament_id);
                 setCategory("대회");
+                if (sc.tournament_round) {
+                    setTournamentRound(sc.tournament_round);
+                }
+                const { data: tData } = await supabase
+                    .from("score_tournaments")
+                    .select("id, name, location, start_date, end_date, total_rounds")
+                    .eq("id", sc.tournament_id)
+                    .single();
+                if (tData) {
+                    setTournamentInfo(tData);
+                }
             }
             if (sc.marker_id) {
                 const { data: markerUser } = await supabase.from("users").select("name").eq("id", sc.marker_id).single();
@@ -1167,6 +1226,7 @@ function ScoreCreateContent() {
                         is_final: true,
                         hole_count: completedCount,
                         tournament_id: finalTournamentId || null,
+                        tournament_round: finalTournamentId ? tournamentRound : null,
                         marker_id: markerId || null
                     })
                     .eq("id", scorecardId);
@@ -1185,6 +1245,7 @@ function ScoreCreateContent() {
                         is_final:      true,
                         hole_count:    completedCount,
                         tournament_id: finalTournamentId || null,
+                        tournament_round: finalTournamentId ? tournamentRound : null,
                         marker_id:     markerId || null
                     })
                     .select("id")
@@ -1220,7 +1281,7 @@ function ScoreCreateContent() {
             if (holesErr || !insertedHoles) throw new Error(`홀 정보 저장 실패: ${holesErr?.message}`);
 
             // 6. 모든 샷 데이터를 배열로 준비 (Batch Insert용)
-            const holeIdMap = new Map(insertedHoles.map(h => [h.hole_number, h.id]));
+            const holeIdMap = new Map(insertedHoles.map((h: any) => [h.hole_number, h.id]));
             const isYard = distanceUnit.includes("야드");
             
             const shotsToInsert: any[] = [];
@@ -1292,7 +1353,7 @@ function ScoreCreateContent() {
                     const { error: tbErr } = await supabase.from("tournament_leaderboards").upsert({
                         tournament_id: tournamentId,
                         athlete_id: markerId,
-                        round_number: 1,
+                        round_number: tournamentRound,
                         thru_hole: completedCount,
                         total_score: markerTotalScore,
                         updated_at: new Date().toISOString()
@@ -1510,7 +1571,13 @@ function ScoreCreateContent() {
                                             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-brand-navy/10 text-brand-navy dark:bg-brand-navy/20 dark:text-brand-navy-light">{selectedPlayer}</span>
                                         )}
                                         <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">{distanceUnit}</span>
-                                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">{roundDate}</span>
+                                        {tournamentId ? (
+                                            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-brand-navy text-white">
+                                                {tournamentRound}R
+                                            </span>
+                                        ) : (
+                                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">{roundDate}</span>
+                                        )}
                                         <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">{category}</span>
                                         {golfCourse && (
                                             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 max-w-[120px] truncate">{golfCourse}</span>
@@ -1560,22 +1627,59 @@ function ScoreCreateContent() {
                                         </div>
                                     </div>
 
-                                    {/* 라운드 일자 */}
-                                    <div className="space-y-2">
-                                        <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-                                            라운드 일자 <span className="text-brand-red">*</span>
-                                        </label>
-                                        <div className="relative">
-                                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                            <DatePickerInput
-                                                value={roundDate}
-                                                onChange={(e) => setRoundDate(e.target.value)}
-                                                required
-                                                disabled={isEditMode}
-                                                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all text-center disabled:opacity-60 disabled:bg-zinc-50 dark:disabled:bg-zinc-800/50"
-                                            />
+                                    {/* 라운드 일자 / 라운드 선택 */}
+                                    {tournamentId ? (
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                                                    라운드 선택 <span className="text-brand-red">*</span>
+                                                </label>
+                                                {roundDate && (
+                                                    <span className="text-xs text-zinc-400 font-medium">
+                                                        ({roundDate})
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                                                {Array.from({ length: tournamentInfo?.total_rounds || 2 }).map((_, idx) => {
+                                                    const rNum = idx + 1;
+                                                    const isSelected = tournamentRound === rNum;
+                                                    return (
+                                                        <button
+                                                            key={rNum}
+                                                            type="button"
+                                                            disabled={isEditMode}
+                                                            onClick={() => handleRoundChange(rNum)}
+                                                            className={cn(
+                                                                "py-2.5 px-4 rounded-xl text-sm font-bold transition-all shadow-sm active:scale-95 text-center border",
+                                                                isSelected
+                                                                    ? "bg-brand-navy border-brand-navy text-white shadow-brand-navy/20"
+                                                                    : "bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 disabled:opacity-60"
+                                                            )}
+                                                        >
+                                                            {rNum}R
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
-                                    </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            <label className="block text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                                                라운드 일자 <span className="text-brand-red">*</span>
+                                            </label>
+                                            <div className="relative">
+                                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                                <DatePickerInput
+                                                    value={roundDate}
+                                                    onChange={(e) => setRoundDate(e.target.value)}
+                                                    required
+                                                    disabled={isEditMode}
+                                                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all text-center disabled:opacity-60 disabled:bg-zinc-50 dark:disabled:bg-zinc-800/50"
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {/* 구분 */}
                                     <div className="space-y-2">

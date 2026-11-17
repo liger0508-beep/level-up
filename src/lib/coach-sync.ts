@@ -7,7 +7,7 @@ export async function fetchCoaches(): Promise<string[]> {
     const supabase = createClient();
     const { data, error } = await supabase
         .from("users")
-        .select("name")
+        .select("name, status")
         .in("role", ["coach", "admin"])
         .order("name");
 
@@ -16,5 +16,7 @@ export async function fetchCoaches(): Promise<string[]> {
         return [];
     }
 
-    return (data || []).map((u: { name: string }) => u.name);
+    return (data || [])
+        .filter((u: any) => u.status !== "휴직" && u.status !== "퇴직")
+        .map((u: { name: string }) => u.name);
 }

@@ -20,6 +20,22 @@ export async function login(formData: FormData) {
     }
 
     if (authData.user) {
+        const adminSupabase = await createAdminClient()
+        const { data: profile } = await adminSupabase
+            .from('users')
+            .select('role, status')
+            .eq('id', authData.user.id)
+            .maybeSingle()
+
+        if (profile?.status === '퇴직') {
+            await supabase.auth.signOut()
+            redirect('/login?message=' + encodeURIComponent('퇴직 처리된 계정입니다. 관리자에게 문의하세요.'))
+        }
+        if (profile?.status === '휴직') {
+            await supabase.auth.signOut()
+            redirect('/login?message=' + encodeURIComponent('휴직 상태인 계정입니다. 관리자에게 문의하세요.'))
+        }
+
         await supabase.from('login_logs').insert([{ user_id: authData.user.id }])
         // 새롭게 추가한 활동 로그 테이블에도 'login' 기록 남기기
         await supabase.from('user_activity_logs').insert([{ user_id: authData.user.id, activity_type: 'login' }])

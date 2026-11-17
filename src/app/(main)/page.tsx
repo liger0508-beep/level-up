@@ -48,7 +48,7 @@ const ALL_SHORTCUTS = [
   { id: "challenges", title: "챌린지", icon: Trophy, color: "bg-rose-50 border-transparent text-rose-500 dark:bg-rose-500/10 dark:border-transparent dark:text-rose-400", href: "/training/challenges" },
   { id: "tournament-schedule", title: "대회 스케쥴", icon: Calendar, color: "bg-teal-50 border-transparent text-teal-500 dark:bg-teal-500/10 dark:border-transparent dark:text-teal-400", href: "/admin/tournament-schedule" },
   { id: "tournament-results", title: "대회 결과", icon: Award, color: "bg-amber-50 border-transparent text-amber-500 dark:bg-amber-500/10 dark:border-transparent dark:text-amber-400", href: "/admin/tournament-results" },
-  { id: "schedule", title: "스케쥴", icon: Calendar, color: "bg-cyan-50 border-transparent text-cyan-500 dark:bg-cyan-500/10 dark:border-transparent dark:text-cyan-400", href: "/schedule" },
+  { id: "schedule", title: "스케쥴 예약", icon: Calendar, color: "bg-cyan-50 border-transparent text-cyan-500 dark:bg-cyan-500/10 dark:border-transparent dark:text-cyan-400", href: "/schedule" },
   { id: "scores", title: "스코어", icon: Flag, color: "bg-sky-50 border-transparent text-sky-500 dark:bg-sky-500/10 dark:border-transparent dark:text-sky-400", href: "/scores" },
   { id: "category-stats", title: "항목별 통계", icon: PieChart, color: "bg-pink-50 border-transparent text-pink-500 dark:bg-pink-500/10 dark:border-transparent dark:text-pink-400", href: "/scores/category-stats" },
   { id: "community", title: "공지사항", icon: Bell, color: "bg-indigo-50 border-transparent text-indigo-500 dark:bg-indigo-500/10 dark:border-transparent dark:text-indigo-400", href: "/community" },
@@ -213,15 +213,15 @@ export default function Home() {
           }
           // Coach: Find branch athletes (for scores)
           if (profile.role === "headquarter" || profile.role === "office") {
-              const { data: allBranchAthletes } = await supabase.from("users").select("id").eq("role", "athlete");
-              if (allBranchAthletes) {
-                scoreTargetAthleteIds = allBranchAthletes.map((a: any) => a.id);
-              }
+            const { data: allBranchAthletes } = await supabase.from("users").select("id").eq("role", "athlete");
+            if (allBranchAthletes) {
+              scoreTargetAthleteIds = allBranchAthletes.map((a: any) => a.id);
+            }
           } else if (profile.branch) {
-              const { data: branchAthletes } = await supabase.from("users").select("id").eq("branch", profile.branch).eq("role", "athlete");
-              if (branchAthletes) {
-                scoreTargetAthleteIds = branchAthletes.map((a: any) => a.id);
-              }
+            const { data: branchAthletes } = await supabase.from("users").select("id").eq("branch", profile.branch).eq("role", "athlete");
+            if (branchAthletes) {
+              scoreTargetAthleteIds = branchAthletes.map((a: any) => a.id);
+            }
           }
           if (scoreTargetAthleteIds.length === 0) {
             scoreTargetAthleteIds = [...targetAthleteIds];
@@ -343,12 +343,12 @@ export default function Home() {
         const allPolls = await getPolls(10);
         const ongoingUnvoted = allPolls.filter(p => {
           const isOngoing = p.status === "ongoing" && todayStr >= p.startDate && todayStr <= p.endDate;
-          
+
           if (!isOngoing) return false;
 
           // Permission check: Branch & Role
           const isMasterBranch = profile && (profile.role === 'office' || profile.role === 'headquarter');
-          
+
           const pollTypes = p.type.split(',').map(t => t.trim());
           const hasRolePermission = isMasterBranch || pollTypes.includes("all") || (profile && pollTypes.includes(profile.role));
 
@@ -379,14 +379,14 @@ export default function Home() {
         const filteredNotices = allNotices.filter(n => {
           const isMasterBranch = profile && (profile.role === 'office' || profile.role === 'headquarter');
           if (profile && profile.role === 'admin' || isMasterBranch) return true;
-          
+
           const baseBranch = profile?.branch ? profile.branch.replace('점', '') : '';
           const hasBranch = n.branch === '전체' || n.branch.includes(baseBranch) || n.authorId === user.id;
           const hasRole = n.type === 'all' || (profile && profile.role === 'coach') || (profile && profile.role === n.type) || n.authorId === user.id;
-          
+
           return hasBranch && hasRole;
         });
-        
+
         if (filteredNotices.length > 0) {
           setRecentNotice(filteredNotices.sort((a, b) => b.date.localeCompare(a.date))[0]);
         }
@@ -655,73 +655,73 @@ export default function Home() {
             </div>
           ) : (
             <>
-          <div
-            ref={bannerScrollRef}
-            className="flex overflow-x-auto snap-x snap-mandatory gap-8 pb-3 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
-            onScroll={(e) => {
-              const scrollLeft = e.currentTarget.scrollLeft;
-              const width = e.currentTarget.clientWidth;
-              const index = Math.round(scrollLeft / width);
-              setActiveBannerIndex(index);
-            }}
-          >
-            {pendingPolls.map((poll) => (
-              <Link key={poll.id} href={`/admin/polls/${poll.id}`} className="w-full min-w-full snap-center shrink-0 flex justify-between items-center group">
-                <div className="space-y-2 max-w-[75%] pr-4 overflow-hidden">
-                  <h3 className="text-lg font-black text-zinc-900 dark:text-zinc-50 tracking-tight truncate group-hover:text-brand-navy transition-colors">
-                    {getPlainText(poll.title)}
-                  </h3>
-                </div>
-                <div className="w-14 h-14 flex items-center justify-center bg-blue-50 dark:bg-blue-900/20 text-blue-500 rounded-2xl shrink-0 group-hover:scale-110 transition-transform">
-                  <BarChart3 size={28} />
-                </div>
-              </Link>
-            ))}
-
-            {recentNotice && (
-              <Link href={`/community/${recentNotice.id}`} className="w-full min-w-full snap-center shrink-0 flex justify-between items-center group">
-                <div className="space-y-2 max-w-[75%] pr-4">
-                  <h3 className="text-lg font-black text-zinc-900 dark:text-zinc-50 tracking-tight line-clamp-1 group-hover:text-emerald-600 transition-colors">
-                    {getPlainText(recentNotice.title)}
-                  </h3>
-                </div>
-                <div className="w-14 h-14 flex items-center justify-center bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500 rounded-2xl shrink-0 group-hover:scale-110 transition-transform">
-                  <Bell size={28} />
-                </div>
-              </Link>
-            )}
-          </div>
-
-          {/* Dots Indicator */}
-          {(() => {
-            const totalSlides = pendingPolls.length + (recentNotice ? 1 : 0);
-            if (totalSlides <= 1) return null;
-
-            return (
-              <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 cursor-pointer">
-                {Array.from({ length: totalSlides }).map((_, idx) => (
-                  <button
-                    key={idx}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      if (bannerScrollRef.current) {
-                        const container = bannerScrollRef.current;
-                        const child = container.children[idx] as HTMLElement;
-                        if (child) {
-                          container.scrollTo({ left: child.offsetLeft - container.offsetLeft, behavior: 'smooth' });
-                          setActiveBannerIndex(idx);
-                        }
-                      }
-                    }}
-                    className={cn(
-                      "w-1.5 h-1.5 rounded-full transition-colors",
-                      activeBannerIndex === idx ? "bg-zinc-400 dark:bg-zinc-500" : "bg-zinc-200 dark:bg-zinc-800"
-                    )}
-                  />
+              <div
+                ref={bannerScrollRef}
+                className="flex overflow-x-auto snap-x snap-mandatory gap-8 pb-3 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+                onScroll={(e) => {
+                  const scrollLeft = e.currentTarget.scrollLeft;
+                  const width = e.currentTarget.clientWidth;
+                  const index = Math.round(scrollLeft / width);
+                  setActiveBannerIndex(index);
+                }}
+              >
+                {pendingPolls.map((poll) => (
+                  <Link key={poll.id} href={`/admin/polls/${poll.id}`} className="w-full min-w-full snap-center shrink-0 flex justify-between items-center group">
+                    <div className="space-y-2 max-w-[75%] pr-4 overflow-hidden">
+                      <h3 className="text-lg font-black text-zinc-900 dark:text-zinc-50 tracking-tight truncate group-hover:text-brand-navy transition-colors">
+                        {getPlainText(poll.title)}
+                      </h3>
+                    </div>
+                    <div className="w-14 h-14 flex items-center justify-center bg-blue-50 dark:bg-blue-900/20 text-blue-500 rounded-2xl shrink-0 group-hover:scale-110 transition-transform">
+                      <BarChart3 size={28} />
+                    </div>
+                  </Link>
                 ))}
+
+                {recentNotice && (
+                  <Link href={`/community/${recentNotice.id}`} className="w-full min-w-full snap-center shrink-0 flex justify-between items-center group">
+                    <div className="space-y-2 max-w-[75%] pr-4">
+                      <h3 className="text-lg font-black text-zinc-900 dark:text-zinc-50 tracking-tight line-clamp-1 group-hover:text-emerald-600 transition-colors">
+                        {getPlainText(recentNotice.title)}
+                      </h3>
+                    </div>
+                    <div className="w-14 h-14 flex items-center justify-center bg-emerald-50 dark:bg-emerald-900/20 text-emerald-500 rounded-2xl shrink-0 group-hover:scale-110 transition-transform">
+                      <Bell size={28} />
+                    </div>
+                  </Link>
+                )}
               </div>
-            );
-          })()}
+
+              {/* Dots Indicator */}
+              {(() => {
+                const totalSlides = pendingPolls.length + (recentNotice ? 1 : 0);
+                if (totalSlides <= 1) return null;
+
+                return (
+                  <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 cursor-pointer">
+                    {Array.from({ length: totalSlides }).map((_, idx) => (
+                      <button
+                        key={idx}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          if (bannerScrollRef.current) {
+                            const container = bannerScrollRef.current;
+                            const child = container.children[idx] as HTMLElement;
+                            if (child) {
+                              container.scrollTo({ left: child.offsetLeft - container.offsetLeft, behavior: 'smooth' });
+                              setActiveBannerIndex(idx);
+                            }
+                          }
+                        }}
+                        className={cn(
+                          "w-1.5 h-1.5 rounded-full transition-colors",
+                          activeBannerIndex === idx ? "bg-zinc-400 dark:bg-zinc-500" : "bg-zinc-200 dark:bg-zinc-800"
+                        )}
+                      />
+                    ))}
+                  </div>
+                );
+              })()}
             </>
           )}
         </section>

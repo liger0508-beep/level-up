@@ -16,6 +16,8 @@ export default function SchedulePage() {
     const [currentRole, setCurrentRole] = useState<"coach" | "athlete">("coach");
     const [isLoading, setIsLoading] = useState(true);
     const [currentCoachName, setCurrentCoachName] = useState("");
+    const [currentUserName, setCurrentUserName] = useState("");
+    const [currentUserBranch, setCurrentUserBranch] = useState("");
 
     // Load events from Supabase
     useEffect(() => {
@@ -24,17 +26,33 @@ export default function SchedulePage() {
             try {
                 const supabase = createClient();
                 const { data: { user } } = await supabase.auth.getUser();
-                
+
                 if (user) {
                     const { data: profile } = await supabase
                         .from("users")
-                        .select("role, name")
+                        .select("role, name, branch")
                         .eq("id", user.id)
                         .maybeSingle();
 
                     if (profile) {
-                        setCurrentRole(profile.role === "athlete" || profile.role === "parent" ? "athlete" : "coach");
-                        setCurrentCoachName(profile.name || "");
+                        const isAthlete = profile.role === "athlete" || profile.role === "parent";
+                        setCurrentRole(isAthlete ? "athlete" : "coach");
+                        setCurrentCoachName(!isAthlete ? (profile.name || "") : "");
+                        setCurrentUserName(profile.name || "");
+
+                        let branch = profile.branch || "";
+                        if (profile.role === "parent") {
+                            const match = profile?.name?.match(/^(.*?) \(/);
+                            const athleteName = match ? match[1] : profile?.name;
+                            const { data: athlete } = await supabase
+                                .from('users')
+                                .select('branch')
+                                .eq('role', 'athlete')
+                                .eq('name', athleteName)
+                                .maybeSingle();
+                            if (athlete?.branch) branch = athlete.branch;
+                        }
+                        setCurrentUserBranch(branch);
                     }
                 }
 
@@ -101,14 +119,12 @@ export default function SchedulePage() {
                     </h1>
                 </div>
 
-                {currentRole === "coach" && (
-                    <button
-                        onClick={handleAddEvent}
-                        className="bg-brand-red hover:bg-brand-red-dark text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all flex items-center gap-1"
-                    >
-                        <Plus className="w-4 h-4" /> 작성
-                    </button>
-                )}
+                <button
+                    onClick={handleAddEvent}
+                    className="bg-brand-red hover:bg-brand-red-dark text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all flex items-center gap-1"
+                >
+                    <Plus className="w-4 h-4" /> 예약
+                </button>
             </div>
 
             {isLoading ? (
@@ -139,6 +155,9 @@ export default function SchedulePage() {
                         editEvent={editingEvent}
                         initialDate={selectedSlotDate}
                         currentCoachName={currentCoachName}
+                        currentRole={currentRole}
+                        currentUserName={currentUserName}
+                        currentUserBranch={currentUserBranch}
                     />
                 </>
             )}
