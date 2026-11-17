@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+export const dynamic = 'force-dynamic';
+
 const getSupabaseAdmin = () => {
     return createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL || '',
@@ -298,7 +300,8 @@ export async function GET(request: Request) {
             if (bData) {
                 const text = await bData.text();
                 const blockouts: any[] = JSON.parse(text || '[]');
-                const targetDayOfWeek = new Date(`${date}T00:00:00+09:00`).getDay();
+                const [y, m, d] = date.split('-').map(Number);
+                const targetDayOfWeek = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
 
                 const matchedBlockouts = blockouts.filter(b => {
                     const matchCoach = coachIds.includes(b.coachId) || b.coachName === cleanName || b.coachName === coachName.trim();

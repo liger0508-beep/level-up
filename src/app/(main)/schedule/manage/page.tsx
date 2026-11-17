@@ -271,7 +271,8 @@ export default function ScheduleManagePage() {
 
     // Day of week for selectedDate (0=Sun, 1=Mon, ..., 6=Sat)
     const currentDayOfWeek = useMemo(() => {
-        return new Date(`${selectedDate}T00:00:00+09:00`).getDay();
+        const [y, m, d] = selectedDate.split('-').map(Number);
+        return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
     }, [selectedDate]);
 
     // Helper: Find schedule for a coach at a slot

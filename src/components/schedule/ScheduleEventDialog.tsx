@@ -165,7 +165,7 @@ export function ScheduleEventDialog({
         setIsLoadingSlots(true);
 
         const cleanCoach = coachName.replace(/ (감독|코치|프로)$/, '').trim();
-        fetch(`/api/schedules?coachName=${encodeURIComponent(cleanCoach)}&date=${date}&excludeId=${editEvent?.id || ""}`)
+        fetch(`/api/schedules?coachName=${encodeURIComponent(cleanCoach)}&date=${date}&excludeId=${editEvent?.id || ""}&_t=${Date.now()}`, { cache: "no-store" })
             .then((res) => res.json())
             .then((data) => {
                 if (isMounted) {

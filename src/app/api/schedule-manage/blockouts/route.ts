@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+export const dynamic = 'force-dynamic';
+
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -70,8 +72,8 @@ export async function GET(request: Request) {
         }
 
         if (date) {
-            const d = new Date(`${date}T00:00:00+09:00`);
-            const dayOfWeek = d.getDay();
+            const [y, m, d] = date.split('-').map(Number);
+            const dayOfWeek = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
             blockouts = blockouts.filter(b => {
                 if (b.type === 'recurring') {
                     return b.dayOfWeek === dayOfWeek;
