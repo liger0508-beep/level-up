@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 import React, { useState, useMemo, useEffect, useRef, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { BookOpen, Calendar, CheckCircle2, ChevronLeft, ChevronRight, Edit2, Flag, Image as ImageIcon, MapPin, Search, Trash2, Upload, Video, X, FileText, User, Circle, CornerDownRight, Plus, Check, ChevronDown, ChevronUp, Paperclip } from "lucide-react";
+import { BookOpen, Calendar, CheckCircle2, ChevronLeft, ChevronRight, Edit2, Flag, Image as ImageIcon, MapPin, Search, Trash2, Upload, Video, X, FileText, User, Circle, CornerDownRight, Plus, Check, ChevronDown, ChevronUp, Paperclip, Sparkles, RotateCcw } from "lucide-react";
 import { CategoryTabs } from "@/components/ui/CategoryTabs";
 import { FileUploadButton } from "@/components/ui/FileUploadButton";
 import { PageTitle, SectionTitle, LabelText, BodyText, Caption } from "@/components/ui/Typography";
@@ -160,7 +160,7 @@ function CreateLessonContent() {
 
         // 3. RBAC & Coach Info
         const supabase = createClient();
-        supabase.auth.getUser().then(async ({ data: { user } }) => {
+        supabase.auth.getUser().then(async ({ data: { user } }: { data: { user: any } }) => {
             if (user) {
                 const { data: dbUser } = await supabase
                     .from("users")
@@ -241,6 +241,36 @@ function CreateLessonContent() {
 
     const [selectedPart, setSelectedPart] = useState<string>("shot");
     const [lessonContent, setLessonContent] = useState("");
+    const [aiLoadingMode, setAiLoadingMode] = useState<"summarize" | "expand" | null>(null);
+    const [prevLessonContent, setPrevLessonContent] = useState<string | null>(null);
+
+    const handleAiHelper = async (mode: "summarize" | "expand") => {
+        if (!lessonContent.trim()) {
+            alert("먼저 레슨 내용을 간단히 입력해 주세요.");
+            return;
+        }
+        setAiLoadingMode(mode);
+        try {
+            const res = await fetch("/api/ai/lesson-helper", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    content: lessonContent,
+                    mode,
+                    category: selectedPart,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "AI 처리 실패");
+
+            setPrevLessonContent(lessonContent);
+            setLessonContent(data.result);
+        } catch (err: any) {
+            alert(err?.message || "AI 처리 중 오류가 발생했습니다.");
+        } finally {
+            setAiLoadingMode(null);
+        }
+    };
     const [dbTemplates, setDbTemplates] = useState<LessonTemplate[]>([]);
     const [isTemplateDropdownOpen, setIsTemplateDropdownOpen] = useState(false);
     const templateDropdownRef = useRef<HTMLDivElement>(null);
@@ -780,21 +810,59 @@ function CreateLessonContent() {
                             <p>* 최근 레슨 내용 확인 및 진행사항 점검</p>
                             <p>* 레슨 목표 방향에 맞는 레슨 내용 작성</p>
                         </div>
-                        <div className="flex flex-col gap-2">
+                        <div className="flex flex-col gap-3">
                             <textarea
                                 rows={6}
                                 value={lessonContent}
                                 onChange={(e) => setLessonContent(e.target.value)}
-                                placeholder=""
-                                className="w-full p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all resize-y"
+                                placeholder="레슨 내용을 간략하게 적은 후, 하단 AI 버튼을 누르면 전문적이고 조리 있게 정리해 드립니다."
+                                className="w-full p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all resize-y"
                             />
-                            {!connectedLessonId && (
-                                <div className="flex items-center justify-between p-4 bg-orange-50 dark:bg-orange-900/20 rounded-xl text-zinc-500 dark:text-zinc-400 text-sm">
-                                    <X size={16} className="shrink-0 text-zinc-400" />
-                                    <span className="flex-1 text-center whitespace-nowrap text-[12px] sm:text-sm tracking-tight">기존 레슨과 연결되지 않은 신규 레슨 입니다.</span>
-                                    <X size={16} className="shrink-0 text-zinc-400" />
+                            <div className="flex items-center justify-between gap-2 pt-1">
+                                <div className="shrink-0">
+                                    {prevLessonContent !== null && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setLessonContent(prevLessonContent);
+                                                setPrevLessonContent(null);
+                                            }}
+                                            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors whitespace-nowrap shrink-0"
+                                        >
+                                            <RotateCcw size={13} className="shrink-0" />
+                                            <span>되돌리기</span>
+                                        </button>
+                                    )}
                                 </div>
-                            )}
+                                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                                    <button
+                                        type="button"
+                                        disabled={aiLoadingMode !== null}
+                                        onClick={() => handleAiHelper("summarize")}
+                                        className="flex items-center gap-1 px-3 sm:px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold border border-indigo-200 dark:border-indigo-700/60 bg-indigo-50/70 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-all shadow-sm disabled:opacity-50 whitespace-nowrap shrink-0"
+                                    >
+                                        {aiLoadingMode === "summarize" ? (
+                                            <div className="w-3.5 h-3.5 border-2 border-indigo-400/40 border-t-indigo-600 rounded-full animate-spin shrink-0" />
+                                        ) : (
+                                            <Sparkles size={14} className="shrink-0" />
+                                        )}
+                                        <span>AI 요약</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={aiLoadingMode !== null}
+                                        onClick={() => handleAiHelper("expand")}
+                                        className="flex items-center gap-1 px-3.5 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-violet-600 hover:from-blue-700 hover:to-violet-700 shadow-sm hover:shadow transition-all disabled:opacity-50 whitespace-nowrap shrink-0"
+                                    >
+                                        {aiLoadingMode === "expand" ? (
+                                            <div className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin shrink-0" />
+                                        ) : (
+                                            <Sparkles size={14} className="shrink-0" />
+                                        )}
+                                        <span>AI 보완</span>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </section>
                     {/* ── 4. Footers / Actions ── */}

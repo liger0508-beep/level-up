@@ -121,7 +121,7 @@ export default function ScheduleManagePage() {
     const [boType, setBoType] = useState<"recurring" | "specific_date">("recurring");
     const [boDayOfWeek, setBoDayOfWeek] = useState<number>(3); // Wednesday default
     const [boDate, setBoDate] = useState<string>(() => format(new Date(), "yyyy-MM-dd"));
-    const [boAllDay, setBoAllDay] = useState(true);
+    const [boAllDay, setBoAllDay] = useState(false);
     const [boSlots, setBoSlots] = useState<string[]>([]);
     const [boReason, setBoReason] = useState("정기 휴무");
     const [isSubmittingBo, setIsSubmittingBo] = useState(false);
@@ -363,7 +363,7 @@ export default function ScheduleManagePage() {
         setBoType("recurring");
         setBoDayOfWeek(currentDayOfWeek);
         setBoDate(selectedDate);
-        setBoAllDay(true);
+        setBoAllDay(false);
         setBoSlots([]);
         setBoReason("정기 휴무");
         setIsBlockoutModalOpen(true);
@@ -376,6 +376,12 @@ export default function ScheduleManagePage() {
             alert("코치를 선택해주세요.");
             return;
         }
+        if (boSlots.length === 0) {
+            alert("시간을 최소 1개 이상 선택해주세요.");
+            return;
+        }
+
+        const isAllDaySelected = boSlots.length === TIME_SLOTS.length;
 
         setIsSubmittingBo(true);
         try {
@@ -389,7 +395,7 @@ export default function ScheduleManagePage() {
                     type: boType,
                     dayOfWeek: boDayOfWeek,
                     date: boDate,
-                    allDay: boAllDay,
+                    allDay: isAllDaySelected,
                     slots: boSlots,
                     reason: boReason,
                     createdBy: currentUserName
@@ -1278,39 +1284,39 @@ export default function ScheduleManagePage() {
                                     <label className="text-xs font-bold text-zinc-500">시간 범위 *</label>
                                     <button
                                         type="button"
-                                        onClick={() => setBoAllDay(!boAllDay)}
-                                        className="text-xs font-semibold text-blue-600 dark:text-blue-400"
+                                        onClick={() => {
+                                            if (boSlots.length === TIME_SLOTS.length) {
+                                                setBoSlots([]);
+                                            } else {
+                                                setBoSlots(TIME_SLOTS.map(s => s.start));
+                                            }
+                                        }}
+                                        className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
                                     >
-                                        {boAllDay ? "특정 시간만 선택" : "종일(8시~21시)로 변경"}
+                                        {boSlots.length === TIME_SLOTS.length ? "전체 해제" : "종일 전체 선택"}
                                     </button>
                                 </div>
 
-                                {boAllDay ? (
-                                    <div className="p-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 text-center font-bold text-xs text-zinc-600 dark:text-zinc-300">
-                                        종일 불가 (8시 ~ 20시 전체 시간대)
-                                    </div>
-                                ) : (
-                                    <div className="grid grid-cols-4 gap-1.5">
-                                        {TIME_SLOTS.map(s => {
-                                            const isSelected = boSlots.includes(s.start);
-                                            return (
-                                                <button
-                                                    key={s.key}
-                                                    type="button"
-                                                    onClick={() => toggleBoSlot(s.start)}
-                                                    className={cn(
-                                                        "py-1.5 rounded-xl text-xs font-semibold border transition-all text-center",
-                                                        isSelected
-                                                            ? "bg-amber-500 border-amber-500 text-white font-bold"
-                                                            : "bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300"
-                                                    )}
-                                                >
-                                                    {s.label}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                )}
+                                <div className="grid grid-cols-4 gap-1.5">
+                                    {TIME_SLOTS.map(s => {
+                                        const isSelected = boSlots.includes(s.start);
+                                        return (
+                                            <button
+                                                key={s.key}
+                                                type="button"
+                                                onClick={() => toggleBoSlot(s.start)}
+                                                className={cn(
+                                                    "py-2 rounded-xl text-xs font-semibold border transition-all text-center",
+                                                    isSelected
+                                                        ? "bg-amber-500 border-amber-500 text-white font-bold shadow-sm"
+                                                        : "bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-zinc-400"
+                                                )}
+                                            >
+                                                {s.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
                             </div>
 
                             {/* 5. Reason Presets & Custom */}
