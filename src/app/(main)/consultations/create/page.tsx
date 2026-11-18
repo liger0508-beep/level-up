@@ -28,8 +28,15 @@ import { createClient } from "@/lib/supabase/client";
 import {
     Consultation,
     saveConsultation,
-    fetchConsultations
+    fetchConsultations,
+    getPlainText
 } from "@/lib/consultation-sync";
+import {
+    ConsultationCategory,
+    CONSULTATION_CATEGORY_LABELS,
+    encodeConsultationContent
+} from "@/lib/consultation-templates";
+import { ConsultationTemplateForm } from "@/components/consultation/ConsultationTemplateForm";
 import { AthleteSearch } from "@/components/ui/AthleteSearch";
 
 // Removed ReactQuill imports and configurations
@@ -42,7 +49,11 @@ function CreateConsultationContent() {
 
     // Consultation State
     const [athleteName, setAthleteName] = useState("");
-    const [content, setContent] = useState("");
+    const [category, setCategory] = useState<ConsultationCategory>("initial");
+    const [targetMonth, setTargetMonth] = useState(() => format(new Date(), "yyyy-MM"));
+    const [answers, setAnswers] = useState<Record<string, string>>({});
+    const [generalNote, setGeneralNote] = useState("");
+    const [isImportant, setIsImportant] = useState(false);
 
     // Initialize from searchParams and sessionStorage
     useEffect(() => {
@@ -56,9 +67,9 @@ function CreateConsultationContent() {
             }
         }
 
-        const savedContent = sessionStorage.getItem("draftConsultationContent");
-        if (savedContent) {
-            setContent(savedContent);
+        const savedNote = sessionStorage.getItem("draftConsultationContent");
+        if (savedNote) {
+            setGeneralNote(savedNote);
         }
     }, [searchParams]);
 
@@ -74,19 +85,18 @@ function CreateConsultationContent() {
         }
     }, [athleteName]);
 
-    // Save content to session
+    // Save generalNote to session
     useEffect(() => {
         if (isInitialMount.current) {
             isInitialMount.current = false;
             return;
         }
-        // Prevent saving basic empty states
-        if (content && content !== "<p><br></p>" && content !== "<p></p>") {
-            sessionStorage.setItem("draftConsultationContent", content);
-        } else if (!content) {
+        if (generalNote && generalNote !== "<p><br></p>" && generalNote !== "<p></p>") {
+            sessionStorage.setItem("draftConsultationContent", generalNote);
+        } else if (!generalNote) {
             sessionStorage.removeItem("draftConsultationContent");
         }
-    }, [content]);
+    }, [generalNote]);
 
     // RBAC and User Info
     useEffect(() => {
@@ -102,9 +112,14 @@ function CreateConsultationContent() {
 
                 if (dbUser) {
                     setCurrentCoach({ id: dbUser.id, name: dbUser.name });
-                    if (dbUser.role !== 'coach' && dbUser.role !== 'admin') {
+                    if (dbUser.role === 'athlete' || dbUser.role === 'parent') {
+                        alert("상담 내역 접근 권한이 없습니다.");
+                        router.replace("/");
+                        return;
+                    }
+                    if (dbUser.role !== 'coach' && dbUser.role !== 'admin' && dbUser.role !== 'super_admin' && dbUser.role !== 'superadmin') {
                         alert("상담 작성 권한이 없습니다.");
-                        router.push("/consultations");
+                        router.replace("/");
                     }
                 }
             } else {
@@ -139,8 +154,15 @@ function CreateConsultationContent() {
             return;
         }
 
-        if (!content || content === "<p><br></p>") {
+        const hasAnyAnswer = Object.values(answers).some((v) => v.trim().length > 0);
+        const hasNote = generalNote.trim().length > 0 && generalNote !== "<p><br></p>";
+
+        if (category === "general" && !hasNote) {
             alert("상담 내용을 입력해 주세요.");
+            return;
+        }
+        if (category !== "general" && !hasAnyAnswer && !hasNote) {
+            alert("최소 1개 이상의 문항 또는 추가 메모를 입력해 주세요.");
             return;
         }
 
@@ -149,16 +171,30 @@ function CreateConsultationContent() {
             
             // 1. Save to DB
             const dateStr = formatLocalDate();
-            
+            const structuredPayload = {
+                version: 1 as const,
+                category,
+                targetMonth:
+                    category === "parent_1st" || category === "parent_2nd" || category === "regular"
+                        ? targetMonth
+                        : undefined,
+                answers: category === "general" ? {} : answers,
+                generalNote: generalNote.trim() || undefined,
+            };
+            const encodedContent = encodeConsultationContent(structuredPayload, generalNote);
+
             await saveConsultation({
                 athleteName,
                 coachName: currentCoach?.name || "관리자",
                 author: currentCoach?.name || "관리자",
-                content,
+                content: encodedContent,
+                category,
+                targetMonth: structuredPayload.targetMonth,
+                structuredData: structuredPayload,
                 date: dateStr,
                 type: "all",
-                isImportant: false,
-                title: `${athleteName} 선수 상담`
+                isImportant,
+                title: `${athleteName} ${CONSULTATION_CATEGORY_LABELS[category]}`
             });
 
             alert("상담 일지가 등록되었습니다.");
@@ -216,19 +252,22 @@ function CreateConsultationContent() {
                                     />
                                 </div>
 
-                                {/* Detailed Content Editor */}
-                                <div className="space-y-3">
-                                    <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 font-mono tracking-tighter uppercase mb-2">
-                                        상세 내용 작성
-                                    </label>
-                                    <textarea
-                                        rows={8}
-                                        value={content}
-                                        onChange={(e) => setContent(e.target.value)}
-                                        placeholder="상담 내용을 상세히 입력하세요..."
-                                        className="w-full p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all resize-y"
-                                    />
-                                </div>
+                                {/* Structured / General Consultation Form */}
+                                <ConsultationTemplateForm
+                                    category={category}
+                                    onCategoryChange={setCategory}
+                                    targetMonth={targetMonth}
+                                    onTargetMonthChange={setTargetMonth}
+                                    answers={answers}
+                                    onAnswerChange={(qId, val) =>
+                                        setAnswers((prev) => ({ ...prev, [qId]: val }))
+                                    }
+                                    generalNote={generalNote}
+                                    onGeneralNoteChange={setGeneralNote}
+                                    previousConsultations={previousConsultations}
+                                    isImportant={isImportant}
+                                    onIsImportantChange={setIsImportant}
+                                />
                             </div>
                         </section>
                     </div>
@@ -244,12 +283,13 @@ function CreateConsultationContent() {
                                 {previousConsultations.map((c) => (
                                     <div key={c.id} className="flex-shrink-0 w-64 p-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800 flex flex-col justify-between">
                                         <div>
-                                            <div className="text-[10px] text-zinc-400 font-bold mb-1">{c.date}</div>
+                                            <div className="text-[10px] text-zinc-400 font-bold mb-1">
+                                                {c.date} · {CONSULTATION_CATEGORY_LABELS[c.category]}
+                                            </div>
                                             <div className="text-xs font-bold text-zinc-800 dark:text-zinc-200 mb-2 truncate">{c.title}</div>
-                                            <div 
-                                                className="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-3 leading-relaxed"
-                                                dangerouslySetInnerHTML={{ __html: c.content }}
-                                            />
+                                            <div className="text-[11px] text-zinc-500 dark:text-zinc-400 line-clamp-3 leading-relaxed">
+                                                {getPlainText(c.content)}
+                                            </div>
                                         </div>
                                     </div>
                                 ))}

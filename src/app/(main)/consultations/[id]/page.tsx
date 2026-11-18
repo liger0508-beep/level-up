@@ -16,6 +16,12 @@ import {
     FileText
 } from "lucide-react";
 import { Consultation, fetchConsultationById, deleteConsultation, CONSULTATION_TYPE_LABELS, CONSULTATION_TYPE_COLORS } from "@/lib/consultation-sync";
+import {
+    CONSULTATION_CATEGORY_LABELS,
+    CONSULTATION_CATEGORY_COLORS,
+    CONSULTATION_TEMPLATES,
+} from "@/lib/consultation-templates";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 export default function ConsultationDetailPage() {
@@ -25,17 +31,44 @@ export default function ConsultationDetailPage() {
 
     const [consultation, setConsultation] = useState<Consultation | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [isAuthorized, setIsAuthorized] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        if (id) {
-            fetchConsultationById(id).then(data => {
-                setConsultation(data);
-                setIsLoading(false);
-            });
-        }
-    }, [id]);
+        let active = true;
+        const init = async () => {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                router.replace("/login");
+                return;
+            }
+            const { data: profile } = await supabase
+                .from("users")
+                .select("role")
+                .eq("id", user.id)
+                .maybeSingle();
+
+            if (!profile || profile.role === "athlete" || profile.role === "parent") {
+                router.replace("/");
+                return;
+            }
+
+            if (!active) return;
+            setIsAuthorized(true);
+
+            if (id) {
+                const data = await fetchConsultationById(id);
+                if (active) {
+                    setConsultation(data);
+                    setIsLoading(false);
+                }
+            }
+        };
+        init();
+        return () => { active = false; };
+    }, [id, router]);
 
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
@@ -61,8 +94,14 @@ export default function ConsultationDetailPage() {
         }
     };
 
-    if (isLoading) return <div className="min-h-screen bg-white dark:bg-zinc-950 flex items-center justify-center text-zinc-400">로딩 중...</div>;
+    if (!isAuthorized || isLoading) return <div className="min-h-screen bg-white dark:bg-zinc-950 flex items-center justify-center text-zinc-400">로딩 중...</div>;
     if (!consultation) return <div className="min-h-screen bg-white dark:bg-zinc-950 flex items-center justify-center text-zinc-400">상담 정보를 찾을 수 없습니다.</div>;
+
+    const cat = consultation.category || "general";
+    const catColors = CONSULTATION_CATEGORY_COLORS[cat];
+    const activeTemplate = cat !== "general" ? CONSULTATION_TEMPLATES[cat] : null;
+    const answers = consultation.structuredData?.answers || {};
+    const extraNote = consultation.structuredData?.generalNote;
 
     return (
         <div className="min-h-screen bg-white dark:bg-zinc-950 pb-20">
@@ -117,15 +156,20 @@ export default function ConsultationDetailPage() {
             <main className="max-w-3xl mx-auto px-4 sm:px-8 py-6 space-y-6">
                 {/* ── Consultation Info Header Card ── */}
                 <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm space-y-5">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                         <span className={cn(
-                            "text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider border",
-                            CONSULTATION_TYPE_COLORS[consultation.type].bg,
-                            CONSULTATION_TYPE_COLORS[consultation.type].text,
-                            CONSULTATION_TYPE_COLORS[consultation.type].border
+                            "text-[11px] font-bold px-3 py-1 rounded-full tracking-wide border",
+                            catColors.bg,
+                            catColors.text,
+                            catColors.border
                         )}>
-                            {CONSULTATION_TYPE_LABELS[consultation.type]}
+                            {CONSULTATION_CATEGORY_LABELS[cat]}
                         </span>
+                        {consultation.targetMonth && (
+                            <span className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300">
+                                {consultation.targetMonth} 기준
+                            </span>
+                        )}
                         {consultation.isImportant && (
                             <span className="text-[10px] font-bold text-red-500 bg-red-50 dark:bg-red-500/10 border border-red-100 dark:border-red-500/20 px-2 py-1 rounded-full">
                                 중요
@@ -161,12 +205,52 @@ export default function ConsultationDetailPage() {
                 </section>
 
                 {/* ── Content Card ── */}
-                <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-3xl shadow-sm min-h-[250px]">
-                    <div
-                        className="prose prose-sm sm:prose-base prose-zinc dark:prose-invert max-w-none text-zinc-700 dark:text-zinc-300 leading-relaxed"
-                        dangerouslySetInnerHTML={{ __html: consultation.content }}
-                    />
-                </section>
+                {activeTemplate && consultation.structuredData ? (
+                    <div className="space-y-4">
+                        {activeTemplate.sections.map((sec) => {
+                            const answered = sec.questions.filter((q) => answers[q.id]?.trim());
+                            if (answered.length === 0) return null;
+                            return (
+                                <section
+                                    key={sec.id}
+                                    className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 sm:p-6 rounded-3xl shadow-sm space-y-4"
+                                >
+                                    <h3 className="text-sm font-bold text-brand-navy dark:text-brand-navy-light border-b border-zinc-100 dark:border-zinc-800 pb-2.5">
+                                        {sec.title}
+                                    </h3>
+                                    <div className="space-y-4">
+                                        {answered.map((q) => (
+                                            <div key={q.id} className="space-y-1">
+                                                <p className="text-xs sm:text-sm font-semibold text-zinc-500 dark:text-zinc-400">
+                                                    {q.number ? `Q${q.number}. ` : ""}{q.question}
+                                                </p>
+                                                <p className="text-sm sm:text-base text-zinc-900 dark:text-zinc-100 whitespace-pre-wrap leading-relaxed bg-zinc-50/70 dark:bg-zinc-800/40 p-3.5 rounded-xl">
+                                                    {answers[q.id]}
+                                                </p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </section>
+                            );
+                        })}
+
+                        {extraNote?.trim() && (
+                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 sm:p-6 rounded-3xl shadow-sm space-y-2">
+                                <h3 className="text-sm font-bold text-zinc-700 dark:text-zinc-300">추가 메모 / 특이사항</h3>
+                                <p className="text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-wrap leading-relaxed">
+                                    {extraNote}
+                                </p>
+                            </section>
+                        )}
+                    </div>
+                ) : (
+                    <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 sm:p-8 rounded-3xl shadow-sm min-h-[250px]">
+                        <div
+                            className="prose prose-sm sm:prose-base prose-zinc dark:prose-invert max-w-none text-zinc-700 dark:text-zinc-300 leading-relaxed whitespace-pre-wrap"
+                            dangerouslySetInnerHTML={{ __html: consultation.displayContent || consultation.content }}
+                        />
+                    </section>
+                )}
 
                 {/* ── Footer Button ── */}
                 <div className="flex justify-center pt-4">

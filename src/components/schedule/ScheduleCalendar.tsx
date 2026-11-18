@@ -313,39 +313,56 @@ export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEve
                                                     +{event.groupCount - 1}
                                                 </span>
                                             )}
-                                            <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    const params = new URLSearchParams({
-                                                        player: event.participantName || "",
-                                                        type: event.category || "shot",
-                                                        date: format(event.start, "yyyy-MM-dd"),
-                                                        start: format(event.start, "HH:mm"),
-                                                        end: format(event.end, "HH:mm")
-                                                    });
-                                                    if (event.type === "lesson" || event.type === "analysis") {
-                                                        router.push(`/lessons/create?${params.toString()}`);
-                                                    } else if (event.type === "consultation") {
-                                                        router.push(`/consultations/create?${params.toString()}`);
-                                                    } else if (event.type === "training") {
-                                                        router.push(`/training/create?${params.toString()}`);
+                                            {event.type !== "other" && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        const params = new URLSearchParams({
+                                                            player: event.participantName || "",
+                                                            type: event.category || "shot",
+                                                            date: format(event.start, "yyyy-MM-dd"),
+                                                            start: format(event.start, "HH:mm"),
+                                                            end: format(event.end, "HH:mm")
+                                                        });
+                                                        if (event.type === "lesson" || event.type === "analysis") {
+                                                            router.push(`/lessons/create?${params.toString()}`);
+                                                        } else if (event.type === "consultation") {
+                                                            router.push(`/consultations/create?${params.toString()}`);
+                                                        } else if (event.type === "training") {
+                                                            router.push(`/training/create?${params.toString()}`);
+                                                        }
+                                                    }}
+                                                    title={
+                                                        event.type === "consultation"
+                                                            ? "상담 작성으로 이동"
+                                                            : event.type === "training"
+                                                            ? "훈련 작성으로 이동"
+                                                            : "레슨 작성으로 이동"
                                                     }
-                                                }}
-                                                className="text-center text-[10px] px-3 py-1.5 rounded-lg font-bold shrink-0 transition-all bg-brand-navy text-white hover:bg-brand-navy-dark active:scale-95 shadow-sm"
-                                            >
-                                                {EVENT_TYPE_LABELS[event.type]}
-                                            </button>
+                                                    className="p-1.5 rounded-full text-zinc-400 hover:text-brand-navy hover:bg-zinc-100 dark:hover:text-zinc-200 dark:hover:bg-zinc-800 transition-all shrink-0 active:scale-95"
+                                                >
+                                                    <ChevronRight size={20} />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
 
-                                    <div className="flex items-end justify-between mt-3">
-                                        <span className="text-[11px] font-bold text-zinc-400 shrink-0 mb-0.5 pl-[40px]">
-                                            {format(event.start, "HH:mm")} <span className="opacity-40 font-normal mx-0.5">|</span> {event.coachName === "성시우" ? "성시우 감독" : (event.coachName || "코치")}
+                                    <div className="flex items-center justify-between gap-2 mt-3">
+                                        <span className="text-[11px] font-bold text-zinc-400 shrink-0 pl-[40px]">
+                                            {event.coachName === "성시우" ? "성시우 감독" : (event.coachName || "코치")}
                                         </span>
-                                        <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300 truncate mr-2">
-                                            {event.participantName || "선수 미지정"}
-                                        </span>
+                                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-zinc-600 dark:text-zinc-300 mr-2 min-w-0">
+                                            <span className="shrink-0">
+                                                {format(event.start, "HH:mm") === format(event.end, "HH:mm")
+                                                    ? format(event.start, "HH:mm")
+                                                    : `${format(event.start, "HH:mm")}~${format(event.end, "HH:mm")}`}
+                                            </span>
+                                            <span className="opacity-40 font-normal shrink-0">|</span>
+                                            <span className="truncate">
+                                                {event.participantName || "선수 미지정"}
+                                            </span>
+                                        </div>
                                     </div>
                                 </div>
                             );

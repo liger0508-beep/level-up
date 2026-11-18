@@ -90,6 +90,8 @@ export function ScheduleEventDialog({
     const [occupiedSlots, setOccupiedSlots] = useState<string[]>([]);
     const [customSlots, setCustomSlots] = useState<typeof COACH_TIME_SLOTS | null>(null);
     const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+    const [isSelectingRangeEnd, setIsSelectingRangeEnd] = useState(false);
+    const [athleteAnalysisCount, setAthleteAnalysisCount] = useState<number>(0);
 
     useEffect(() => {
         const fetchCoaches = async () => {
@@ -132,6 +134,7 @@ export function ScheduleEventDialog({
         setDate(format(today, "yyyy-MM-dd"));
         setStartSlot(null);
         setEndSlot(null);
+        setIsSelectingRangeEnd(false);
         setCoachName("성시우 감독");
         if (currentRole === "athlete" && currentUserName) {
             setParticipants([currentUserName]);
@@ -159,7 +162,7 @@ export function ScheduleEventDialog({
 
     // Fetch occupied slots for the selected coach on the given date
     useEffect(() => {
-        if (!isOpen || !coachName || !date) {
+        if (!isOpen || !date || (!coachName && currentRole !== "athlete")) {
             setOccupiedSlots([]);
             return;
         }
@@ -168,7 +171,8 @@ export function ScheduleEventDialog({
         setIsLoadingSlots(true);
 
         const cleanCoach = coachName.replace(/ (감독|코치|프로)$/, '').trim();
-        fetch(`/api/schedules?coachName=${encodeURIComponent(cleanCoach)}&date=${date}&excludeId=${editEvent?.id || ""}&_t=${Date.now()}`, { cache: "no-store" })
+        const athleteParam = currentRole === "athlete" && currentUserName ? `&athleteName=${encodeURIComponent(currentUserName)}` : "";
+        fetch(`/api/schedules?coachName=${encodeURIComponent(cleanCoach)}&date=${date}&excludeId=${editEvent?.id || ""}${athleteParam}&_t=${Date.now()}`, { cache: "no-store" })
             .then((res) => res.json())
             .then((data) => {
                 if (isMounted) {
@@ -178,6 +182,9 @@ export function ScheduleEventDialog({
                             ? data.resolvedSlots
                             : null
                     );
+                    if (typeof data.athleteAnalysisMonthlyCount === "number") {
+                        setAthleteAnalysisCount(data.athleteAnalysisMonthlyCount);
+                    }
                 }
             })
             .catch((err) => {
@@ -194,7 +201,7 @@ export function ScheduleEventDialog({
         return () => {
             isMounted = false;
         };
-    }, [isOpen, coachName, date, editEvent?.id]);
+    }, [isOpen, coachName, date, editEvent?.id, currentRole, currentUserName]);
 
     // If currently selected slot is occupied, reset it
     useEffect(() => {
@@ -221,6 +228,7 @@ export function ScheduleEventDialog({
             const e = format(editEvent.end, "HH:mm");
             setStartSlot(s);
             setEndSlot(e === s ? null : e);
+            setIsSelectingRangeEnd(false);
             setParticipants(editEvent.participantName ? editEvent.participantName.split(", ") : []);
             const cName = editEvent.coachName === "성시우" ? "성시우 감독" : (editEvent.coachName || "");
             setCoachName(cName);
@@ -249,26 +257,70 @@ export function ScheduleEventDialog({
 
     const activeTimeSlots = customSlots || (currentRole === "athlete" ? ATHLETE_TIME_SLOTS : COACH_TIME_SLOTS);
 
-    // Time slot logic
+    // Time slot logic (athlete: 1 slot toggle, coach/admin: 2-click continuous range -> single card)
     const handleSlotClick = (slot: typeof COACH_TIME_SLOTS[0]) => {
-        if (startSlot === slot.start) {
+        if (currentRole === "athlete") {
+            if (startSlot === slot.start) {
+                setStartSlot(null);
+                setEndSlot(null);
+            } else {
+                setStartSlot(slot.start);
+                setEndSlot(slot.end);
+            }
+            return;
+        }
+
+        // Coach / Admin: continuous range selection
+        if (!startSlot || !isSelectingRangeEnd) {
+            setStartSlot(slot.start);
+            setEndSlot(slot.end);
+            setIsSelectingRangeEnd(true);
+            return;
+        }
+
+        if (startSlot === slot.start && endSlot === slot.end) {
             setStartSlot(null);
             setEndSlot(null);
+            setIsSelectingRangeEnd(false);
+            return;
+        }
+
+        const idxA = activeTimeSlots.findIndex((s) => s.start === startSlot);
+        const idxB = activeTimeSlots.findIndex((s) => s.start === slot.start);
+        if (idxA !== -1 && idxB !== -1) {
+            const minIdx = Math.min(idxA, idxB);
+            const maxIdx = Math.max(idxA, idxB);
+            setStartSlot(activeTimeSlots[minIdx].start);
+            setEndSlot(activeTimeSlots[maxIdx].end);
+            setIsSelectingRangeEnd(false);
         } else {
             setStartSlot(slot.start);
             setEndSlot(slot.end);
+            setIsSelectingRangeEnd(false);
         }
     };
 
     const timeLabel = useMemo(() => {
         if (!startSlot) return "시간을 선택하세요";
+        const effectiveEnd = endSlot || startSlot;
+        const covered = activeTimeSlots.filter((s) => s.start >= startSlot && s.end <= effectiveEnd);
+        if (covered.length > 1) {
+            return `${startSlot} ~ ${effectiveEnd} (${covered.length}타임 연속)`;
+        }
         const matched = activeTimeSlots.find((s) => s.start === startSlot);
         if (matched) return `${matched.label} (${matched.start} ~ ${matched.end})`;
-        return `${startSlot} ~ ${endSlot || startSlot}`;
+        return `${startSlot} ~ ${effectiveEnd}`;
     }, [startSlot, endSlot, activeTimeSlots]);
+
+    const isAthleteAnalysisLimitReached =
+        currentRole === "athlete" && eventType === "analysis" && athleteAnalysisCount >= 2;
 
     const handleSave = () => {
         const finalTitle = effectiveTitle;
+        if (isAthleteAnalysisLimitReached) {
+            alert("분석 예약은 한 달에 2회까지만 가능합니다.");
+            return;
+        }
         if (!startSlot) {
             alert("시간을 선택해주세요.");
             return;
@@ -305,6 +357,7 @@ export function ScheduleEventDialog({
     const isSaveDisabled = Boolean(
         !effectiveTitle ||
         !startSlot ||
+        isAthleteAnalysisLimitReached ||
         (currentRole === "athlete" && (!coachName || isSlotOccupied)) ||
         (currentRole !== "athlete" && eventType !== "other" && participants.length === 0)
     );
@@ -360,6 +413,20 @@ export function ScheduleEventDialog({
                                     </button>
                                 ))}
                             </div>
+                            {currentRole === "athlete" && eventType === "analysis" && (
+                                <div
+                                    className={cn(
+                                        "mt-2 px-3 py-1.5 rounded-lg text-[11px] font-semibold border",
+                                        isAthleteAnalysisLimitReached
+                                            ? "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800 text-red-600 dark:text-red-400"
+                                            : "bg-blue-50/70 dark:bg-blue-950/20 border-blue-200/70 dark:border-blue-800/50 text-blue-700 dark:text-blue-300"
+                                    )}
+                                >
+                                    {isAthleteAnalysisLimitReached
+                                        ? `이번 달(${date.slice(0, 7)}) 분석 예약 2회를 모두 사용했습니다. (월 2회 제한)`
+                                        : `이번 달(${date.slice(0, 7)}) 분석 예약: ${athleteAnalysisCount}/2회 사용`}
+                                </div>
+                            )}
                             {eventType === "other" && (
                                 <div className="mt-2.5">
                                     <label className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1.5">
@@ -483,6 +550,13 @@ export function ScheduleEventDialog({
                                 <label className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
                                     시간 <span className="text-red-500">*</span>
                                 </label>
+                                {currentRole !== "athlete" && (
+                                    <span className="text-[11px] text-zinc-400">
+                                        {isSelectingRangeEnd
+                                            ? "종료 타임을 클릭하세요 (같은 타임 재클릭 시 해제)"
+                                            : "시작·종료 타임 클릭 시 연속 선택"}
+                                    </span>
+                                )}
                             </div>
 
                             <div className={cn(
@@ -490,7 +564,12 @@ export function ScheduleEventDialog({
                                 activeTimeSlots.length <= 7 ? "grid-cols-4 sm:grid-cols-7" : "grid-cols-4 sm:grid-cols-6"
                             )}>
                                 {activeTimeSlots.map((slot) => {
-                                    const selected = startSlot === slot.start;
+                                    const selected = Boolean(
+                                        startSlot &&
+                                        (endSlot
+                                            ? slot.start >= startSlot && slot.end <= endSlot
+                                            : slot.start === startSlot)
+                                    );
                                     const isOccupied = occupiedSlots.includes(slot.start);
                                     const isAthleteBlocked = currentRole === "athlete" && isOccupied;
 

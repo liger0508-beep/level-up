@@ -17,10 +17,79 @@ const getSupabaseAdmin = () => {
     );
 };
 
+function getKstMonthBounds(dateOrIso: string): { startIso: string; endIso: string } | null {
+    // Support both "YYYY-MM-DD" and ISO timestamp
+    let kstDateStr = dateOrIso;
+    if (dateOrIso.includes('T')) {
+        const d = new Date(dateOrIso);
+        if (isNaN(d.getTime())) return null;
+        kstDateStr = d.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+    }
+    const [yStr, mStr] = kstDateStr.split('-');
+    const y = Number(yStr);
+    const m = Number(mStr);
+    if (!y || !m) return null;
+    const startIso = new Date(`${yStr}-${mStr}-01T00:00:00+09:00`).toISOString();
+    const nextY = m === 12 ? y + 1 : y;
+    const nextM = m === 12 ? 1 : m + 1;
+    const endIso = new Date(`${nextY}-${String(nextM).padStart(2, '0')}-01T00:00:00+09:00`).toISOString();
+    return { startIso, endIso };
+}
+
+async function getAthleteMonthlyAnalysisCount(
+    supabase: ReturnType<typeof getSupabaseAdmin>,
+    athleteUserId: string,
+    dateOrIso: string,
+    excludeId?: string | null
+): Promise<number> {
+    const bounds = getKstMonthBounds(dateOrIso);
+    if (!bounds) return 0;
+
+    let q = supabase
+        .from("schedules")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", athleteUserId)
+        .neq("status", "cancelled")
+        .ilike("title", "[분석]%")
+        .gte("start_time", bounds.startIso)
+        .lt("start_time", bounds.endIso);
+
+    if (excludeId) {
+        q = q.neq("id", excludeId);
+    }
+
+    const { count, error } = await q;
+    if (error) {
+        console.error("Error counting monthly analysis schedules:", error);
+        return 0;
+    }
+    return count || 0;
+}
+
 export async function POST(request: Request) {
     try {
         const { event, userId } = await request.json();
         const supabase = getSupabaseAdmin();
+
+        // Enforce monthly 2-time limit on 'analysis' reservations for athletes only (coaches/admins have no limit)
+        if (userId && event?.type === "analysis") {
+            const { data: requester } = await supabase
+                .from("users")
+                .select("role")
+                .eq("id", userId)
+                .maybeSingle();
+
+            if (requester?.role === "athlete") {
+                const startStr = typeof event.start === "string" ? event.start : new Date(event.start).toISOString();
+                const currentCount = await getAthleteMonthlyAnalysisCount(supabase, userId, startStr);
+                if (currentCount >= 2) {
+                    return NextResponse.json(
+                        { error: "분석 예약은 한 달에 2회까지만 가능합니다." },
+                        { status: 400 }
+                    );
+                }
+            }
+        }
 
         const participants = event.participantName?.split(", ").map((n: string) => n.trim()).filter(Boolean) || [];
 
@@ -217,12 +286,35 @@ export async function GET(request: Request) {
         const coachName = searchParams.get('coachName');
         const date = searchParams.get('date');
         const excludeId = searchParams.get('excludeId');
-
-        if (!coachName || !date) {
-            return NextResponse.json({ occupiedSlots: [] });
-        }
+        const athleteName = searchParams.get('athleteName');
 
         const supabase = getSupabaseAdmin();
+
+        // Compute athlete's monthly analysis reservation count if athleteName and date are provided
+        let athleteAnalysisMonthlyCount = 0;
+        if (athleteName && date) {
+            const { data: athUser } = await supabase
+                .from('users')
+                .select('id')
+                .eq('name', athleteName)
+                .eq('role', 'athlete')
+                .limit(1)
+                .maybeSingle();
+
+            if (athUser?.id) {
+                athleteAnalysisMonthlyCount = await getAthleteMonthlyAnalysisCount(
+                    supabase,
+                    athUser.id,
+                    date,
+                    excludeId
+                );
+            }
+        }
+
+        if (!coachName || !date) {
+            return NextResponse.json({ occupiedSlots: [], athleteAnalysisMonthlyCount });
+        }
+
         const cleanName = coachName.replace(/ (감독|코치|프로)$/, '').trim();
 
         // Find coach user id(s)
@@ -356,7 +448,7 @@ export async function GET(request: Request) {
             console.error('Error checking blockouts in schedule get:', bErr);
         }
 
-        return NextResponse.json({ occupiedSlots, resolvedSlots });
+        return NextResponse.json({ occupiedSlots, resolvedSlots, athleteAnalysisMonthlyCount });
     } catch (err: any) {
         return NextResponse.json({ error: err.message, occupiedSlots: [] }, { status: 500 });
     }

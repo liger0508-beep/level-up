@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect } from "react";
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
     MessageSquare,
     Plus,
@@ -11,7 +12,14 @@ import {
     SlidersHorizontal,
     Megaphone
 } from "lucide-react";
-import { Consultation, ConsultationType, fetchConsultations, CONSULTATION_TYPE_LABELS, CONSULTATION_TYPE_COLORS, getPlainText } from "@/lib/consultation-sync";
+import { Consultation, ConsultationType, CONSULTATION_TYPE_LABELS, mapConsultationRow } from "@/lib/consultation-sync";
+import {
+    ConsultationMainPart,
+    CONSULTATION_CATEGORY_LABELS,
+    CONSULTATION_CATEGORY_COLORS,
+    getMainPartFromCategory,
+} from "@/lib/consultation-templates";
+import { MyInitialConsultationView } from "@/components/consultation/MyInitialConsultationView";
 import { createClient } from "@/lib/supabase/client";
 import { format } from "date-fns";
 import { ConsultationTable } from "@/components/consultation/ConsultationTable";
@@ -20,11 +28,14 @@ import { DatePickerInput } from "@/components/ui/DatePickerInput";
 import { DatePresets, DatePresetType } from "@/components/ui/DatePresets";
 
 export default function ConsultationsPage() {
+    const router = useRouter();
     const [allConsultations, setAllConsultations] = useState<Consultation[]>([]);
     const [recentConsultations, setRecentConsultations] = useState<Consultation[]>([]);
     const [totalConsultationCount, setTotalConsultationCount] = useState(0);
     const [isLoading, setIsLoading] = useState(true);
+    const [isAuthorized, setIsAuthorized] = useState(false);
     const [activeType, setActiveType] = useState<ConsultationType>("all");
+    const [partFilter, setPartFilter] = useState<"all" | ConsultationMainPart>("all");
     const [searchQuery, setSearchQuery] = useState("");
     const [startDate, setStartDate] = useState("");
     const [endDate, setEndDate] = useState("");
@@ -36,20 +47,6 @@ export default function ConsultationsPage() {
 
     const scrollRef = useRef<HTMLDivElement>(null);
 
-    const mapConsultationRow = (data: any): Consultation => ({
-        id: data.id,
-        date: data.date,
-        coachName: data.coach_name || "",
-        title: data.title || "",
-        content: data.content || "",
-        author: data.author || "",
-        type: data.type as ConsultationType,
-        athleteName: data.athlete_name || "",
-        userId: data.user_id || null,
-        isImportant: data.is_important || false,
-        createdAt: data.created_at
-    });
-
     useEffect(() => {
         const load = async () => {
             setIsLoading(true);
@@ -57,41 +54,47 @@ export default function ConsultationsPage() {
             
             // 1. Get current user and assignments
             const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
+                router.replace("/login");
+                return;
+            }
             setCurrentUser(user);
 
-            let currentRole = null;
             let coachAssignedIds: string[] = [];
 
-            if (user) {
-                const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single();
-                if (profile) {
-                    setUserRole(profile.role);
-                    currentRole = profile.role;
-                }
+            const { data: profile } = await supabase.from('users').select('role').eq('id', user.id).single();
+            if (!profile) {
+                router.replace("/");
+                return;
+            }
+            setUserRole(profile.role);
 
-                const currentMonth = format(new Date(), "yyyy-MM");
-                const { data: assignments } = await supabase
-                    .from('monthly_assignments')
-                    .select('athlete_id')
-                    .eq('coach_id', user.id)
-                    .eq('month', currentMonth);
-                
-                coachAssignedIds = assignments?.map((a: any) => a.athlete_id) || [];
-                setAssignedAthleteIds(coachAssignedIds);
+            if (profile.role === 'athlete' || profile.role === 'parent') {
+                setIsAuthorized(true);
+                setIsLoading(false);
+                return;
             }
 
+            setIsAuthorized(true);
+
+            const currentMonth = format(new Date(), "yyyy-MM");
+            const { data: assignments } = await supabase
+                .from('monthly_assignments')
+                .select('athlete_id')
+                .eq('coach_id', user.id)
+                .eq('month', currentMonth);
+            
+            coachAssignedIds = assignments?.map((a: any) => a.athlete_id) || [];
+            setAssignedAthleteIds(coachAssignedIds);
+
             // 2. Fetch Recent Consultations (Top 3)
-            let recentQuery = supabase
+            const { data: recentData } = await supabase
                 .from("consultations")
                 .select("*")
                 .order("date", { ascending: false })
                 .order("created_at", { ascending: false })
                 .limit(3);
 
-            if (user && currentRole === 'athlete') {
-                recentQuery = recentQuery.eq("user_id", user.id);
-            }
-            const { data: recentData } = await recentQuery;
             if (recentData) {
                 setRecentConsultations(recentData.map(mapConsultationRow));
             }
@@ -99,22 +102,17 @@ export default function ConsultationsPage() {
             setIsLoading(false);
         };
         load();
-    }, []);
+    }, [router]);
 
-    // Server-side Pagination & Filtering
+    // Server-side Pagination & Filtering (coach/admin only)
     useEffect(() => {
-        if (!currentUser) return; // Wait until initial auth load
+        if (!currentUser || !isAuthorized || userRole === 'athlete' || userRole === 'parent') return; // Wait until authorized coach/admin
 
         const fetchFiltered = async () => {
             const supabase = createClient();
             let query = supabase
                 .from("consultations")
                 .select("*", { count: 'exact' });
-
-            // Base role filter
-            if (userRole === 'athlete') {
-                query = query.eq("user_id", currentUser.id);
-            }
 
             // Type filter
             if (activeType === "assigned") {
@@ -138,7 +136,7 @@ export default function ConsultationsPage() {
             query = query
                 .order("date", { ascending: false })
                 .order("created_at", { ascending: false })
-                .limit(displayLimit);
+                .limit(partFilter === "all" ? displayLimit : 200);
 
             const { data, count, error } = await query;
             if (error || !data) return;
@@ -152,7 +150,12 @@ export default function ConsultationsPage() {
         }, 300);
 
         return () => clearTimeout(debounceTimer);
-    }, [currentUser, userRole, assignedAthleteIds, activeType, searchQuery, startDate, endDate, displayLimit]);
+    }, [currentUser, isAuthorized, userRole, assignedAthleteIds, activeType, partFilter, searchQuery, startDate, endDate, displayLimit]);
+
+    const displayedConsultations = useMemo(() => {
+        if (partFilter === "all") return allConsultations;
+        return allConsultations.filter((c) => getMainPartFromCategory(c.category) === partFilter);
+    }, [allConsultations, partFilter]);
 
     const scroll = (direction: "left" | "right") => {
         if (scrollRef.current) {
@@ -166,6 +169,18 @@ export default function ConsultationsPage() {
     };
 
     // Client side filtering is now replaced by server-side filtering
+
+    if (!isAuthorized || isLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center text-sm text-zinc-400">
+                로딩 중...
+            </div>
+        );
+    }
+
+    if (userRole === "athlete" || userRole === "parent") {
+        return <MyInitialConsultationView userRole={userRole} />;
+    }
 
     return (
         <div className="p-4 sm:p-8 max-w-4xl mx-auto">
@@ -188,24 +203,50 @@ export default function ConsultationsPage() {
             </div>
 
             {/* ── Consultation Type Filters ── */}
-            <div className="flex flex-nowrap gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide">
-                {(Object.entries(CONSULTATION_TYPE_LABELS) as [ConsultationType, string][]).map(([key, label]) => {
-                    const isActive = activeType === key;
-                    return (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-6">
+                <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                    {(Object.entries(CONSULTATION_TYPE_LABELS) as [ConsultationType, string][]).map(([key, label]) => {
+                        const isActive = activeType === key;
+                        return (
+                            <button
+                                key={key}
+                                onClick={() => setActiveType(key)}
+                                className={cn(
+                                    "whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all border",
+                                    isActive
+                                        ? "bg-brand-navy text-white border-brand-navy shadow-md"
+                                        : "bg-white dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50 hover:text-brand-navy dark:hover:text-white"
+                                )}
+                            >
+                                {label}
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {/* Part Filter */}
+                <div className="flex flex-nowrap gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+                    {[
+                        { key: "all" as const, label: "전체 양식" },
+                        { key: "initial" as const, label: "초기" },
+                        { key: "parent" as const, label: "학부모" },
+                        { key: "regular" as const, label: "정기" },
+                        { key: "general" as const, label: "일반" },
+                    ].map(({ key, label }) => (
                         <button
                             key={key}
-                            onClick={() => setActiveType(key)}
+                            onClick={() => setPartFilter(key)}
                             className={cn(
-                                "whitespace-nowrap shrink-0 px-4 py-2 rounded-full text-sm font-semibold transition-all border",
-                                isActive
-                                    ? "bg-brand-navy text-white border-brand-navy shadow-md"
-                                    : "bg-white dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-brand-navy/50 hover:text-brand-navy dark:hover:text-white"
+                                "whitespace-nowrap shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border",
+                                partFilter === key
+                                    ? "bg-zinc-800 dark:bg-zinc-100 text-white dark:text-zinc-900 border-transparent"
+                                    : "bg-white dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-zinc-400"
                             )}
                         >
                             {label}
                         </button>
-                    );
-                })}
+                    ))}
+                </div>
             </div>
 
             {/* ── Recent Consultations (Top Carousel) ── */}
@@ -235,37 +276,42 @@ export default function ConsultationsPage() {
                         ref={scrollRef}
                         className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-1 px-1"
                     >
-                        {recentConsultations.map((item) => (
-                            <Link
-                                key={item.id}
-                                href={`/consultations/${item.id}`}
-                                className={cn(
-                                    "flex-shrink-0 w-64 md:w-72 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 rounded-2xl shadow-sm hover:border-brand-navy/50 hover:shadow-md transition-all active:scale-95 cursor-pointer group",
-                                    CONSULTATION_TYPE_COLORS[item.type].side.replace("border-l-", "border-l-4 border-l-")
-                                )}
-                            >
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className={cn(
-                                        "text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider",
-                                        CONSULTATION_TYPE_COLORS[item.type].bg,
-                                        CONSULTATION_TYPE_COLORS[item.type].text
-                                    )}>
-                                        {CONSULTATION_TYPE_LABELS[item.type]}
-                                    </span>
-                                    {item.isImportant && (
-                                        <span className="text-[10px] font-black text-brand-red ml-auto uppercase italic">Important</span>
+                        {recentConsultations.map((item) => {
+                            const cat = item.category || "general";
+                            const catColors = CONSULTATION_CATEGORY_COLORS[cat];
+                            return (
+                                <Link
+                                    key={item.id}
+                                    href={`/consultations/${item.id}`}
+                                    className={cn(
+                                        "flex-shrink-0 w-64 md:w-72 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 rounded-2xl shadow-sm hover:border-brand-navy/50 hover:shadow-md transition-all active:scale-95 cursor-pointer group border-l-4",
+                                        catColors.accentBorder
                                     )}
-                                </div>
-                                <h3 className="font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-brand-navy dark:group-hover:text-brand-navy-light transition-colors line-clamp-1 mb-3">
-                                    {item.athleteName} <span className="text-zinc-400 font-medium text-xs ml-1">선수</span>
-                                </h3>
-                                <div className="text-[11px] text-zinc-400 font-medium flex items-center justify-end gap-2 mt-auto pt-2 border-t border-zinc-50 dark:border-zinc-800/50">
-                                    <span>{item.author}</span>
-                                    <span className="opacity-30">|</span>
-                                    <span>{item.date.replace(/-/g, ".")}</span>
-                                </div>
-                            </Link>
-                        ))}
+                                >
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className={cn(
+                                            "text-[10px] font-bold px-2 py-0.5 rounded border tracking-wide",
+                                            catColors.bg,
+                                            catColors.text,
+                                            catColors.border
+                                        )}>
+                                            {CONSULTATION_CATEGORY_LABELS[cat]}
+                                        </span>
+                                        {item.isImportant && (
+                                            <span className="text-[10px] font-black text-brand-red ml-auto uppercase italic">Important</span>
+                                        )}
+                                    </div>
+                                    <h3 className="font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-brand-navy dark:group-hover:text-brand-navy-light transition-colors line-clamp-1 mb-3">
+                                        {item.athleteName} <span className="text-zinc-400 font-medium text-xs ml-1">{item.title || "선수"}</span>
+                                    </h3>
+                                    <div className="text-[11px] text-zinc-400 font-medium flex items-center justify-end gap-2 mt-auto pt-2 border-t border-zinc-50 dark:border-zinc-800/50">
+                                        <span>{item.author}</span>
+                                        <span className="opacity-30">|</span>
+                                        <span>{item.date.replace(/-/g, ".")}</span>
+                                    </div>
+                                </Link>
+                            );
+                        })}
                     </div>
                 </div>
             </div>
@@ -327,7 +373,7 @@ export default function ConsultationsPage() {
                             조회 결과
                         </h2>
                         <span className="text-xs text-zinc-400 font-medium">
-                            ({totalConsultationCount}건)
+                            ({partFilter === "all" ? totalConsultationCount : displayedConsultations.length}건)
                         </span>
                     </div>
 
@@ -342,10 +388,10 @@ export default function ConsultationsPage() {
                 </div>
 
                 <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
-                    {allConsultations.length > 0 ? (
+                    {displayedConsultations.length > 0 ? (
                         <>
-                            <ConsultationTable consultations={allConsultations} />
-                            {totalConsultationCount > allConsultations.length && (
+                            <ConsultationTable consultations={displayedConsultations} />
+                            {partFilter === "all" && totalConsultationCount > allConsultations.length && (
                                 <div className="mt-8 flex justify-center">
                                     <button
                                         onClick={() => setDisplayLimit(prev => prev + 20)}

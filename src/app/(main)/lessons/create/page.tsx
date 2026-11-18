@@ -846,7 +846,7 @@ function CreateLessonContent() {
                                         ) : (
                                             <Sparkles size={14} className="shrink-0" />
                                         )}
-                                        <span>AI 요약</span>
+                                        <span>AI 다듬기</span>
                                     </button>
                                     <button
                                         type="button"

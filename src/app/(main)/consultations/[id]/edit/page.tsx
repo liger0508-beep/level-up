@@ -28,7 +28,14 @@ import {
     fetchRecentScorecardByPlayer,
     fetchConsultations
 } from "@/lib/consultation-sync";
+import {
+    ConsultationCategory,
+    CONSULTATION_CATEGORY_LABELS,
+    encodeConsultationContent,
+} from "@/lib/consultation-templates";
+import { ConsultationTemplateForm } from "@/components/consultation/ConsultationTemplateForm";
 import { AthleteSearch } from "@/components/ui/AthleteSearch";
+import { format } from "date-fns";
 
 // Load ReactQuill dynamically to avoid SSR issues
 const ReactQuill = dynamic(() => import("react-quill-new"), {
@@ -73,6 +80,11 @@ export default function EditConsultationPage() {
     const [content, setContent] = useState("");
     const [date, setDate] = useState("");
     const [isImportant, setIsImportant] = useState(false);
+    const [category, setCategory] = useState<ConsultationCategory>("general");
+    const [targetMonth, setTargetMonth] = useState(() => format(new Date(), "yyyy-MM"));
+    const [answers, setAnswers] = useState<Record<string, string>>({});
+    const [generalNote, setGeneralNote] = useState("");
+    const [isLegacyHtml, setIsLegacyHtml] = useState(false);
 
     // Fetch existing data
     useEffect(() => {
@@ -80,9 +92,23 @@ export default function EditConsultationPage() {
             fetchConsultationById(id).then(data => {
                 if (data) {
                     setAthleteName(data.athleteName);
-                    setContent(data.content);
+                    setContent(data.displayContent || data.content);
                     setDate(data.date);
                     setIsImportant(data.isImportant);
+                    if (data.structuredData) {
+                        setCategory(data.structuredData.category);
+                        if (data.structuredData.targetMonth) {
+                            setTargetMonth(data.structuredData.targetMonth);
+                        }
+                        setAnswers(data.structuredData.answers || {});
+                        setGeneralNote(data.structuredData.generalNote || (data.structuredData.category === "general" ? (data.displayContent || "") : ""));
+                        setIsLegacyHtml(false);
+                    } else {
+                        setCategory("general");
+                        const raw = data.displayContent || data.content || "";
+                        setGeneralNote(raw);
+                        setIsLegacyHtml(/<[a-z][\s\S]*>/i.test(raw));
+                    }
                     setIsLoading(false);
                 } else {
                     alert("상담 정보를 찾을 수 없습니다.");
@@ -94,8 +120,9 @@ export default function EditConsultationPage() {
 
     // RBAC and User Info
     useEffect(() => {
-        const supabase = createClient();
-        supabase.auth.getUser().then(async ({ data: { user } }) => {
+        const checkAuth = async () => {
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
             if (user) {
                 const { data: dbUser } = await supabase
                     .from("users")
@@ -105,20 +132,24 @@ export default function EditConsultationPage() {
 
                 if (dbUser) {
                     setCurrentCoach({ id: dbUser.id, name: dbUser.name });
-                    if (dbUser.role !== 'coach' && dbUser.role !== 'admin') {
+                    if (dbUser.role === 'athlete' || dbUser.role === 'parent') {
+                        alert("상담 내역 접근 권한이 없습니다.");
+                        router.replace("/");
+                        return;
+                    }
+                    if (dbUser.role !== 'coach' && dbUser.role !== 'admin' && dbUser.role !== 'super_admin' && dbUser.role !== 'superadmin') {
                         alert("상담 수정 권한이 없습니다.");
-                        router.push("/consultations");
+                        router.replace("/");
                     }
                 }
+            } else {
+                router.replace("/login");
             }
-        });
+        };
+        checkAuth();
     }, [router]);
 
     const [previousConsultations, setPreviousConsultations] = useState<Consultation[]>([]);
-    const [recentAnalysis, setRecentAnalysis] = useState<any[]>([]);
-    const [recentLessons, setRecentLessons] = useState<any[]>([]);
-    const [recentTraining, setRecentTraining] = useState<any[]>([]);
-    const [recentScore, setRecentScore] = useState<any | null>(null);
 
     useEffect(() => {
         if (athleteName) {
@@ -126,18 +157,8 @@ export default function EditConsultationPage() {
             fetchConsultations().then(data => {
                 setPreviousConsultations(data.filter(c => c.athleteName === athleteName && c.id !== id).slice(0, 5));
             });
-            
-            // Fetch recent activities
-            fetchRecentActivityByPlayer(athleteName, 'analysis').then(setRecentAnalysis);
-            fetchRecentActivityByPlayer(athleteName, 'lesson').then(setRecentLessons);
-            fetchRecentActivityByPlayer(athleteName, 'training').then(setRecentTraining);
-            fetchRecentScorecardByPlayer(athleteName).then(setRecentScore);
         } else {
             setPreviousConsultations([]);
-            setRecentAnalysis([]);
-            setRecentLessons([]);
-            setRecentTraining([]);
-            setRecentScore(null);
         }
     }, [athleteName, id]);
 
@@ -149,18 +170,41 @@ export default function EditConsultationPage() {
             return;
         }
 
-        if (!content || content === "<p><br></p>") {
+        const hasAnyAnswer = Object.values(answers).some((v) => v.trim().length > 0);
+        const noteText = isLegacyHtml && category === "general" ? content : generalNote;
+        const hasNote = noteText.trim().length > 0 && noteText !== "<p><br></p>";
+
+        if (category === "general" && !hasNote) {
             alert("상담 내용을 입력해 주세요.");
+            return;
+        }
+        if (category !== "general" && !hasAnyAnswer && !hasNote) {
+            alert("최소 1개 이상의 문항 또는 추가 메모를 입력해 주세요.");
             return;
         }
 
         try {
             setIsSubmitting(true);
-            
+            const structuredPayload = {
+                version: 1 as const,
+                category,
+                targetMonth:
+                    category === "parent_1st" || category === "parent_2nd" || category === "regular"
+                        ? targetMonth
+                        : undefined,
+                answers: category === "general" ? {} : answers,
+                generalNote: noteText.trim() || undefined,
+            };
+            const encodedContent = encodeConsultationContent(structuredPayload, noteText);
+
             await updateConsultation(id, {
                 athleteName,
-                content,
-                isImportant
+                content: encodedContent,
+                category,
+                targetMonth: structuredPayload.targetMonth,
+                structuredData: structuredPayload,
+                isImportant,
+                title: `${athleteName} ${CONSULTATION_CATEGORY_LABELS[category]}`,
             });
 
             alert("상담 일지가 수정되었습니다.");
@@ -197,9 +241,8 @@ export default function EditConsultationPage() {
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-6 pb-20">
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-                        <div className="lg:col-span-2">
-                            <section className="h-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm flex flex-col">
+                    <div className="w-full mb-6">
+                        <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm flex flex-col">
                                 <div className="space-y-6 flex-1">
                                     <div className="space-y-3">
                                         <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 font-mono tracking-tighter uppercase flex items-center gap-2">
@@ -215,126 +258,54 @@ export default function EditConsultationPage() {
                                         />
                                     </div>
 
-                                    <div className="space-y-3">
-                                        <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 font-mono tracking-tighter uppercase mb-2">
-                                            상세 내용 수정
-                                        </label>
-                                        <div className="text-xs text-zinc-500 bg-zinc-50 dark:bg-zinc-800/50 p-4 rounded-xl border border-zinc-100 dark:border-zinc-800 mb-4">
-                                            <p className="font-bold text-zinc-700 dark:text-zinc-300 mb-2">* 상담 작성시 아래 내용 참고</p>
-                                            <ul className="list-disc list-inside space-y-1">
-                                                <li>시합 관련</li>
-                                                <li>스코어 관련</li>
-                                                <li>훈련 태도 및 참여도 관련</li>
-                                                <li>목표 / 방향 관련</li>
-                                            </ul>
+                                    {isLegacyHtml && category === "general" ? (
+                                        <div className="space-y-3">
+                                            <div className="flex items-center justify-between">
+                                                <label className="block text-sm font-bold text-zinc-700 dark:text-zinc-300 font-mono tracking-tighter uppercase">
+                                                    상세 내용 수정 (기존 일반 상담)
+                                                </label>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setIsLegacyHtml(false);
+                                                        setCategory("initial");
+                                                    }}
+                                                    className="text-xs font-semibold text-brand-navy hover:underline"
+                                                >
+                                                    상담 양식 선택으로 전환
+                                                </button>
+                                            </div>
+                                            <div className="quill-container border-zinc-200 dark:border-zinc-800 pb-16">
+                                                <ReactQuill
+                                                    theme="snow"
+                                                    value={content}
+                                                    onChange={setContent}
+                                                    modules={quillModules}
+                                                    formats={quillFormats}
+                                                    className={cn("h-[380px] dark:bg-zinc-800/50", content && content !== "<p><br></p>" ? "hide-placeholder" : "")}
+                                                    placeholder="상담 내용을 상세히 입력하세요..."
+                                                />
+                                            </div>
                                         </div>
-                                        <div className="quill-container border-zinc-200 dark:border-zinc-800 pb-16">
-                                            <ReactQuill
-                                                theme="snow"
-                                                value={content}
-                                                onChange={setContent}
-                                                modules={quillModules}
-                                                formats={quillFormats}
-                                                className={cn("h-[380px] dark:bg-zinc-800/50", content && content !== "<p><br></p>" ? "hide-placeholder" : "")}
-                                                placeholder="상담 내용을 상세히 입력하세요..."
-                                            />
-                                        </div>
-                                    </div>
+                                    ) : (
+                                        <ConsultationTemplateForm
+                                            category={category}
+                                            onCategoryChange={setCategory}
+                                            targetMonth={targetMonth}
+                                            onTargetMonthChange={setTargetMonth}
+                                            answers={answers}
+                                            onAnswerChange={(qId, val) =>
+                                                setAnswers((prev) => ({ ...prev, [qId]: val }))
+                                            }
+                                            generalNote={generalNote}
+                                            onGeneralNoteChange={setGeneralNote}
+                                            previousConsultations={previousConsultations}
+                                            isImportant={isImportant}
+                                            onIsImportantChange={setIsImportant}
+                                        />
+                                    )}
                                 </div>
                             </section>
-                        </div>
-
-                        <div className="lg:col-span-1">
-                            <section className="h-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-3xl shadow-sm flex flex-col space-y-5">
-                                <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
-                                    <Activity size={18} className="text-brand-red" />
-                                    최근 활동 요약
-                                </h2>
-
-                                <div className="space-y-5 flex-1 overflow-y-auto pr-1">
-                                    {/* Shot Analysis */}
-                                    <div className="space-y-2">
-                                        <div className="flex items-center gap-2 text-[11px] font-bold text-zinc-500 uppercase tracking-tighter">
-                                            <Activity size={14} /> 분석 (최근 3건)
-                                        </div>
-                                        <div className="space-y-1.5 font-medium">
-                                            {recentAnalysis.map(a => (
-                                                <Link
-                                                    key={a.id}
-                                                    href={`/analysis/${a.id}`}
-                                                    className="block p-2.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl text-[11px] border border-zinc-100 dark:border-zinc-800 hover:border-brand-navy/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all flex justify-between gap-2"
-                                                >
-                                                    <span className="font-semibold text-zinc-700 dark:text-zinc-300 truncate">{a.title}</span>
-                                                    <span className="text-zinc-400 shrink-0">{a.date.slice(5)}</span>
-                                                </Link>
-                                            ))}
-                                            {recentAnalysis.length === 0 && <div className="text-[10px] text-zinc-400 italic px-2">데이터 없음</div>}
-                                        </div>
-                                    </div>
-
-                                    {/* Lessons */}
-                                    <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
-                                        <div className="flex items-center gap-2 text-[11px] font-bold text-zinc-500 uppercase tracking-tighter">
-                                            <BookOpen size={14} /> 레슨 (최근 3건)
-                                        </div>
-                                        <div className="space-y-1.5 font-medium">
-                                            {recentLessons.map(l => (
-                                                <Link
-                                                    key={l.id}
-                                                    href={`/lessons/${l.id}`}
-                                                    className="block p-2.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl text-[11px] border border-zinc-100 dark:border-zinc-800 hover:border-brand-navy/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all flex justify-between gap-2"
-                                                >
-                                                    <span className="font-semibold text-zinc-700 dark:text-zinc-300 truncate">{l.title}</span>
-                                                    <span className="text-zinc-400 shrink-0">{l.date.slice(5)}</span>
-                                                </Link>
-                                            ))}
-                                            {recentLessons.length === 0 && <div className="text-[10px] text-zinc-400 italic px-2">데이터 없음</div>}
-                                        </div>
-                                    </div>
-
-                                    {/* Training */}
-                                    <div className="space-y-2 pt-2 border-t border-zinc-100 dark:border-zinc-800 font-medium">
-                                        <div className="flex items-center gap-2 text-[11px] font-bold text-zinc-500 uppercase tracking-tighter">
-                                            <Dumbbell size={14} /> 훈련 (최근 3건)
-                                        </div>
-                                        <div className="space-y-1.5 ">
-                                            {recentTraining.map(t => (
-                                                <Link
-                                                    key={t.id}
-                                                    href={`/training/${t.id}`}
-                                                    className="block p-2.5 bg-zinc-50 dark:bg-zinc-800/50 rounded-xl text-[11px] border border-zinc-100 dark:border-zinc-800 hover:border-brand-navy/50 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all flex justify-between gap-2"
-                                                >
-                                                    <span className="font-semibold text-zinc-700 dark:text-zinc-300 truncate">{t.title}</span>
-                                                    <span className="text-zinc-400 shrink-0">{t.date.slice(5)}</span>
-                                                </Link>
-                                            ))}
-                                            {recentTraining.length === 0 && <div className="text-[10px] text-zinc-400 italic px-2">데이터 없음</div>}
-                                        </div>
-                                    </div>
-
-                                    {/* Recent Scorecard Summary */}
-                                    <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800">
-                                        <div className="flex items-center gap-2 text-[11px] font-bold text-zinc-500 uppercase tracking-tighter mb-2">
-                                            <Flag size={14} /> 최근 스코어
-                                        </div>
-                                        {recentScore ? (
-                                            <Link
-                                                href={`/scores/${recentScore.id}`}
-                                                className="block rounded-xl border border-zinc-100 dark:border-zinc-800/50 bg-zinc-50/50 dark:bg-zinc-800/30 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all p-3 space-y-2"
-                                            >
-                                                <div className="flex justify-between items-center">
-                                                    <span className="text-xl font-black text-brand-navy dark:text-white">{recentScore.score}타</span>
-                                                    <span className="text-[10px] text-zinc-400 font-bold">{recentScore.date}</span>
-                                                </div>
-                                                <div className="text-[10px] text-zinc-500 truncate">{recentScore.course}</div>
-                                            </Link>
-                                        ) : (
-                                            <div className="text-[10px] text-zinc-400 italic px-2">데이터 없음</div>
-                                        )}
-                                    </div>
-                                </div>
-                            </section>
-                        </div>
                     </div>
 
                     <div className="flex items-center justify-end gap-3 pt-6 border-t border-zinc-200 dark:border-zinc-800 mt-6 font-medium">

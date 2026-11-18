@@ -1,5 +1,10 @@
 import { createClient } from "./supabase/client";
 import { formatLocalDate } from "./utils";
+import {
+    ConsultationCategory,
+    ConsultationStructuredData,
+    parseConsultationData,
+} from "./consultation-templates";
 
 export type ConsultationType = "all" | "assigned";
 
@@ -9,6 +14,10 @@ export interface Consultation {
     coachName: string;
     title: string;
     content: string;
+    displayContent?: string;
+    category: ConsultationCategory;
+    targetMonth?: string;
+    structuredData?: ConsultationStructuredData | null;
     author: string;
     type: ConsultationType;
     athleteName: string;
@@ -27,13 +36,25 @@ export const CONSULTATION_TYPE_COLORS: Record<ConsultationType, { bg: string; te
     assigned: { bg: "bg-emerald-50", text: "text-emerald-600", border: "border-emerald-100", side: "border-l-emerald-400" },
 };
 
-function mapFromDB(data: any): Consultation {
+export function mapConsultationRow(data: any): Consultation {
+    const rawContent = data.content || "";
+    const { structured, displayHtml } = parseConsultationData(rawContent);
+    const resolvedStructured: ConsultationStructuredData | null = data.structured_data || structured;
+    const resolvedCategory: ConsultationCategory =
+        (data.category as ConsultationCategory) || resolvedStructured?.category || "general";
+    const resolvedTargetMonth: string | undefined =
+        data.target_month || resolvedStructured?.targetMonth || undefined;
+
     return {
         id: data.id,
         date: data.date,
         coachName: data.coach_name || "",
         title: data.title || "",
-        content: data.content || "",
+        content: rawContent,
+        displayContent: displayHtml,
+        category: resolvedCategory,
+        targetMonth: resolvedTargetMonth,
+        structuredData: resolvedStructured,
         author: data.author || "",
         type: data.type as ConsultationType,
         athleteName: data.athlete_name || "",
@@ -43,7 +64,11 @@ function mapFromDB(data: any): Consultation {
     };
 }
 
-function mapToDB(data: Partial<Consultation>) {
+function mapFromDB(data: any): Consultation {
+    return mapConsultationRow(data);
+}
+
+function mapToDB(data: Partial<Consultation>, includeExtendedCols = true) {
     const dbData: any = { ...data };
     if (data.coachName !== undefined) {
         dbData.coach_name = data.coachName;
@@ -57,7 +82,26 @@ function mapToDB(data: Partial<Consultation>) {
         dbData.is_important = data.isImportant;
         delete dbData.isImportant;
     }
+    delete dbData.displayContent;
+
+    if (includeExtendedCols) {
+        if (data.targetMonth !== undefined) {
+            dbData.target_month = data.targetMonth || null;
+        }
+        if (data.structuredData !== undefined) {
+            dbData.structured_data = data.structuredData;
+        }
+    } else {
+        delete dbData.category;
+    }
+    delete dbData.targetMonth;
+    delete dbData.structuredData;
     return dbData;
+}
+
+function isMissingColumnError(error: any): boolean {
+    const msg = String(error?.message || "");
+    return error?.code === "PGRST204" || error?.code === "42703" || msg.includes("column") || msg.includes("schema cache");
 }
 
 export async function fetchConsultations(): Promise<Consultation[]> {
@@ -107,8 +151,8 @@ export async function saveConsultation(consultation: Partial<Consultation>) {
             supabase.from("users").select("id").eq("name", consultation.coachName).maybeSingle()
         ]);
 
-        const dbPayload = mapToDB(consultation);
-        const { data, error } = await supabase
+        const dbPayload = mapToDB(consultation, true);
+        let { data, error } = await supabase
             .from("consultations")
             .insert({
                 ...dbPayload,
@@ -117,6 +161,21 @@ export async function saveConsultation(consultation: Partial<Consultation>) {
             })
             .select()
             .single();
+
+        if (error && isMissingColumnError(error)) {
+            const fallbackPayload = mapToDB(consultation, false);
+            const retry = await supabase
+                .from("consultations")
+                .insert({
+                    ...fallbackPayload,
+                    user_id: athleteRes.data?.id || null,
+                    coach_id: coachRes.data?.id || null
+                })
+                .select()
+                .single();
+            data = retry.data;
+            error = retry.error;
+        }
 
         if (error) throw error;
         return mapFromDB(data);
@@ -129,13 +188,25 @@ export async function saveConsultation(consultation: Partial<Consultation>) {
 export async function updateConsultation(id: string, consultation: Partial<Consultation>) {
     try {
         const supabase = createClient();
-        const dbPayload = mapToDB(consultation);
-        const { data, error } = await supabase
+        const dbPayload = mapToDB(consultation, true);
+        let { data, error } = await supabase
             .from("consultations")
             .update(dbPayload)
             .eq("id", id)
             .select()
             .single();
+
+        if (error && isMissingColumnError(error)) {
+            const fallbackPayload = mapToDB(consultation, false);
+            const retry = await supabase
+                .from("consultations")
+                .update(fallbackPayload)
+                .eq("id", id)
+                .select()
+                .single();
+            data = retry.data;
+            error = retry.error;
+        }
 
         if (error) throw error;
         return mapFromDB(data);
@@ -223,6 +294,10 @@ export async function fetchRecentScorecardByPlayer(playerName: string): Promise<
 
 export function getPlainText(html: string) {
     if (!html) return "";
-    return html.replace(/<[^>]*>/g, "").slice(0, 100);
+    return html
+        .replace(/<!--[\s\S]*?-->/g, "")
+        .replace(/<[^>]*>/g, "")
+        .trim()
+        .slice(0, 100);
 }
 
