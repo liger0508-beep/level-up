@@ -302,7 +302,9 @@ export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEve
                                                 <Calendar size={16} />
                                             </div>
                                             <span className="text-sm font-bold text-zinc-600 dark:text-zinc-300">
-                                                {EVENT_TYPE_LABELS[event.type]}
+                                                {event.type === "other" && event.title?.startsWith("기타 (")
+                                                    ? event.title
+                                                    : EVENT_TYPE_LABELS[event.type]}
                                             </span>
                                         </div>
                                         <div className="flex items-center gap-2 shrink-0 mr-2">

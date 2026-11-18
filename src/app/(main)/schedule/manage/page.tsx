@@ -28,6 +28,7 @@ import { format, addDays, subDays, startOfWeek, eachDayOfInterval, addWeeks, sub
 import { ko } from "date-fns/locale";
 import { ScheduleEventDialog } from "@/components/schedule/ScheduleEventDialog";
 import { saveEvent, deleteEvent } from "@/lib/schedule-sync";
+import { CoachSlotConfig, generateSlotsFromConfig, resolveCoachSlotConfig } from "@/lib/schedule-slots";
 
 const WEEK_DAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -105,6 +106,7 @@ export default function ScheduleManagePage() {
     const [athletes, setAthletes] = useState<DBUser[]>([]);
     const [schedules, setSchedules] = useState<any[]>([]);
     const [blockouts, setBlockouts] = useState<BlockoutRule[]>([]);
+    const [slotConfigs, setSlotConfigs] = useState<CoachSlotConfig[]>([]);
 
     // Selection
     const [selectedCoachName, setSelectedCoachName] = useState<string>("");
@@ -112,6 +114,7 @@ export default function ScheduleManagePage() {
 
     // Modals
     const [isBlockoutModalOpen, setIsBlockoutModalOpen] = useState(false);
+    const [isSlotConfigModalOpen, setIsSlotConfigModalOpen] = useState(false);
     const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
     const [dialogInitialDate, setDialogInitialDate] = useState<Date>(new Date());
     const [dialogInitialSlot, setDialogInitialSlot] = useState<string | null>(null);
@@ -125,6 +128,21 @@ export default function ScheduleManagePage() {
     const [boSlots, setBoSlots] = useState<string[]>([]);
     const [boReason, setBoReason] = useState("정기 휴무");
     const [isSubmittingBo, setIsSubmittingBo] = useState(false);
+
+    // Slot Config Form State
+    const [scCoachName, setScCoachName] = useState("");
+    const [scMonthMode, setScMonthMode] = useState<"default" | "month">("month");
+    const [scMonth, setScMonth] = useState<string>(() => format(new Date(), "yyyy-MM"));
+    const [scUseAm, setScUseAm] = useState(true);
+    const [scAmStart, setScAmStart] = useState("09:00");
+    const [scAmEnd, setScAmEnd] = useState("12:00");
+    const [scUsePm, setScUsePm] = useState(true);
+    const [scPmStart, setScPmStart] = useState("14:00");
+    const [scPmEnd, setScPmEnd] = useState("18:00");
+    const [scDuration, setScDuration] = useState(60);
+    const [scBreak, setScBreak] = useState(0);
+    const [scDisabledSlots, setScDisabledSlots] = useState<string[]>([]);
+    const [isSubmittingSc, setIsSubmittingSc] = useState(false);
 
     // Initial Auth & Data Load
     useEffect(() => {
@@ -195,7 +213,7 @@ export default function ScheduleManagePage() {
                     setAthletes(allAthletes);
                 }
 
-                await loadBlockoutsData();
+                await Promise.all([loadBlockoutsData(), loadSlotConfigsData()]);
             } catch (err) {
                 console.error("Init schedule manage error:", err);
             } finally {
@@ -209,13 +227,26 @@ export default function ScheduleManagePage() {
     // Load blockout rules
     const loadBlockoutsData = async () => {
         try {
-            const res = await fetch("/api/schedule-manage/blockouts");
+            const res = await fetch("/api/schedule-manage/blockouts", { cache: "no-store" });
             const data = await res.json();
             if (data.blockouts) {
                 setBlockouts(data.blockouts);
             }
         } catch (e) {
             console.error("Failed to load blockouts", e);
+        }
+    };
+
+    // Load coach slot configs
+    const loadSlotConfigsData = async () => {
+        try {
+            const res = await fetch("/api/schedule-manage/slot-configs", { cache: "no-store" });
+            const data = await res.json();
+            if (data.configs) {
+                setSlotConfigs(data.configs);
+            }
+        } catch (e) {
+            console.error("Failed to load slot configs", e);
         }
     };
 
@@ -275,9 +306,146 @@ export default function ScheduleManagePage() {
         return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
     }, [selectedDate]);
 
+    // Dynamic slots for currently selected coach & date
+    const selectedCoachConfig = useMemo(() => {
+        return resolveCoachSlotConfig(slotConfigs, selectedCoachName, selectedDate);
+    }, [slotConfigs, selectedCoachName, selectedDate]);
+
+    const selectedCoachSlots = useMemo(() => {
+        if (selectedCoachConfig) {
+            const generated = generateSlotsFromConfig(selectedCoachConfig);
+            if (generated.length > 0) return generated;
+        }
+        return TIME_SLOTS;
+    }, [selectedCoachConfig]);
+
+    // Dynamic slots for the coach selected in Blockout Modal
+    const boCoachTimeSlots = useMemo(() => {
+        const targetDate = boType === "specific_date" ? boDate : selectedDate;
+        const cfg = resolveCoachSlotConfig(slotConfigs, boCoachName, targetDate);
+        if (cfg) {
+            const generated = generateSlotsFromConfig(cfg);
+            if (generated.length > 0) return generated;
+        }
+        return TIME_SLOTS;
+    }, [slotConfigs, boCoachName, boType, boDate, selectedDate]);
+
+    // Real-time preview slots in Slot Config Modal
+    const scPreviewSlots = useMemo(() => {
+        return generateSlotsFromConfig({
+            useAm: scUseAm,
+            amStart: scAmStart,
+            amEnd: scAmEnd,
+            usePm: scUsePm,
+            pmStart: scPmStart,
+            pmEnd: scPmEnd,
+            durationMinutes: scDuration,
+            breakMinutes: scBreak,
+            disabledSlots: scDisabledSlots,
+        }, true);
+    }, [scUseAm, scAmStart, scAmEnd, scUsePm, scPmStart, scPmEnd, scDuration, scBreak, scDisabledSlots]);
+
+    const handleOpenSlotConfigModal = (coachDefault?: string) => {
+        const targetCoach = coachDefault || selectedCoachName || (coaches[0]?.name ?? "");
+        const currentMonth = selectedDate.slice(0, 7);
+        const existing = resolveCoachSlotConfig(slotConfigs, targetCoach, selectedDate);
+
+        setScCoachName(targetCoach);
+        if (existing) {
+            setScMonthMode(existing.month === "default" ? "default" : "month");
+            setScMonth(existing.month === "default" ? currentMonth : existing.month);
+            setScUseAm(existing.useAm);
+            setScAmStart(existing.amStart);
+            setScAmEnd(existing.amEnd);
+            setScUsePm(existing.usePm);
+            setScPmStart(existing.pmStart);
+            setScPmEnd(existing.pmEnd);
+            setScDuration(existing.durationMinutes);
+            setScBreak(existing.breakMinutes);
+            setScDisabledSlots(existing.disabledSlots || []);
+        } else {
+            setScMonthMode("month");
+            setScMonth(currentMonth);
+            setScUseAm(true);
+            setScAmStart("09:00");
+            setScAmEnd("12:00");
+            setScUsePm(true);
+            setScPmStart("14:00");
+            setScPmEnd("18:00");
+            setScDuration(60);
+            setScBreak(0);
+            setScDisabledSlots([]);
+        }
+        setIsSlotConfigModalOpen(true);
+    };
+
+    const handleSaveSlotConfig = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!scCoachName) {
+            alert("코치를 선택해주세요.");
+            return;
+        }
+        if (scPreviewSlots.filter(s => !scDisabledSlots.includes(s.start)).length === 0) {
+            alert("최소 1개 이상의 타임이 생성되도록 시간 범위를 설정해주세요.");
+            return;
+        }
+
+        setIsSubmittingSc(true);
+        try {
+            const targetCoach = coaches.find(c => c.name === scCoachName);
+            const res = await fetch("/api/schedule-manage/slot-configs", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    coachId: targetCoach?.id || "",
+                    coachName: scCoachName,
+                    month: scMonthMode === "default" ? "default" : scMonth,
+                    useAm: scUseAm,
+                    amStart: scAmStart,
+                    amEnd: scAmEnd,
+                    usePm: scUsePm,
+                    pmStart: scPmStart,
+                    pmEnd: scPmEnd,
+                    durationMinutes: scDuration,
+                    breakMinutes: scBreak,
+                    disabledSlots: scDisabledSlots,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || "저장 실패");
+
+            alert("타임 설정이 저장되었습니다.");
+            setIsSlotConfigModalOpen(false);
+            await loadSlotConfigsData();
+        } catch (err: any) {
+            alert(err.message);
+        } finally {
+            setIsSubmittingSc(false);
+        }
+    };
+
+    const handleDeleteSlotConfig = async (id: string) => {
+        if (!confirm("이 타임 설정을 삭제하고 기본 시간표로 되돌리시겠습니까?")) return;
+        try {
+            const res = await fetch("/api/schedule-manage/slot-configs", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id }),
+            });
+            if (!res.ok) throw new Error("삭제 실패");
+            await loadSlotConfigsData();
+        } catch (err: any) {
+            alert(err.message);
+        }
+    };
+
     // Helper: Find schedule for a coach at a slot
-    const getCoachSlotInfo = (coachName: string, slotStart: string) => {
+    const getCoachSlotInfo = (coachName: string, slotStart: string, slotEnd?: string) => {
         const cleanCoach = coachName.replace(/ (감독|코치|프로)$/, '').trim();
+        const slotStartMs = new Date(`${selectedDate}T${slotStart}:00+09:00`).getTime();
+        const slotEndMs = slotEnd
+            ? new Date(`${selectedDate}T${slotEnd}:00+09:00`).getTime()
+            : slotStartMs + 60 * 60 * 1000;
 
         // 1. Check Blockouts
         const matchedBlockout = blockouts.find(b => {
@@ -291,7 +459,12 @@ export default function ScheduleManagePage() {
             }
 
             if (b.allDay) return true;
-            return b.slots?.includes(slotStart);
+            if (b.slots?.includes(slotStart)) return true;
+            return b.slots?.some(bs => {
+                const bsStart = new Date(`${selectedDate}T${bs}:00+09:00`).getTime();
+                const bsEnd = bsStart + 60 * 60 * 1000;
+                return slotStartMs < bsEnd && slotEndMs > bsStart;
+            });
         });
 
         if (matchedBlockout) {
@@ -304,9 +477,6 @@ export default function ScheduleManagePage() {
         }
 
         // 2. Check Active Schedules
-        const slotStartMs = new Date(`${selectedDate}T${slotStart}:00+09:00`).getTime();
-        const slotEndMs = slotStartMs + 60 * 60 * 1000;
-
         const matchedSchedule = schedules.find(s => {
             const creatorName = s.creator?.name || "";
             const userName = s.users?.name || "";
@@ -381,7 +551,7 @@ export default function ScheduleManagePage() {
             return;
         }
 
-        const isAllDaySelected = boSlots.length === TIME_SLOTS.length;
+        const isAllDaySelected = boSlots.length === boCoachTimeSlots.length;
 
         setIsSubmittingBo(true);
         try {
@@ -520,14 +690,6 @@ export default function ScheduleManagePage() {
                             스케쥴 관리
                         </h1>
                     </div>
-
-                    <button
-                        onClick={() => handleOpenBlockoutModal()}
-                        className="shrink-0 flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs sm:text-sm font-bold shadow-sm transition-all"
-                    >
-                        <CalendarOff size={15} />
-                        휴무 설정
-                    </button>
                 </div>
 
                 {/* Filter Bar: Branch, Tabs */}
@@ -690,28 +852,45 @@ export default function ScheduleManagePage() {
                         {/* Coach Daily Summary Card */}
                         <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 p-4 sm:p-6 shadow-sm">
                             <div className="flex items-center justify-between pb-4 border-b border-zinc-100 dark:border-zinc-800 gap-2">
-                                <div>
-                                    <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
-                                        {selectedCoachName} 코치 일정
-                                    </h2>
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
+                                            {selectedCoachName} 일정
+                                        </h2>
+                                        {selectedCoachConfig && (
+                                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-brand-navy/10 text-brand-navy dark:bg-brand-navy-light/20 dark:text-brand-navy-light whitespace-nowrap">
+                                                {selectedCoachConfig.durationMinutes}분 단위
+                                                {selectedCoachConfig.month !== "default" ? ` (${selectedCoachConfig.month})` : ""}
+                                            </span>
+                                        )}
+                                    </div>
                                     <p className="text-xs text-zinc-500">
                                         {format(new Date(`${selectedDate}T00:00:00`), "yyyy년 MM월 dd일")} (
                                         {DAYS_OF_WEEK.find(d => d.value === currentDayOfWeek)?.label})
                                     </p>
                                 </div>
-                                <button
-                                    onClick={() => handleOpenBlockoutModal(selectedCoachName)}
-                                    className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 transition-colors flex items-center gap-1"
-                                >
-                                    <CalendarOff size={13} />
-                                    휴무 설정
-                                </button>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                    <button
+                                        onClick={() => handleOpenSlotConfigModal(selectedCoachName)}
+                                        className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg border border-brand-navy/30 dark:border-brand-navy/60 bg-brand-navy/5 dark:bg-brand-navy/20 text-brand-navy dark:text-zinc-200 hover:bg-brand-navy/10 transition-colors flex items-center gap-1 whitespace-nowrap"
+                                    >
+                                        <Clock size={13} />
+                                        타임 설정
+                                    </button>
+                                    <button
+                                        onClick={() => handleOpenBlockoutModal(selectedCoachName)}
+                                        className="shrink-0 text-xs font-semibold px-3 py-1.5 rounded-lg border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 transition-colors flex items-center gap-1 whitespace-nowrap"
+                                    >
+                                        <CalendarOff size={13} />
+                                        휴무 설정
+                                    </button>
+                                </div>
                             </div>
 
-                            {/* 7 Time Slots Compact List */}
+                            {/* Time Slots Compact List */}
                             <div className="space-y-2 mt-4">
-                                {TIME_SLOTS.map((slot) => {
-                                    const info = getCoachSlotInfo(selectedCoachName, slot.start);
+                                {selectedCoachSlots.map((slot) => {
+                                    const info = getCoachSlotInfo(selectedCoachName, slot.start, slot.end);
 
                                     if (info.status === "blocked") {
                                         return (
@@ -1285,20 +1464,20 @@ export default function ScheduleManagePage() {
                                     <button
                                         type="button"
                                         onClick={() => {
-                                            if (boSlots.length === TIME_SLOTS.length) {
+                                            if (boSlots.length === boCoachTimeSlots.length) {
                                                 setBoSlots([]);
                                             } else {
-                                                setBoSlots(TIME_SLOTS.map(s => s.start));
+                                                setBoSlots(boCoachTimeSlots.map(s => s.start));
                                             }
                                         }}
                                         className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline"
                                     >
-                                        {boSlots.length === TIME_SLOTS.length ? "전체 해제" : "종일 전체 선택"}
+                                        {boSlots.length === boCoachTimeSlots.length ? "전체 해제" : "종일 전체 선택"}
                                     </button>
                                 </div>
 
                                 <div className="grid grid-cols-4 gap-1.5">
-                                    {TIME_SLOTS.map(s => {
+                                    {boCoachTimeSlots.map(s => {
                                         const isSelected = boSlots.includes(s.start);
                                         return (
                                             <button
@@ -1364,6 +1543,291 @@ export default function ScheduleManagePage() {
                                     className="flex-1 py-2.5 rounded-xl bg-brand-navy text-white text-xs font-bold shadow hover:bg-brand-navy/90 transition-all disabled:opacity-50"
                                 >
                                     {isSubmittingBo ? "등록 중..." : "등록하기"}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            {/* ── MODAL 1.5: 코치 타임 단위 설정 모달 ── */}
+            {isSlotConfigModalOpen && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+                    onClick={() => setIsSlotConfigModalOpen(false)}
+                >
+                    <div
+                        className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 max-w-lg w-full p-5 sm:p-6 space-y-4 max-h-[92vh] overflow-y-auto"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800 pb-3">
+                            <h2 className="text-base sm:text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                                <Clock size={18} className="text-brand-navy dark:text-brand-navy-light" />
+                                코치 타임 단위 설정
+                            </h2>
+                            <button
+                                type="button"
+                                onClick={() => setIsSlotConfigModalOpen(false)}
+                                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSaveSlotConfig} className="space-y-4 text-xs sm:text-sm">
+                            {/* 1. Coach Selector */}
+                            <div>
+                                <label className="block text-xs font-bold text-zinc-500 mb-1.5">대상 코치 *</label>
+                                <select
+                                    value={scCoachName}
+                                    onChange={(e) => setScCoachName(e.target.value)}
+                                    className="w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-semibold text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-2 focus:ring-brand-navy"
+                                    required
+                                >
+                                    {coaches.map(c => (
+                                        <option key={c.id} value={c.name}>
+                                            {c.name} ({c.branch || "미지정"})
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* 2. Target Scope: Default vs Specific Month */}
+                            <div>
+                                <label className="block text-xs font-bold text-zinc-500 mb-1.5">적용 기간 *</label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setScMonthMode("default")}
+                                        className={cn(
+                                            "py-2 rounded-xl text-xs font-bold transition-all border",
+                                            scMonthMode === "default"
+                                                ? "bg-brand-navy border-brand-navy text-white shadow-sm"
+                                                : "bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400"
+                                        )}
+                                    >
+                                        기본 설정 (전체 월)
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setScMonthMode("month")}
+                                        className={cn(
+                                            "py-2 rounded-xl text-xs font-bold transition-all border",
+                                            scMonthMode === "month"
+                                                ? "bg-brand-navy border-brand-navy text-white shadow-sm"
+                                                : "bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400"
+                                        )}
+                                    >
+                                        특정 월 지정
+                                    </button>
+                                </div>
+                                {scMonthMode === "month" && (
+                                    <input
+                                        type="month"
+                                        value={scMonth}
+                                        onChange={(e) => setScMonth(e.target.value)}
+                                        className="mt-2 w-full px-3 py-2 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-semibold text-zinc-800 dark:text-zinc-200"
+                                        required
+                                    />
+                                )}
+                            </div>
+
+                            {/* 3. AM / PM Operating Hours */}
+                            <div className="space-y-2.5 bg-zinc-50 dark:bg-zinc-800/40 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                                <label className="block text-xs font-bold text-zinc-500">운영 시간대</label>
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <label className="flex items-center gap-2 text-xs font-bold text-zinc-700 dark:text-zinc-200 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={scUseAm}
+                                            onChange={(e) => setScUseAm(e.target.checked)}
+                                            className="rounded border-zinc-300 text-brand-navy focus:ring-brand-navy"
+                                        />
+                                        오전 타임
+                                    </label>
+                                    <div className={cn("flex items-center gap-1.5", !scUseAm && "opacity-40 pointer-events-none")}>
+                                        <input
+                                            type="time"
+                                            value={scAmStart}
+                                            onChange={(e) => setScAmStart(e.target.value)}
+                                            className="px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-semibold"
+                                        />
+                                        <span className="text-zinc-400">~</span>
+                                        <input
+                                            type="time"
+                                            value={scAmEnd}
+                                            onChange={(e) => setScAmEnd(e.target.value)}
+                                            className="px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-semibold"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-200/70 dark:border-zinc-700/60">
+                                    <label className="flex items-center gap-2 text-xs font-bold text-zinc-700 dark:text-zinc-200 cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={scUsePm}
+                                            onChange={(e) => setScUsePm(e.target.checked)}
+                                            className="rounded border-zinc-300 text-brand-navy focus:ring-brand-navy"
+                                        />
+                                        오후 타임
+                                    </label>
+                                    <div className={cn("flex items-center gap-1.5", !scUsePm && "opacity-40 pointer-events-none")}>
+                                        <input
+                                            type="time"
+                                            value={scPmStart}
+                                            onChange={(e) => setScPmStart(e.target.value)}
+                                            className="px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-semibold"
+                                        />
+                                        <span className="text-zinc-400">~</span>
+                                        <input
+                                            type="time"
+                                            value={scPmEnd}
+                                            onChange={(e) => setScPmEnd(e.target.value)}
+                                            className="px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-semibold"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 4. Duration & Break Presets */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-zinc-500 mb-1.5">1타임 수업 시간</label>
+                                    <div className="grid grid-cols-3 gap-1">
+                                        {[20, 30, 40, 45, 50, 60].map((mins) => (
+                                            <button
+                                                key={mins}
+                                                type="button"
+                                                onClick={() => setScDuration(mins)}
+                                                className={cn(
+                                                    "py-1.5 rounded-lg text-xs font-bold border transition-all",
+                                                    scDuration === mins
+                                                        ? "bg-brand-navy border-brand-navy text-white shadow-sm"
+                                                        : "bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300"
+                                                )}
+                                            >
+                                                {mins}분
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-zinc-500 mb-1.5">타임 간 휴식 시간</label>
+                                    <div className="grid grid-cols-3 gap-1">
+                                        {[0, 5, 10, 15, 20, 30].map((mins) => (
+                                            <button
+                                                key={mins}
+                                                type="button"
+                                                onClick={() => setScBreak(mins)}
+                                                className={cn(
+                                                    "py-1.5 rounded-lg text-xs font-bold border transition-all",
+                                                    scBreak === mins
+                                                        ? "bg-brand-navy border-brand-navy text-white shadow-sm"
+                                                        : "bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300"
+                                                )}
+                                            >
+                                                {mins}분
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 5. Live Slot Preview & Toggle Excluded Slots */}
+                            <div>
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <label className="text-xs font-bold text-zinc-500">
+                                        생성된 타임 미리보기 ({scPreviewSlots.length - scDisabledSlots.length}개 활성)
+                                    </label>
+                                    <span className="text-[11px] text-zinc-400">클릭하여 특정 타임 제외/복구</span>
+                                </div>
+                                {scPreviewSlots.length === 0 ? (
+                                    <p className="text-xs text-zinc-400 py-3 text-center border border-dashed border-zinc-200 dark:border-zinc-700 rounded-xl">
+                                        생성된 타임이 없습니다. 운영 시간과 수업 시간을 확인해주세요.
+                                    </p>
+                                ) : (
+                                    <div className="grid grid-cols-4 sm:grid-cols-5 gap-1.5 max-h-40 overflow-y-auto p-1">
+                                        {scPreviewSlots.map((slot) => {
+                                            const isDisabled = scDisabledSlots.includes(slot.start);
+                                            return (
+                                                <button
+                                                    key={slot.key}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setScDisabledSlots((prev) =>
+                                                            prev.includes(slot.start)
+                                                                ? prev.filter((s) => s !== slot.start)
+                                                                : [...prev, slot.start]
+                                                        );
+                                                    }}
+                                                    className={cn(
+                                                        "py-1.5 px-1 rounded-lg text-[11px] font-semibold border transition-all text-center",
+                                                        isDisabled
+                                                            ? "bg-zinc-100 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-800 text-zinc-400 line-through"
+                                                            : "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300"
+                                                    )}
+                                                    title={`${slot.start}~${slot.end}`}
+                                                >
+                                                    {slot.start}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 6. Existing Saved Configs for this Coach */}
+                            {slotConfigs.filter((c) => c.coachName === scCoachName).length > 0 && (
+                                <div className="pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                                    <label className="block text-xs font-bold text-zinc-500 mb-1.5">
+                                        {scCoachName} 코치 저장된 설정
+                                    </label>
+                                    <div className="space-y-1.5 max-h-28 overflow-y-auto">
+                                        {slotConfigs
+                                            .filter((c) => c.coachName === scCoachName)
+                                            .map((cfg) => (
+                                                <div
+                                                    key={cfg.id}
+                                                    className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 text-xs"
+                                                >
+                                                    <div className="min-w-0 truncate">
+                                                        <span className="font-bold text-zinc-800 dark:text-zinc-200">
+                                                            {cfg.month === "default" ? "기본 설정" : cfg.month}
+                                                        </span>
+                                                        <span className="text-zinc-500 ml-2">
+                                                            {cfg.durationMinutes}분 (휴식 {cfg.breakMinutes}분)
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDeleteSlotConfig(cfg.id)}
+                                                        className="text-red-500 hover:text-red-700 p-1 shrink-0"
+                                                        title="설정 삭제"
+                                                    >
+                                                        <Trash2 size={13} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Buttons */}
+                            <div className="flex items-center gap-2 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsSlotConfigModalOpen(false)}
+                                    className="flex-1 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-xs font-bold text-zinc-600 dark:text-zinc-300"
+                                >
+                                    취소
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={isSubmittingSc}
+                                    className="flex-1 py-2.5 rounded-xl bg-brand-navy text-white text-xs font-bold shadow hover:bg-brand-navy/90 transition-all disabled:opacity-50"
+                                >
+                                    {isSubmittingSc ? "저장 중..." : "저장하기"}
                                 </button>
                             </div>
                         </form>

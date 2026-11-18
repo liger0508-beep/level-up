@@ -285,6 +285,7 @@ function mapEventType(dbType: string, title: string): ScheduleEvent["type"] {
     // Check title prefix first for precise types
     if (title.startsWith("[분석]")) return "analysis";
     if (title.startsWith("[상담]")) return "consultation";
+    if (title.startsWith("기타") || title.startsWith("[기타]")) return "other";
 
     const map: Record<string, ScheduleEvent["type"]> = {
         lesson: "lesson",

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { COACH_DEFAULT_SLOTS, generateSlotsFromConfig, resolveCoachSlotConfig } from '@/lib/schedule-slots';
 
 export const dynamic = 'force-dynamic';
 
@@ -257,20 +258,32 @@ export async function GET(request: Request) {
             return NextResponse.json({ occupiedSlots: [] });
         }
 
-        const slotDefinitions = [
-            { key: "08:00", start: new Date(`${date}T08:00:00+09:00`).getTime(), end: new Date(`${date}T09:00:00+09:00`).getTime() },
-            { key: "09:00", start: new Date(`${date}T09:00:00+09:00`).getTime(), end: new Date(`${date}T10:00:00+09:00`).getTime() },
-            { key: "10:00", start: new Date(`${date}T10:00:00+09:00`).getTime(), end: new Date(`${date}T11:00:00+09:00`).getTime() },
-            { key: "11:00", start: new Date(`${date}T11:00:00+09:00`).getTime(), end: new Date(`${date}T12:00:00+09:00`).getTime() },
-            { key: "13:00", start: new Date(`${date}T13:00:00+09:00`).getTime(), end: new Date(`${date}T14:00:00+09:00`).getTime() },
-            { key: "14:00", start: new Date(`${date}T14:00:00+09:00`).getTime(), end: new Date(`${date}T15:00:00+09:00`).getTime() },
-            { key: "15:00", start: new Date(`${date}T15:00:00+09:00`).getTime(), end: new Date(`${date}T16:00:00+09:00`).getTime() },
-            { key: "16:00", start: new Date(`${date}T16:00:00+09:00`).getTime(), end: new Date(`${date}T17:00:00+09:00`).getTime() },
-            { key: "17:00", start: new Date(`${date}T17:00:00+09:00`).getTime(), end: new Date(`${date}T18:00:00+09:00`).getTime() },
-            { key: "18:00", start: new Date(`${date}T18:00:00+09:00`).getTime(), end: new Date(`${date}T19:00:00+09:00`).getTime() },
-            { key: "19:00", start: new Date(`${date}T19:00:00+09:00`).getTime(), end: new Date(`${date}T20:00:00+09:00`).getTime() },
-            { key: "20:00", start: new Date(`${date}T20:00:00+09:00`).getTime(), end: new Date(`${date}T21:00:00+09:00`).getTime() },
-        ];
+        // Resolve coach custom slot configuration if any
+        let resolvedSlots: { key: string; label: string; start: string; end: string }[] | null = null;
+        let slotDurationMs = 60 * 60 * 1000;
+        try {
+            const { data: cfgData } = await supabase.storage
+                .from('records')
+                .download('settings/coach_slot_configs.json');
+            if (cfgData) {
+                const cfgText = await cfgData.text();
+                const configs = JSON.parse(cfgText || '[]');
+                const matched = resolveCoachSlotConfig(configs, coachName, date);
+                if (matched) {
+                    resolvedSlots = generateSlotsFromConfig(matched);
+                    slotDurationMs = (matched.durationMinutes || 60) * 60 * 1000;
+                }
+            }
+        } catch (cfgErr) {
+            console.error('Error reading slot configs:', cfgErr);
+        }
+
+        const baseSlots = resolvedSlots && resolvedSlots.length > 0 ? resolvedSlots : COACH_DEFAULT_SLOTS;
+        const slotDefinitions = baseSlots.map(s => ({
+            key: s.key,
+            start: new Date(`${date}T${s.start}:00+09:00`).getTime(),
+            end: new Date(`${date}T${s.end}:00+09:00`).getTime(),
+        }));
 
         const occupiedSlots: string[] = [];
 
@@ -322,8 +335,19 @@ export async function GET(request: Request) {
                             if (!occupiedSlots.includes(s.key)) occupiedSlots.push(s.key);
                         });
                     } else if (Array.isArray(b.slots)) {
-                        b.slots.forEach((s: string) => {
-                            if (!occupiedSlots.includes(s)) occupiedSlots.push(s);
+                        b.slots.forEach((bs: string) => {
+                            // Exact match
+                            if (!occupiedSlots.includes(bs)) occupiedSlots.push(bs);
+                            // Also check range overlap in case blockout uses different slot granularity
+                            const bsStart = new Date(`${date}T${bs}:00+09:00`).getTime();
+                            const bsEnd = bsStart + slotDurationMs;
+                            if (!isNaN(bsStart)) {
+                                slotDefinitions.forEach(slot => {
+                                    if (slot.start < bsEnd && slot.end > bsStart) {
+                                        if (!occupiedSlots.includes(slot.key)) occupiedSlots.push(slot.key);
+                                    }
+                                });
+                            }
                         });
                     }
                 });
@@ -332,7 +356,7 @@ export async function GET(request: Request) {
             console.error('Error checking blockouts in schedule get:', bErr);
         }
 
-        return NextResponse.json({ occupiedSlots });
+        return NextResponse.json({ occupiedSlots, resolvedSlots });
     } catch (err: any) {
         return NextResponse.json({ error: err.message, occupiedSlots: [] }, { status: 500 });
     }

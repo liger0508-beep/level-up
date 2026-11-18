@@ -80,6 +80,7 @@ export function ScheduleEventDialog({
     const [title, setTitle] = useState("");
     const [titleManuallySet, setTitleManuallySet] = useState(false);
     const [eventType, setEventType] = useState<ScheduleEvent["type"]>("analysis");
+    const [otherNote, setOtherNote] = useState("");
     const [date, setDate] = useState(format(today, "yyyy-MM-dd"));
     const [startSlot, setStartSlot] = useState<string | null>(null);
     const [endSlot, setEndSlot] = useState<string | null>(null);
@@ -87,6 +88,7 @@ export function ScheduleEventDialog({
     const [coachName, setCoachName] = useState("성시우 감독");
     const [coaches, setCoaches] = useState<{ id: string; name: string; branch?: string; role?: string; status?: string }[]>([]);
     const [occupiedSlots, setOccupiedSlots] = useState<string[]>([]);
+    const [customSlots, setCustomSlots] = useState<typeof COACH_TIME_SLOTS | null>(null);
     const [isLoadingSlots, setIsLoadingSlots] = useState(false);
 
     useEffect(() => {
@@ -126,6 +128,7 @@ export function ScheduleEventDialog({
         setTitle("");
         setTitleManuallySet(false);
         setEventType("analysis");
+        setOtherNote("");
         setDate(format(today, "yyyy-MM-dd"));
         setStartSlot(null);
         setEndSlot(null);
@@ -170,11 +173,19 @@ export function ScheduleEventDialog({
             .then((data) => {
                 if (isMounted) {
                     setOccupiedSlots(data.occupiedSlots || []);
+                    setCustomSlots(
+                        Array.isArray(data.resolvedSlots) && data.resolvedSlots.length > 0
+                            ? data.resolvedSlots
+                            : null
+                    );
                 }
             })
             .catch((err) => {
                 console.error("Failed to fetch occupied slots:", err);
-                if (isMounted) setOccupiedSlots([]);
+                if (isMounted) {
+                    setOccupiedSlots([]);
+                    setCustomSlots(null);
+                }
             })
             .finally(() => {
                 if (isMounted) setIsLoadingSlots(false);
@@ -199,6 +210,12 @@ export function ScheduleEventDialog({
             setTitle(editEvent.title);
             setTitleManuallySet(true);
             setEventType(editEvent.type);
+            if (editEvent.type === "other") {
+                const match = editEvent.title?.match(/^기타 \((.*)\)$/);
+                setOtherNote(match ? match[1] : (editEvent.title === "기타" ? "" : editEvent.title || ""));
+            } else {
+                setOtherNote("");
+            }
             setDate(format(editEvent.start, "yyyy-MM-dd"));
             const s = format(editEvent.start, "HH:mm");
             const e = format(editEvent.end, "HH:mm");
@@ -214,9 +231,12 @@ export function ScheduleEventDialog({
 
     // Auto-title: update whenever type or participants change, unless user manually typed
     const effectiveTitle = useMemo(() => {
+        if (eventType === "other") {
+            return otherNote.trim() ? `기타 (${otherNote.trim()})` : "기타";
+        }
         if (titleManuallySet && title) return title;
         return autoTitle(eventType, participants);
-    }, [eventType, participants, title, titleManuallySet]);
+    }, [eventType, otherNote, participants, title, titleManuallySet]);
 
     const handleTitleChange = (val: string) => {
         setTitle(val);
@@ -227,7 +247,7 @@ export function ScheduleEventDialog({
         setParticipants((prev) => prev.filter((p) => p !== name));
     };
 
-    const activeTimeSlots = currentRole === "athlete" ? ATHLETE_TIME_SLOTS : COACH_TIME_SLOTS;
+    const activeTimeSlots = customSlots || (currentRole === "athlete" ? ATHLETE_TIME_SLOTS : COACH_TIME_SLOTS);
 
     // Time slot logic
     const handleSlotClick = (slot: typeof COACH_TIME_SLOTS[0]) => {
@@ -261,7 +281,7 @@ export function ScheduleEventDialog({
             alert("선택하신 시간대에 코치의 기존 일정이 있어 예약할 수 없습니다.");
             return;
         }
-        if (currentRole !== "athlete" && participants.length === 0) {
+        if (currentRole !== "athlete" && eventType !== "other" && participants.length === 0) {
             alert("참여 선수를 검색하여 선택해주세요.");
             return;
         }
@@ -285,8 +305,12 @@ export function ScheduleEventDialog({
     const isSaveDisabled = Boolean(
         !effectiveTitle ||
         !startSlot ||
-        (currentRole === "athlete" && (!coachName || isSlotOccupied))
+        (currentRole === "athlete" && (!coachName || isSlotOccupied)) ||
+        (currentRole !== "athlete" && eventType !== "other" && participants.length === 0)
     );
+
+    const selfName = currentUserName || currentCoachName;
+    const isSelfIncluded = Boolean(selfName && participants.includes(selfName));
 
     const inputCls = "w-full px-3 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-zinc-100 placeholder:text-zinc-400";
 
@@ -311,37 +335,9 @@ export function ScheduleEventDialog({
                         <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
                             {editEvent ? "예약 수정" : "예약 등록"}
                         </h2>
-                        <div className="flex items-center gap-2">
-                            {editEvent && onDelete && (
-                                <button
-                                    onClick={() => {
-                                        if (confirm("예약을 삭제하시겠습니까?")) {
-                                            onDelete(editEvent.id);
-                                            onClose();
-                                        }
-                                    }}
-                                    className="px-3 py-2 rounded-lg text-xs font-semibold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                                >
-                                    삭제
-                                </button>
-                            )}
-                            <button
-                                onClick={handleSave}
-                                disabled={isSaveDisabled}
-                                title={!startSlot ? "시간을 선택해주세요" : (currentRole === "athlete" && !coachName) ? "담당 코치를 선택해주세요" : (currentRole === "athlete" && isSlotOccupied) ? "선택하신 시간대에 코치 일정이 있어 예약할 수 없습니다" : !effectiveTitle ? "선수 또는 제목을 입력해주세요" : ""}
-                                className={cn(
-                                    "px-5 py-2 rounded-lg text-sm font-semibold transition-colors",
-                                    !isSaveDisabled
-                                        ? "bg-brand-red text-white hover:bg-brand-red-dark"
-                                        : "bg-zinc-200 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-600 cursor-not-allowed"
-                                )}
-                            >
-                                {editEvent ? "수정" : "예약"}
-                            </button>
-                            <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
-                                <X size={20} className="text-zinc-500" />
-                            </button>
-                        </div>
+                        <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+                            <X size={20} className="text-zinc-500" />
+                        </button>
                     </div>
 
                     {/* Form (scrollable) */}
@@ -364,6 +360,20 @@ export function ScheduleEventDialog({
                                     </button>
                                 ))}
                             </div>
+                            {eventType === "other" && (
+                                <div className="mt-2.5">
+                                    <label className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-1.5">
+                                        기타 내용 <span className="text-zinc-400 font-normal">(선택)</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={otherNote}
+                                        onChange={(e) => setOtherNote(e.target.value)}
+                                        placeholder="내용을 입력하세요 (예: 외부 미팅, 장비 점검)"
+                                        className={inputCls}
+                                    />
+                                </div>
+                            )}
                         </div>
 
                         {/* 2. Coach */}
@@ -411,9 +421,31 @@ export function ScheduleEventDialog({
 
                         {/* 3. Participants */}
                         <div>
-                            <label className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">
-                                참여 선수 <span className="text-red-500">*</span>
-                            </label>
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                                    참여 선수 {eventType !== "other" && <span className="text-red-500">*</span>}
+                                </label>
+                                {currentRole !== "athlete" && selfName && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (isSelfIncluded) {
+                                                removeParticipant(selfName);
+                                            } else {
+                                                setParticipants(prev => [...prev, selfName]);
+                                            }
+                                        }}
+                                        className={cn(
+                                            "px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border",
+                                            isSelfIncluded
+                                                ? "bg-brand-navy border-brand-navy text-white"
+                                                : "bg-zinc-50 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 hover:border-brand-navy"
+                                        )}
+                                    >
+                                        {isSelfIncluded ? `✓ 본인 (${selfName})` : `+ 본인 (${selfName})`}
+                                    </button>
+                                )}
+                            </div>
                             {currentRole === "athlete" ? (
                                 <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-sm font-bold text-zinc-800 dark:text-zinc-200">
                                     <span>{currentUserName || "본인"}</span>
@@ -455,7 +487,7 @@ export function ScheduleEventDialog({
 
                             <div className={cn(
                                 "grid gap-2 mb-2",
-                                currentRole === "athlete" ? "grid-cols-4 sm:grid-cols-7" : "grid-cols-4 sm:grid-cols-6"
+                                activeTimeSlots.length <= 7 ? "grid-cols-4 sm:grid-cols-7" : "grid-cols-4 sm:grid-cols-6"
                             )}>
                                 {activeTimeSlots.map((slot) => {
                                     const selected = startSlot === slot.start;
@@ -518,6 +550,49 @@ export function ScheduleEventDialog({
                             </div>
                         </div>
 
+                    </div>
+
+                    {/* Footer (Bottom-right action buttons) */}
+                    <div className="flex-shrink-0 flex items-center justify-between px-6 py-3.5 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 sm:rounded-b-2xl">
+                        <div>
+                            {editEvent && onDelete && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (confirm("예약을 삭제하시겠습니까?")) {
+                                            onDelete(editEvent.id);
+                                            onClose();
+                                        }
+                                    }}
+                                    className="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                >
+                                    삭제
+                                </button>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="px-4 py-2 rounded-xl text-xs sm:text-sm font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                            >
+                                취소
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleSave}
+                                disabled={isSaveDisabled}
+                                title={!startSlot ? "시간을 선택해주세요" : (currentRole === "athlete" && !coachName) ? "담당 코치를 선택해주세요" : (currentRole === "athlete" && isSlotOccupied) ? "선택하신 시간대에 코치 일정이 있어 예약할 수 없습니다" : !effectiveTitle ? "선수 또는 제목을 입력해주세요" : ""}
+                                className={cn(
+                                    "px-5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-colors shadow-sm",
+                                    !isSaveDisabled
+                                        ? "bg-brand-red text-white hover:bg-brand-red-dark"
+                                        : "bg-zinc-200 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-600 cursor-not-allowed"
+                                )}
+                            >
+                                {editEvent ? "수정" : "예약"}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
