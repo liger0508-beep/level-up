@@ -288,7 +288,7 @@ export default function ScoreDetailPage() {
 
             const id = (Array.isArray(params.id) ? params.id[0] : params.id) as string;
 
-            // Ensure the records row exists for this scorecard
+            // Ensure the records row exists for this scorecard if adding a comment (FK requirement for comments table)
             const { data: existingRecord } = await supabase.from("records").select("id").eq("id", id).maybeSingle();
 
             if (!existingRecord) {
@@ -298,10 +298,10 @@ export default function ScoreDetailPage() {
                         id: id,
                         user_id: sc.athlete_id,
                         coach_id: sc.coach_id,
-                        type: "analysis",
-                        title: `${sc.course_name} 분석 기록`,
-                        category: "field",
-                        content: `${sc.total_score || 0}타 기록`
+                        type: "scorecard",
+                        title: `${sc.course_name} 스코어 코멘트`,
+                        category: "scorecard",
+                        content: ""
                     });
 
                     if (insertError) {
@@ -618,26 +618,6 @@ export default function ScoreDetailPage() {
                     setUserName(profile.name);
                     setCurrentUser({ id: user.id, name: profile.name || 'User', role: profile.role });
                 }
-            }
-
-            // Ensure a matching records row exists so we can display/fetch comments.
-            // If it doesn't exist, create it with the same ID as the scorecard.
-            const { data: existingRecord } = await supabase
-                .from("records")
-                .select("id")
-                .eq("id", id)
-                .maybeSingle();
-
-            if (!existingRecord && sc) {
-                await supabase.from("records").insert({
-                    id: id,
-                    user_id: sc.athlete_id,
-                    coach_id: sc.coach_id,
-                    type: "analysis",
-                    title: `${sc.course_name} 분석 기록`,
-                    category: "field",
-                    content: `${sc.total_score || 0}타 기록`
-                });
             }
 
             const commentsData = await fetchComments(id);

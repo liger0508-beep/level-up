@@ -287,7 +287,6 @@ export default function EditLessonPage() {
                 content: lessonContent,
                 media_urls: allMedia,
                 date: lessonDate,
-                connectedLessonId,
             };
 
 
@@ -375,40 +374,6 @@ export default function EditLessonPage() {
                     {/* ── 2. History & Analysis (Conditional) ── */}
                     {selectedPlayer && selectedPart && (
                         <div className="space-y-6">
-                            {/* Swing Error / Lesson History Box */}
-                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
-                                <div className="flex items-center justify-between mb-2">
-                                    <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                                        <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" /> 레슨 히스토리
-                                    </h3>
-                                    {connectedLessonId && (
-                                        <span className="text-xs font-bold text-brand-navy dark:text-brand-navy-light bg-brand-navy/10 px-2 py-1 rounded-md">
-                                            연결됨
-                                        </span>
-                                    )}
-                                </div>
-                                <LinkedLessonCard
-                                    part={connectedLessonId ? (allLessons.find(l => l.id === connectedLessonId)?.category || selectedPart) : selectedPart}
-                                    lesson={connectedLessonId ? (allLessons.find(l => l.id === connectedLessonId) || null) : (recentLessons.find(l => l.category === selectedPart) || recentLessons[0] || null)}
-                                    onMoreClick={() => setIsLessonHistoryModalOpen(true)}
-                                    onConnectClick={() => {
-                                        const lessonToConnect = connectedLessonId
-                                            ? allLessons.find(l => l.id === connectedLessonId)
-                                            : (recentLessons.find(l => l.category === selectedPart) || recentLessons[0]);
-
-                                        if (lessonToConnect) {
-                                            if (connectedLessonId === lessonToConnect.id) {
-                                                setConnectedLessonId(null);
-                                            } else {
-                                                setConnectedLessonId(lessonToConnect.id);
-                                            }
-                                        }
-                                    }}
-                                    isConnected={!!connectedLessonId}
-                                    readOnly={false}
-                                />
-                            </section>
-
                             {/* Training Journal Box */}
                             <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
                                 <div className="flex items-center justify-between mb-2">
@@ -754,106 +719,6 @@ export default function EditLessonPage() {
                 }}
                 connectedJournalId={selectedJournalId}
             />
-
-            {/* Lesson History Modal */}
-            {isLessonHistoryModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setIsLessonHistoryModalOpen(false)}>
-                    <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl w-full max-w-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col" style={{ height: '85vh' }} onClick={(e) => e.stopPropagation()}>
-                        <div className="p-5 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-900/50 shrink-0">
-                            <SectionTitle>
-                                레슨 히스토리 찾아보기
-                            </SectionTitle>
-                            <button onClick={() => setIsLessonHistoryModalOpen(false)} className="px-4 py-1.5 bg-brand-navy text-white text-sm font-bold rounded-xl hover:bg-brand-navy-light transition-colors">
-                                {connectedLessonId ? "레슨 연결" : "선택 완료"}
-                            </button>
-                        </div>
-                        <div className="p-4 shrink-0 border-b border-zinc-200 dark:border-zinc-800">
-                            <CategoryTabs options={partOptions} value={historySelectedPart} onChange={setHistorySelectedPart} />
-                            <div className="relative w-full mt-2">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                                <input
-                                    type="text"
-                                    placeholder="레슨 내용 검색..."
-                                    value={historySearchQuery}
-                                    onChange={(e) => setHistorySearchQuery(e.target.value)}
-                                    className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-950 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all"
-                                />
-                            </div>
-                        </div>
-                        <div className="p-4 space-y-3 overflow-y-auto flex-1 bg-zinc-50/50 dark:bg-zinc-900 min-h-[300px]">
-                            {(() => {
-                                const effectivePart = historySelectedPart || selectedPart;
-                                const historyItems = allLessons.filter(l =>
-                                    l.category === effectivePart &&
-                                    (!historySearchQuery || l.content.toLowerCase().includes(historySearchQuery.toLowerCase()))
-                                );
-                                const displayedHistory = historyItems.slice(0, historyDisplayLimit);
-
-                                return (
-                                    <>
-                                        {displayedHistory.map(lesson => {
-                                            const isConnected = connectedLessonId === lesson.id;
-                                            return (
-                                                <div
-                                                    key={lesson.id}
-                                                    onClick={() => {
-                                                        setConnectedLessonId(lesson.id);
-                                                        setIsLessonHistoryModalOpen(false);
-                                                    }}
-                                                    className={cn(
-                                                        "bg-white dark:bg-zinc-800 border rounded-xl overflow-hidden shadow-sm p-4 transition-all relative cursor-pointer",
-                                                        isConnected
-                                                            ? "border-brand-navy dark:border-brand-navy-light shadow-brand-navy/10 ring-1 ring-brand-navy"
-                                                            : "border-zinc-200 dark:border-zinc-700 hover:border-brand-navy/50"
-                                                    )}
-                                                >
-                                                    <div className="flex items-center justify-between mb-2">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-[10px] font-bold text-brand-navy dark:text-brand-navy-light uppercase px-1.5 py-0.5 bg-brand-navy/5 dark:bg-brand-navy/20 rounded-md">
-                                                                {partOptions.find(p => p.key === lesson.category)?.label || lesson.category}
-                                                            </span>
-
-                                                            {lesson.coachName && (
-                                                                <span className="text-[11px] font-medium text-zinc-500">
-                                                                    {lesson.coachName}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        <div className="flex items-center gap-1.5">
-                                                            <span className="text-[11px] text-zinc-400 font-medium">
-                                                                {lesson.created_at ? new Date(lesson.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }).slice(5).replace(/-/g, ".") : ""}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                    <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap leading-relaxed mt-2 mb-2">
-                                                        {lesson.content}
-                                                    </p>
-                                                </div>
-                                            );
-                                        })}
-                                        {historyItems.length === 0 && (
-                                            <div className="py-8 text-center text-zinc-500 text-sm">
-                                                검색된 레슨 기록이 없습니다.
-                                            </div>
-                                        )}
-                                        {historyItems.length > historyDisplayLimit && (
-                                            <div className="py-4 flex justify-center">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setHistoryDisplayLimit(prev => prev + 10)}
-                                                    className="px-6 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-sm rounded-xl text-sm font-semibold text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
-                                                >
-                                                    더 보기 ({historyItems.length - historyDisplayLimit}개 남음) ▼
-                                                </button>
-                                            </div>
-                                        )}
-                                    </>
-                                )
-                            })()}
-                        </div>
-                    </div>
-                </div>
-            )}
 
             <ReferenceDataModal
                 isOpen={isReferenceModalOpen}

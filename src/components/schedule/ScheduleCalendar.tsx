@@ -34,7 +34,7 @@ export interface ScheduleEvent {
     status?: "scheduled" | "completed";
 }
 
-type CalendarView = "2week" | "week";
+type CalendarView = "month" | "week";
 type UserFilter = "me" | "all";
 type EventTypeFilter = ScheduleEvent["type"] | "all";
 
@@ -73,7 +73,7 @@ interface ScheduleCalendarProps {
     hideFilters?: boolean;
 }
 
-export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEvent, onEditEvent, currentRole = "coach", initialView = "week", hideFilters = false }: ScheduleCalendarProps) {
+export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEvent, onEditEvent, currentRole = "coach", initialView = "month", hideFilters = false }: ScheduleCalendarProps) {
     const router = useRouter();
     const [view, setView] = useState<CalendarView>(initialView);
     const [currentDate, setCurrentDate] = useState(new Date());
@@ -97,9 +97,9 @@ export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEve
             setSelectedDate(now);
             return;
         }
-        if (view === "2week") {
-            setCurrentDate(direction === "next" ? addWeeks(currentDate, 2) : addWeeks(currentDate, -2));
-            setSelectedDate(direction === "next" ? addWeeks(selectedDate, 2) : addWeeks(selectedDate, -2));
+        if (view === "month") {
+            setCurrentDate(direction === "next" ? addMonths(currentDate, 1) : subMonths(currentDate, 1));
+            setSelectedDate(direction === "next" ? addMonths(selectedDate, 1) : subMonths(selectedDate, 1));
         }
         if (view === "week") {
             setCurrentDate(direction === "next" ? addWeeks(currentDate, 1) : subWeeks(currentDate, 1));
@@ -108,9 +108,10 @@ export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEve
     };
 
     const days = useMemo(() => {
-        if (view === "2week") {
-            const start = startOfWeek(currentDate, { weekStartsOn: 0 });
-            return eachDayOfInterval({ start, end: addDays(start, 13) });
+        if (view === "month") {
+            const start = startOfWeek(startOfMonth(currentDate), { weekStartsOn: 0 });
+            const end = endOfWeek(endOfMonth(currentDate), { weekStartsOn: 0 });
+            return eachDayOfInterval({ start, end });
         }
         const start = startOfWeek(currentDate, { weekStartsOn: 0 });
         return eachDayOfInterval({ start, end: addDays(start, 6) });
@@ -167,17 +168,17 @@ export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEve
     }, [selectedDate, filteredEvents, currentRole]);
 
     const headerLabel = useMemo(() => {
-        const s = startOfWeek(currentDate, { weekStartsOn: 0 });
-        if (view === "2week") {
-            return `${format(s, "M월 d일", { locale: ko })} ~ ${format(addDays(s, 13), "M월 d일", { locale: ko })}`;
+        if (view === "month") {
+            return format(currentDate, "yyyy년 M월", { locale: ko });
         }
+        const s = startOfWeek(currentDate, { weekStartsOn: 0 });
         return `${format(s, "M월 d일", { locale: ko })} ~ ${format(addDays(s, 6), "M월 d일", { locale: ko })}`;
     }, [view, currentDate]);
 
     const WEEK_DAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
     const VIEW_TABS: { key: CalendarView; label: string }[] = [
-        { key: "2week", label: "2주" },
+        { key: "month", label: "월간" },
         { key: "week", label: "주간" },
     ];
 
@@ -253,11 +254,13 @@ export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEve
                         const dayEvents = getEventsForDay(day);
                         const isToday = isSameDay(day, new Date());
                         const isSelected = isSameDay(day, selectedDate);
+                        const isOutsideMonth = view === "month" && !isSameMonth(day, currentDate);
                         const dow = day.getDay();
                         return (
                             <button key={idx} type="button" onClick={() => { setSelectedDate(day); onSelectSlot?.(day); }}
                                 className={cn("relative flex flex-col items-center py-2 min-h-[60px] sm:min-h-[80px] border-b border-r border-zinc-100 dark:border-zinc-800 transition-colors",
                                     isSelected ? "bg-sky-50 dark:bg-sky-900/40" : "hover:bg-zinc-50 dark:hover:bg-zinc-800",
+                                    isOutsideMonth && !isSelected ? "opacity-40" : "",
                                     idx % 7 === 6 ? "border-r-0" : ""
                                 )}>
                                 <span className={cn("w-7 h-7 flex items-center justify-center rounded-full text-sm font-medium mb-1",
@@ -266,10 +269,12 @@ export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEve
                                     !isToday && !isSelected && dow === 0 ? "text-red-500" : "",
                                     !isToday && !isSelected && dow === 6 ? "text-blue-500" : ""
                                 )}>{format(day, "d")}</span>
-                                <div className="flex flex-wrap justify-center gap-0.5 px-0.5">
-                                    {dayEvents.slice(0, 3).map((e) => (<span key={e.id} className={cn("block w-1.5 h-1.5 rounded-full", EVENT_COLORS[e.type].dot)} />))}
-                                    {dayEvents.length > 3 && (<span className="text-[9px] leading-none text-zinc-400">+{dayEvents.length - 3}</span>)}
-                                </div>
+                                {dayEvents.length > 0 && (
+                                    <div className="flex items-center justify-center gap-1 px-0.5">
+                                        <span className={cn("block w-1.5 h-1.5 rounded-full shrink-0", EVENT_COLORS[dayEvents[0].type].dot)} />
+                                        <span className="text-[10px] leading-none text-zinc-500 dark:text-zinc-400 font-semibold">({dayEvents.length}건)</span>
+                                    </div>
+                                )}
                             </button>
                         );
                     })}
@@ -325,7 +330,9 @@ export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEve
                                                             start: format(event.start, "HH:mm"),
                                                             end: format(event.end, "HH:mm")
                                                         });
-                                                        if (event.type === "lesson" || event.type === "analysis") {
+                                                        if (event.type === "analysis") {
+                                                            router.push(`/analysis/create?${params.toString()}`);
+                                                        } else if (event.type === "lesson") {
                                                             router.push(`/lessons/create?${params.toString()}`);
                                                         } else if (event.type === "consultation") {
                                                             router.push(`/consultations/create?${params.toString()}`);
@@ -334,7 +341,9 @@ export function ScheduleCalendar({ events, onSelectEvent, onSelectSlot, onAddEve
                                                         }
                                                     }}
                                                     title={
-                                                        event.type === "consultation"
+                                                        event.type === "analysis"
+                                                            ? "분석 작성으로 이동"
+                                                            : event.type === "consultation"
                                                             ? "상담 작성으로 이동"
                                                             : event.type === "training"
                                                             ? "훈련 작성으로 이동"

@@ -954,13 +954,23 @@ export default function ScheduleManagePage() {
                                                 </div>
 
                                                 <div className="flex items-center gap-3 shrink-0 ml-2">
-                                                    <button
-                                                        onClick={() => router.push(`/lessons/create?player=${encodeURIComponent(info.participantName)}&date=${selectedDate}&start=${slot.start}&end=${slot.end}`)}
-                                                        className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1"
-                                                    >
-                                                        <FileText size={11} />
-                                                        레슨 작성
-                                                    </button>
+                                                    {info.eventType !== "other" && (
+                                                        <button
+                                                            onClick={() => {
+                                                                const targetPath =
+                                                                    info.eventType === "analysis"
+                                                                        ? "/analysis/create"
+                                                                        : info.eventType === "consultation"
+                                                                        ? "/consultations/create"
+                                                                        : "/lessons/create";
+                                                                router.push(`${targetPath}?player=${encodeURIComponent(info.participantName)}&date=${selectedDate}&start=${slot.start}&end=${slot.end}`);
+                                                            }}
+                                                            className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                                                        >
+                                                            <FileText size={11} />
+                                                            {info.eventType === "analysis" ? "분석 작성" : info.eventType === "consultation" ? "상담 작성" : "레슨 작성"}
+                                                        </button>
+                                                    )}
                                                     <button
                                                         onClick={() => handleCancelSchedule(info.schedule.id, info.title)}
                                                         className="text-[11px] font-semibold text-red-500 hover:text-red-700"

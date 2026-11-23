@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "412626785303",
+    "project_id": "level-up-vk6c4l",
+    "storage_bucket": "level-up-vk6c4l.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:412626785303:android:7a44f64c48e6e052c77852",
+        "android_client_info": {
+          "package_name": "com.glacoach.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyATAxsCSD5WSKGYV65oAWfK4bf7_q1RNdA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:412626785303:android:10cbf8973e055f41c77852",
+        "android_client_info": {
+          "package_name": "com.mycompany.dashboard"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyATAxsCSD5WSKGYV65oAWfK4bf7_q1RNdA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

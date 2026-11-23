@@ -11,6 +11,8 @@ interface LinkedLessonCardProps {
     onConnectClick?: () => void;
     isConnected?: boolean;
     readOnly?: boolean;
+    moreText?: string;
+    emptyText?: string;
 }
 
 const partLabels: Record<string, string> = {
@@ -24,7 +26,7 @@ const partLabels: Record<string, string> = {
     etc: "Etc",
 };
 
-export function LinkedLessonCard({ part, lesson, onRemove, onMoreClick, onConnectClick, isConnected, readOnly = false }: LinkedLessonCardProps) {
+export function LinkedLessonCard({ part, lesson, onRemove, onMoreClick, onConnectClick, isConnected, readOnly = false, moreText, emptyText }: LinkedLessonCardProps) {
     return (
         <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 rounded-2xl flex flex-col relative transition-all hover:border-brand-navy/30">
             <div className="flex items-center justify-between mb-2">
@@ -48,7 +50,7 @@ export function LinkedLessonCard({ part, lesson, onRemove, onMoreClick, onConnec
             {lesson ? (
                 <div className="flex-1 min-h-0 flex flex-col">
                     <div className="text-sm text-zinc-900 dark:text-zinc-100 mt-2 mb-2 whitespace-pre-wrap break-words">
-                        {lesson.content || "레슨 내용이 없습니다."}
+                        {lesson.content || "내용이 없습니다."}
                     </div>
                     <div className="text-[10px] text-zinc-400 mt-2">
                         {new Date(lesson.created_at).toLocaleDateString()}
@@ -56,7 +58,7 @@ export function LinkedLessonCard({ part, lesson, onRemove, onMoreClick, onConnec
                 </div>
             ) : (
                 <div className="flex-1 min-h-[60px] flex items-center justify-center text-xs text-zinc-400 italic">
-                    선택된 레슨이 없습니다.
+                    {emptyText || "선택된 기록이 없습니다."}
                 </div>
             )}
 
@@ -84,7 +86,7 @@ export function LinkedLessonCard({ part, lesson, onRemove, onMoreClick, onConnec
                             className="flex items-center gap-1 text-[11px] font-bold text-zinc-500 hover:text-brand-navy transition-colors"
                         >
                             <FileText size={12} />
-                            더보기 (다른 레슨 찾기)
+                            {moreText || "더보기 (다른 레슨 찾기)"}
                             <ChevronRight size={12} />
                         </button>
                     )}

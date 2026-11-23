@@ -303,31 +303,7 @@ export default function LessonsPage() {
 
             setTotalLessonCount(count || 0);
 
-            const parentIdsToFetch = new Set<string>();
-            lessonsData.forEach((item: any) => {
-                if (item.connected_lesson_id) {
-                    const parentExists = lessonsData.some((l: any) => l.id === item.connected_lesson_id);
-                    if (!parentExists) {
-                        parentIdsToFetch.add(item.connected_lesson_id);
-                    }
-                }
-            });
-
-            let finalLessonsData = [...lessonsData];
-
-            if (parentIdsToFetch.size > 0) {
-                const { data: parentData } = await supabase.from("records").select(`
-                    id, type, category, title, content, is_corrected, created_at, connected_lesson_id, user_id,
-                    users!records_user_id_fkey(name),
-                    coach:users!records_coach_id_fkey(name)
-                `).in("id", Array.from(parentIdsToFetch));
-                
-                if (parentData) {
-                    finalLessonsData = [...finalLessonsData, ...parentData];
-                }
-            }
-
-            const formatted: LessonData[] = finalLessonsData.map((item: any) => ({
+            const formatted: LessonData[] = lessonsData.map((item: any) => ({
                 id: item.id,
                 type: item.category as LessonType,
                 title: item.title || "",
@@ -337,14 +313,9 @@ export default function LessonsPage() {
                 date: item.created_at ? new Date(item.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }) : "",
                 is_corrected: item.is_corrected,
                 created_at: item.created_at,
-                connected_lesson_id: item.connected_lesson_id,
-                hasDirectorComment: typeof item.content === 'string' && item.content.includes("[감독 코멘트]")
             }));
 
-            // Deduplicate
-            const uniqueFormatted = Array.from(new Map(formatted.map(item => [item.id, item])).values());
-            
-            setRealLessons(uniqueFormatted);
+            setRealLessons(formatted);
         };
 
         fetchFilteredLessons();

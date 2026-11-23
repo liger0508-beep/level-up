@@ -1,0 +1,10 @@
+node_modules
+.next
+mobile
+scratch
+voice_dataset
+*.patch
+*.wav
+*.mp3
+*.csv
+*.sql

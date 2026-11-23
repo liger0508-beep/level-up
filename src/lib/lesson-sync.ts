@@ -20,7 +20,7 @@ export interface LessonRecord {
     connected_lesson_id?: string;
 }
 
-export async function fetchRecentLessonsByPlayer(playerName: string, category?: string): Promise<LessonRecord[]> {
+export async function fetchRecentLessonsByPlayer(playerName: string, category?: string, type: string = "lesson"): Promise<LessonRecord[]> {
     try {
         const supabase = createClient();
 
@@ -54,7 +54,7 @@ export async function fetchRecentLessonsByPlayer(playerName: string, category?: 
                 coach:users!records_coach_id_fkey(name)
             `)
             .eq("user_id", userRes.id)
-            .eq("type", "lesson")
+            .eq("type", type)
             .order("inserted_at", { ascending: false });
 
         if (category && category !== "all") {
@@ -106,7 +106,7 @@ export async function fetchLatestLessonsPerCategory(playerName: string): Promise
     }
 }
 
-export async function fetchAllLessonsByPlayer(playerName: string, category?: string, limit?: number): Promise<LessonRecord[]> {
+export async function fetchAllLessonsByPlayer(playerName: string, category?: string, limit?: number, type: string = "lesson"): Promise<LessonRecord[]> {
     try {
         const supabase = createClient();
 
@@ -140,7 +140,7 @@ export async function fetchAllLessonsByPlayer(playerName: string, category?: str
                 coach:users!records_coach_id_fkey(name)
             `)
             .eq("user_id", userRes.id)
-            .eq("type", "lesson")
+            .eq("type", type)
             .order("inserted_at", { ascending: false });
 
         if (category && category !== "all") {
@@ -260,6 +260,7 @@ export async function saveLessonRecord(record: {
     startTime?: string;
     endTime?: string;
     connectedLessonId?: string | null;
+    type?: string;
 }) {
     try {
         const supabase = createClient();
@@ -280,12 +281,13 @@ export async function saveLessonRecord(record: {
         }
 
         // 3. Insert
+        const recordType = record.type || "lesson";
         const { data, error } = await supabase
             .from("records")
             .insert({
                 user_id: userRes.data.id,
                 coach_id: coachRes.data?.id || null,
-                type: "lesson",
+                type: recordType,
                 category: record.category,
                 title: record.title,
                 content: record.content,

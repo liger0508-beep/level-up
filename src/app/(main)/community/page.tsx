@@ -432,15 +432,15 @@ export default function CommunityPage() {
                     />
                 </div>
 
-                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-5 shadow-sm">
+                <div className="mt-2">
                     {allNotices.length > 0 ? (
                         <>
-                            <NoticeTable notices={allNotices} />
+                            <NoticeTable notices={allNotices} totalCount={totalNoticeCount} />
                             {totalNoticeCount > allNotices.length && (
-                                <div className="mt-8 flex justify-center">
+                                <div className="mt-6 flex justify-center">
                                     <button
                                         onClick={() => setDisplayLimit(prev => prev + 20)}
-                                        className="px-8 py-3 rounded-xl border border-zinc-200 dark:border-zinc-700 text-sm font-bold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all active:scale-95 shadow-sm"
+                                        className="px-6 py-2.5 rounded-xl border border-zinc-200 dark:border-zinc-700 text-sm font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-all active:scale-95"
                                     >
                                         더 보기 ({totalNoticeCount - allNotices.length}건 남음)
                                     </button>

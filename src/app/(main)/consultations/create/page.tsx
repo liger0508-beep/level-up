@@ -197,6 +197,21 @@ function CreateConsultationContent() {
                 title: `${athleteName} ${CONSULTATION_CATEGORY_LABELS[category]}`
             });
 
+            fetch("/api/push/trigger", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    eventType: "consultation_created",
+                    relatedAthleteNames: [athleteName],
+                    variables: {
+                        athleteName,
+                        coachName: currentCoach?.name || "관리자",
+                        title: `${athleteName} ${CONSULTATION_CATEGORY_LABELS[category]}`,
+                    },
+                    url: "/consultations",
+                }),
+            }).catch(() => {});
+
             alert("상담 일지가 등록되었습니다.");
             sessionStorage.removeItem("draftConsultationAthlete");
             sessionStorage.removeItem("draftConsultationContent");

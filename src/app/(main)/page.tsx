@@ -29,7 +29,8 @@ import {
   Award,
   Video,
   FileText,
-  PieChart
+  PieChart,
+  LineChart
 } from "lucide-react";
 import { cn, getKstDateStr } from "@/lib/utils";
 import { getStoredEvents } from "@/lib/schedule-sync";
@@ -44,6 +45,7 @@ import { PageTitle, SectionTitle, LabelText } from "@/components/ui/Typography";
 /* ──────── Master Shortcut Library ──────── */
 const ALL_SHORTCUTS = [
   { id: "lessons", title: "레슨", icon: BookOpen, color: "bg-blue-50 border-transparent text-blue-500 dark:bg-blue-500/10 dark:border-transparent dark:text-blue-400", href: "/lessons" },
+  { id: "analysis", title: "분석", icon: LineChart, color: "bg-indigo-50 border-transparent text-indigo-500 dark:bg-indigo-500/10 dark:border-transparent dark:text-indigo-400", href: "/analysis" },
   { id: "training", title: "훈련", icon: Dumbbell, color: "bg-emerald-50 border-transparent text-emerald-500 dark:bg-emerald-500/10 dark:border-transparent dark:text-emerald-400", href: "/training" },
   { id: "challenges", title: "챌린지", icon: Trophy, color: "bg-rose-50 border-transparent text-rose-500 dark:bg-rose-500/10 dark:border-transparent dark:text-rose-400", href: "/training/challenges" },
   { id: "tournament-schedule", title: "대회 스케쥴", icon: Calendar, color: "bg-teal-50 border-transparent text-teal-500 dark:bg-teal-500/10 dark:border-transparent dark:text-teal-400", href: "/admin/tournament-schedule" },
@@ -61,6 +63,7 @@ const ALL_SHORTCUTS = [
 
 const typeConfigs: Record<string, { label: string; gradient: string; icon: any; koLabel: string }> = {
   lesson: { label: "LESSON", gradient: "from-blue-400 to-blue-600", icon: BookOpen, koLabel: "레슨" },
+  analysis: { label: "ANALYSIS", gradient: "from-indigo-400 to-indigo-600", icon: LineChart, koLabel: "분석" },
   training: { label: "TRAINING", gradient: "from-emerald-400 to-emerald-600", icon: Dumbbell, koLabel: "훈련" },
   consultation: { label: "CONSULT", gradient: "from-pink-400 to-pink-600", icon: MessageSquare, koLabel: "상담" },
   score: { label: "SCORE", gradient: "from-sky-400 to-sky-600", icon: Flag, koLabel: "스코어" },
@@ -102,7 +105,13 @@ function FeedCard({ item }: { item: any }) {
 
   return (
     <Link
-      href={`/${item.type === 'score' ? 'scores' : item.type === 'consultation' ? 'consultations' : item.type === 'training' ? 'training' : item.type + 's'}/${item.id}`}
+      href={
+        item.type === 'score' ? `/scores/${item.id}` :
+        item.type === 'consultation' ? `/consultations/${item.id}` :
+        item.type === 'training' ? `/training/${item.id}` :
+        item.type === 'analysis' ? `/analysis/${item.id}` :
+        `/${item.type}s/${item.id}`
+      }
       className="block bg-white dark:bg-zinc-900 rounded-[2rem] border border-zinc-100 dark:border-zinc-800 py-4 px-5 shadow-sm hover:border-brand-navy/30 hover:shadow-md transition-all group shrink-0 w-[70vw] sm:w-[260px] max-w-[280px] h-32 flex flex-col justify-between"
     >
       <div className="flex items-center justify-between gap-2">

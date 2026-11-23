@@ -5,7 +5,10 @@
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
     "expo": "~57.0.26",
+    "expo-constants": "~57.0.24",
+    "expo-device": "~57.0.2",
     "expo-font": "~57.0.4",
+    "expo-notifications": "~57.0.25",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
     "react-native": "0.86.3",

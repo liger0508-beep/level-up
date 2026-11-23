@@ -37,6 +37,10 @@ const defaultPermissions: MenuPermission[] = [
         permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },
     {
+        menuKey: "analysis", label: "분석", section: "메인",
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
+    },
+    {
         menuKey: "training", label: "훈련", section: "메인",
         permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: false }, parent: { read: true, write: false } }
     },

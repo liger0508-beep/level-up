@@ -26,7 +26,8 @@ import {
     UserCircle,
     MessageSquare,
     Trophy,
-    Medal
+    Medal,
+    LineChart
 } from "lucide-react";
 
 // Menu configuration based on user request
@@ -43,6 +44,12 @@ const menuItems = [
         title: "레슨",
         icon: BookOpen,
         href: "/lessons",
+    },
+    {
+        key: "analysis",
+        title: "분석",
+        icon: LineChart,
+        href: "/analysis",
     },
     {
         key: "training",
@@ -126,6 +133,7 @@ const menuItems = [
             { key: "parents", title: "학부모 관리", href: "/system/parents" },
             { key: "permissions", title: "권한 관리", href: "/system/permissions" },
             { key: "menu-management", title: "메뉴 관리", href: "/system/menu-management" },
+            { key: "push-rules", title: "앱푸쉬 관리", href: "/system/push-rules" },
         ],
     },
     {
@@ -135,6 +143,7 @@ const menuItems = [
             { key: "temp-training", title: "훈련 (임시)", href: "/admin/training-temp" },
             { key: "temp-swing-skeleton", title: "스윙 테스트 (임시)", href: "/training/swing-skeleton" },
             { key: "temp-swing-test", title: "복습 카메라 (임시)", href: "/training/swing-test" },
+            { key: "push-test", title: "푸시 알림 테스트", href: "/test/push", adminOnly: true },
         ],
     },
 ];
@@ -149,6 +158,35 @@ export function SideNav() {
     const [userName, setUserName] = useState<string | null>(null);
     const [userBranch, setUserBranch] = useState<string | null>(null);
     const [permissions, setPermissions] = useState<any[]>([]);
+    const [isDeleteAccountModalOpen, setIsDeleteAccountModalOpen] = useState(false);
+    const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+
+    const handleDeleteAccount = async () => {
+        if (isDeletingAccount) return;
+        setIsDeletingAccount(true);
+        try {
+            const res = await fetch("/api/auth/delete-account", {
+                method: "POST",
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                alert(data.error || "회원탈퇴 처리에 실패했습니다.");
+                return;
+            }
+            const supabase = createClient();
+            await supabase.auth.signOut();
+            alert("회원탈퇴가 완료되었습니다.");
+            setIsDeleteAccountModalOpen(false);
+            setIsMobileMenuOpen(false);
+            router.push("/login");
+            router.refresh();
+        } catch (err) {
+            console.error("Failed to delete account:", err);
+            alert("회원탈퇴 처리 중 오류가 발생했습니다.");
+        } finally {
+            setIsDeletingAccount(false);
+        }
+    };
 
     // Close mobile menu when pathname changes
     useEffect(() => {
@@ -230,6 +268,41 @@ export function SideNav() {
         return () => subscription.unsubscribe();
     }, []);
 
+    // 모바일 앱(WebView) 환경에서 발급된 푸시 토큰을 로그인 계정에 자동 등록
+    useEffect(() => {
+        if (!userRole || userRole === "guest") return;
+
+        const registerToken = (token?: string, platform?: string) => {
+            if (!token) return;
+            const cacheKey = `push_registered_${token}`;
+            if (sessionStorage.getItem(cacheKey) === userRole) return;
+            fetch("/api/push/register", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ token, platform }),
+            })
+                .then((res) => {
+                    if (res.ok) {
+                        sessionStorage.setItem(cacheKey, userRole);
+                    }
+                })
+                .catch(() => {});
+        };
+
+        const win = window as any;
+        if (win.__EXPO_PUSH_TOKEN__) {
+            registerToken(win.__EXPO_PUSH_TOKEN__, win.__EXPO_PLATFORM__);
+        }
+
+        const handlePushTokenEvent = (e: Event) => {
+            const customEvent = e as CustomEvent<{ token?: string; platform?: string }>;
+            registerToken(customEvent.detail?.token, customEvent.detail?.platform);
+        };
+
+        window.addEventListener("expoPushToken", handlePushTokenEvent);
+        return () => window.removeEventListener("expoPushToken", handlePushTokenEvent);
+    }, [userRole]);
+
     const canShowMenu = (item: any) => {
         if (!userRole) return false;
 
@@ -270,6 +343,10 @@ export function SideNav() {
 
         const isSuperAdmin = userRole === "admin" || userRole === "super_admin" || userRole === "superadmin" || userName === "슈퍼관리자";
         if (isSuperAdmin) return true;
+
+        if (sub.adminOnly) {
+            return false;
+        }
 
         if (sub.key === "schedule-manage" && (userRole === "athlete" || userRole === "parent")) {
             return false;
@@ -493,8 +570,52 @@ export function SideNav() {
                                 );
                             })}
                     </nav>
+
+                    {userRole && userRole !== "guest" && userName !== "슈퍼관리자" && (
+                        <div className="mt-8 pt-4 border-t border-zinc-100 dark:border-zinc-800/60 flex justify-center">
+                            <button
+                                type="button"
+                                onClick={() => setIsDeleteAccountModalOpen(true)}
+                                className="text-xs font-medium text-zinc-400 hover:text-red-500 dark:hover:text-red-400 transition-colors underline underline-offset-4"
+                            >
+                                회원탈퇴
+                            </button>
+                        </div>
+                    )}
                 </div>
             </aside>
+
+            {/* Delete Account Confirmation Modal */}
+            {isDeleteAccountModalOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => !isDeletingAccount && setIsDeleteAccountModalOpen(false)}>
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl w-full max-w-sm border border-zinc-200 dark:border-zinc-800 p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+                        <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">
+                            회원탈퇴
+                        </h3>
+                        <p className="text-sm text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                            정말로 회원탈퇴를 진행하시겠습니까? 탈퇴 시 계정 정보 및 이용 권한이 즉시 삭제되며 복구할 수 없습니다.
+                        </p>
+                        <div className="flex items-center justify-end gap-2 pt-2">
+                            <button
+                                type="button"
+                                disabled={isDeletingAccount}
+                                onClick={() => setIsDeleteAccountModalOpen(false)}
+                                className="px-4 py-2 rounded-xl text-sm font-semibold text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
+                            >
+                                취소
+                            </button>
+                            <button
+                                type="button"
+                                disabled={isDeletingAccount}
+                                onClick={handleDeleteAccount}
+                                className="px-4 py-2 rounded-xl text-sm font-semibold bg-red-600 hover:bg-red-700 text-white transition-colors disabled:opacity-50"
+                            >
+                                {isDeletingAccount ? "처리 중..." : "탈퇴하기"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </>
     );
 }

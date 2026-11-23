@@ -16,6 +16,8 @@ interface ScheduleEventDialogProps {
     onDelete?: (id: string) => void;
     editEvent?: ScheduleEvent;
     initialDate?: Date;
+    initialCoachName?: string;
+    initialParticipants?: string[];
     currentCoachName?: string;
     currentRole?: "coach" | "athlete";
     currentUserName?: string;
@@ -71,6 +73,8 @@ export function ScheduleEventDialog({
     onDelete,
     editEvent,
     initialDate,
+    initialCoachName,
+    initialParticipants,
     currentCoachName = "",
     currentRole = "coach",
     currentUserName = "",
@@ -102,29 +106,52 @@ export function ScheduleEventDialog({
                 .in("role", ["coach", "admin", "headquarter"])
                 .order("name", { ascending: true });
             if (data) {
-                setCoaches(data.filter((c: any) => c.status !== "휴직" && c.status !== "퇴직"));
+                setCoaches(
+                    data.filter(
+                        (c: any) =>
+                            c.status !== "휴직" &&
+                            c.status !== "퇴직" &&
+                            c.name !== "슈퍼관리자"
+                    )
+                );
             }
         };
         fetchCoaches();
     }, []);
 
     const availableCoaches = useMemo(() => {
+        if (initialCoachName) {
+            const list = coaches.map(c => ({ id: c.id, name: c.name, originalName: c.name }));
+            if (!list.some(c => c.name === initialCoachName || c.originalName === initialCoachName)) {
+                list.unshift({ id: "initial-coach", name: initialCoachName, originalName: initialCoachName });
+            }
+            return list;
+        }
         if (eventType === "analysis") {
             return [{ id: "sung-siwoo", name: "성시우 감독", originalName: "성시우" }];
         }
 
-        // For lesson, consultation, other
-        const filtered = coaches.filter(c => c.name !== "성시우");
+        // For lesson, consultation, other: exclude 슈퍼관리자 and ensure 성시우 is included
+        const filtered = coaches.filter(c => c.name !== "슈퍼관리자");
 
+        let resultList: { id: string; name: string; originalName: string }[];
         if (currentRole === "athlete" && currentUserBranch) {
-            const branchCoaches = filtered.filter(c => c.branch === currentUserBranch);
-            if (branchCoaches.length > 0) {
-                return branchCoaches.map(c => ({ id: c.id, name: c.name, originalName: c.name }));
-            }
+            const branchCoaches = filtered.filter(c => c.branch === currentUserBranch || c.name === "성시우");
+            resultList = (branchCoaches.length > 0 ? branchCoaches : filtered).map(c => ({
+                id: c.id,
+                name: c.name,
+                originalName: c.name,
+            }));
+        } else {
+            resultList = filtered.map(c => ({ id: c.id, name: c.name, originalName: c.name }));
         }
 
-        return filtered.map(c => ({ id: c.id, name: c.name, originalName: c.name }));
-    }, [eventType, currentRole, currentUserBranch, coaches]);
+        if (!resultList.some(c => c.name === "성시우" || c.name === "성시우 감독" || c.originalName === "성시우")) {
+            resultList.unshift({ id: "sung-siwoo", name: "성시우 감독", originalName: "성시우" });
+        }
+
+        return resultList;
+    }, [eventType, currentRole, currentUserBranch, coaches, initialCoachName]);
 
     const resetForm = () => {
         setTitle("");
@@ -135,8 +162,10 @@ export function ScheduleEventDialog({
         setStartSlot(null);
         setEndSlot(null);
         setIsSelectingRangeEnd(false);
-        setCoachName("성시우 감독");
-        if (currentRole === "athlete" && currentUserName) {
+        setCoachName(initialCoachName || "성시우 감독");
+        if (initialParticipants && initialParticipants.length > 0) {
+            setParticipants(initialParticipants);
+        } else if (currentRole === "athlete" && currentUserName) {
             setParticipants([currentUserName]);
         } else {
             setParticipants([]);
@@ -145,11 +174,15 @@ export function ScheduleEventDialog({
 
     // Auto-update coach selection based on eventType and role
     useEffect(() => {
+        if (initialCoachName) {
+            setCoachName(initialCoachName);
+            return;
+        }
         if (eventType === "analysis") {
             setCoachName("성시우 감독");
         } else {
             if (coachName === "성시우 감독" || coachName === "성시우" || !coachName) {
-                if (currentRole === "coach" && currentCoachName) {
+                if (currentRole === "coach" && currentCoachName && currentCoachName !== "슈퍼관리자") {
                     setCoachName(currentCoachName);
                 } else if (availableCoaches.length > 0) {
                     setCoachName(availableCoaches[0].originalName || availableCoaches[0].name);

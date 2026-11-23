@@ -30,9 +30,6 @@ export default function LessonDetailPage() {
     const [comments, setComments] = useState<AnalysisComment[]>([]);
     const [dbTemplates, setDbTemplates] = useState<LessonTemplate[]>([]);
     const [currentUser, setCurrentUser] = useState<{ id: string; name: string; role?: string; academy_id?: string; academy_name?: string } | null>(null);
-    const [directorComment, setDirectorComment] = useState("");
-    const [isEditingDirectorComment, setIsEditingDirectorComment] = useState(false);
-    const [directorCommentInput, setDirectorCommentInput] = useState("");
 
     const [isCorrectionFormOpen, setIsCorrectionFormOpen] = useState(false);
     const [correctionContent, setCorrectionContent] = useState("");
@@ -166,15 +163,10 @@ export default function LessonDetailPage() {
                 const templates = templatesData.filter(t => templateIds.includes(t.id));
 
                 let rawContent = data.content || "";
-                let parsedDirectorComment = "";
                 const dIndex = rawContent.indexOf("[감독 코멘트]");
                 if (dIndex !== -1) {
-                    parsedDirectorComment = rawContent.substring(dIndex + 8).trim();
                     rawContent = rawContent.substring(0, dIndex).trim();
                 }
-
-                setDirectorComment(parsedDirectorComment);
-                setDirectorCommentInput(parsedDirectorComment);
 
                 let beforeContent = rawContent;
                 let afterContent = "";
@@ -182,31 +174,6 @@ export default function LessonDetailPage() {
                 if (afterSplitIndex !== -1) {
                     afterContent = beforeContent.substring(afterSplitIndex + 7).trim();
                     beforeContent = beforeContent.substring(0, afterSplitIndex).trim();
-                }
-
-                let parentGoalContent = "";
-                let isConnectedLesson = false;
-                let isParentCoreLesson = false;
-
-                if (data.connected_lesson_id) {
-                    const [parentLessonRes, childCountRes] = await Promise.all([
-                        supabase.from("records").select("content").eq("id", data.connected_lesson_id).single(),
-                        supabase.from("records").select("id", { count: "exact", head: true }).eq("connected_lesson_id", data.connected_lesson_id)
-                    ]);
-
-                    if (parentLessonRes.data && parentLessonRes.data.content) {
-                        let gContent = parentLessonRes.data.content;
-                        const gDIndex = gContent.indexOf("[감독 코멘트]");
-                        if (gDIndex !== -1) gContent = gContent.substring(0, gDIndex).trim();
-                        const gAfterIndex = gContent.indexOf("[교정 후]");
-                        if (gAfterIndex !== -1) gContent = gContent.substring(0, gAfterIndex).trim();
-                        parentGoalContent = gContent;
-                        isConnectedLesson = true;
-                    }
-
-                    if (childCountRes.count && childCountRes.count >= 2) {
-                        isParentCoreLesson = true;
-                    }
                 }
 
                 setLesson({
@@ -221,13 +188,10 @@ export default function LessonDetailPage() {
                     title: data.title || "제목 없음",
                     content: beforeContent,
                     afterContent: afterContent,
-                    parentGoalContent,
                     selectedImages: templates.map(t => ({ url: t.imageUrl, title: t.title })),
                     media: beforeMediaFiles,
                     afterMedia: afterMediaFiles,
                     materialMedia: materialMediaFiles,
-                    isConnectedLesson,
-                    isParentCoreLesson,
                     is_corrected: data.is_corrected,
                     correction_content: data.correction_content,
                     correction_media: (data.correction_media || []).map((url: string) => ({
@@ -244,43 +208,6 @@ export default function LessonDetailPage() {
 
         fetchData();
     }, [id]);
-
-    const handleSaveDirectorComment = async () => {
-        try {
-            const { updateLessonRecord } = await import("@/lib/lesson-sync");
-
-            let newContent = lesson.content;
-            if (lesson.afterContent) {
-                newContent += `\n\n[교정 후]\n${lesson.afterContent}`;
-            }
-            if (directorCommentInput.trim()) {
-                newContent += `\n\n[감독 코멘트]\n${directorCommentInput.trim()}`;
-            }
-
-            await updateLessonRecord(id as string, {
-                content: newContent
-            });
-
-            if (directorCommentInput.trim() && !directorComment && lesson.coach_id && lesson.coach_id !== currentUser?.id) {
-                const supabase = createClient();
-                const todayStr = getKstDateStr();
-                await supabase.from("todos").insert({
-                    user_id: lesson.coach_id,
-                    assigner_id: currentUser?.id,
-                    title: `[${lesson.player}] 감독 코멘트 확인`,
-                    content: `[${lesson.typeLabel}] 레슨에 감독 코멘트가 작성되었습니다.\n\n코멘트 내용: ${directorCommentInput.trim()}`,
-                    due_date: todayStr,
-                    is_completed: false,
-                    priority: "high"
-                });
-            }
-
-            setDirectorComment(directorCommentInput.trim());
-            setIsEditingDirectorComment(false);
-        } catch (e) {
-            alert("저장에 실패했습니다.");
-        }
-    };
 
     const handleCorrectionSubmit = async () => {
         if (!correctionContent.trim() && correctionFiles.length === 0) return;
@@ -547,38 +474,7 @@ export default function LessonDetailPage() {
 
 
 
-                {/* ── 2.5 감독 코멘트 ── */}
-                {directorComment && (
-                    <div className="space-y-4 pt-2">
-                        <div className="flex items-center justify-between px-1">
-                            <SectionTitle>
-                                <FileText size={20} className="text-brand-navy" /> 감독 코멘트
-                            </SectionTitle>
-                            {currentUser?.role && ["admin", "manager"].includes(currentUser.role) && (
-                                <button
-                                    onClick={() => {
-                                        setDirectorCommentInput(directorComment);
-                                        setIsEditingDirectorComment(true);
-                                        setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 100);
-                                    }}
-                                    className="text-xs font-bold text-zinc-500 hover:text-zinc-700 bg-zinc-100 dark:bg-zinc-800 px-3 py-1.5 rounded-lg transition-colors"
-                                >
-                                    수정
-                                </button>
-                            )}
-                        </div>
-
-                        <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm">
-                            <BodyText className="whitespace-pre-line">
-                                {directorComment}
-                            </BodyText>
-                        </section>
-                    </div>
-                )}
-
-
-
-                {/* ── 3. 교정전 (Before) ── */}
+                    {/* ── 3. 교정전 (Before) ── */}
                 {(lesson.media?.length > 0 || lesson.selectedImages?.length > 0) && (
                     <div className="space-y-4">
                         <SectionTitle className="px-1">
@@ -708,7 +604,7 @@ export default function LessonDetailPage() {
                 {lesson.content && (
                     <div className="space-y-4">
                         <SectionTitle className="px-1">
-                            <FileText size={20} className="text-emerald-500" /> {lesson.isConnectedLesson ? "연결 레슨 내용" : "레슨 내용"}
+                            <FileText size={20} className="text-emerald-500" /> 레슨 내용
                         </SectionTitle>
                         <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl shadow-sm">
                             <BodyText className="whitespace-pre-line">
@@ -907,53 +803,6 @@ export default function LessonDetailPage() {
                         </div>
                     </div>
                 </section>
-
-                {/* ── 7. 감독 코멘트 작성 폼 (Bottom Accordion) ── */}
-                {currentUser?.role && ["admin", "manager"].includes(currentUser.role) && (
-                    <div className="mt-8 space-y-4">
-                        {!isEditingDirectorComment ? (
-                            <div className="flex justify-end">
-                                <button
-                                    onClick={() => {
-                                        setDirectorCommentInput(directorComment);
-                                        setIsEditingDirectorComment(true);
-                                        setTimeout(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }), 50);
-                                    }}
-                                    className="px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all bg-brand-navy text-white hover:bg-brand-navy/90 active:scale-95 whitespace-nowrap"
-                                >
-                                    {directorComment ? "감독 코멘트 수정" : "감독 코멘트 작성"}
-                                </button>
-                            </div>
-                        ) : (
-                            <div className="bg-white dark:bg-zinc-900 border border-brand-navy/30 dark:border-brand-navy/30 p-4 sm:p-6 rounded-3xl shadow-md space-y-4 animate-in slide-in-from-bottom-4 duration-300">
-                                <h3 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                                    <FileText size={20} className="text-brand-navy" /> {directorComment ? "감독 코멘트 수정" : "감독 코멘트 작성"}
-                                </h3>
-                                <textarea
-                                    value={directorCommentInput}
-                                    onChange={(e) => setDirectorCommentInput(e.target.value)}
-                                    rows={4}
-                                    className="w-full p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 focus:outline-none focus:ring-2 focus:ring-brand-navy/30 text-sm"
-                                    placeholder="감독 코멘트를 입력하세요..."
-                                />
-                                <div className="flex justify-end gap-2">
-                                    <button
-                                        onClick={() => setIsEditingDirectorComment(false)}
-                                        className="px-4 py-2 bg-zinc-100 text-zinc-600 rounded-xl text-sm font-bold hover:bg-zinc-200 transition-colors"
-                                    >
-                                        취소
-                                    </button>
-                                    <button
-                                        onClick={handleSaveDirectorComment}
-                                        className="px-4 py-2 bg-brand-navy text-white rounded-xl text-sm font-bold hover:bg-brand-navy/90 transition-colors"
-                                    >
-                                        저장
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
             </main>
         </div>
     );

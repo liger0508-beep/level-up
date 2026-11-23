@@ -15,6 +15,7 @@ import {
     Trophy,
     BarChart3,
     ArrowRight,
+    Flag,
 } from "lucide-react";
 import { cn, formatLocalDate } from "@/lib/utils";
 import { DatePickerInput } from "@/components/ui/DatePickerInput";
@@ -23,19 +24,31 @@ import { AthleteSearch } from "@/components/ui/AthleteSearch";
 import { LinkedLessonCard } from "@/components/training-plan/LinkedLessonCard";
 import { LinkedJournalCard } from "@/components/training-plan/LinkedJournalCard";
 import { LinkedPlanCard } from "@/components/training-plan/LinkedPlanCard";
-import { LessonHistoryModal } from "@/components/training-plan/LessonHistoryModal";
+import { LessonHistoryModal } from "@/components/lesson/LessonHistoryModal";
 import { JournalHistoryModal } from "@/components/training-plan/JournalHistoryModal";
 import { PlanHistoryModal } from "@/components/training-plan/PlanHistoryModal";
 import { PageTitle, SectionTitle, LabelText } from "@/components/ui/Typography";
-import { fetchLatestLessonsPerCategory, fetchAllLessonsByPlayer, LessonRecord } from "@/lib/lesson-sync";
+import { fetchRecentLessonsByPlayer, fetchAllLessonsByPlayer, LessonRecord } from "@/lib/lesson-sync";
 import { fetchPlans, savePlan, calculateShotRatio, PlanType, PLAN_TYPE_LABELS, fetchPlansByAthlete, Plan } from "@/lib/plan-sync";
 import { fetchJournalsByAthlete, Journal, JOURNAL_TYPE_LABELS, JOURNAL_TYPE_COLORS } from "@/lib/journal-sync";
 import { createClient } from "@/lib/supabase/client";
 import { fetchLatestScoreByPlayer, ScoreData } from "@/lib/score-sync";
 import { uploadFile } from "@/lib/storage-sync";
 import { Target, AlertTriangle, FileText, ChevronRight, TrendingDown, TrendingUp, Activity, MapPin } from "lucide-react";
-import { CategoryTabs } from "@/components/ui/CategoryTabs";
 import ReferenceDataModal from "@/components/lesson/ReferenceDataModal";
+
+function extractGoalFromContent(content: string): string {
+    if (!content) return "";
+    const goalIndex = content.indexOf("[목표 설정]");
+    if (goalIndex === -1) return "";
+    let afterGoal = content.substring(goalIndex + "[목표 설정]".length);
+    const nextMarkerRegex = /\n\s*\[(분석 내용 - 선수|분석 내용 - 코치|메모|교정 후)\]/;
+    const match = afterGoal.match(nextMarkerRegex);
+    if (match && match.index !== undefined) {
+        afterGoal = afterGoal.substring(0, match.index);
+    }
+    return afterGoal.trim();
+}
 
 const mockPlayers = ["이수진", "최민준", "김지윤", "박도윤", "이지원", "한상욱"];
 
@@ -55,7 +68,6 @@ export default function CreatePlanPage() {
     const router = useRouter();
 
     const [searchQuery, setSearchQuery] = useState("");
-    const [planSelectedPart, setPlanSelectedPart] = useState<string>("all");
     const [selectedPlayer, setSelectedPlayer] = useState("");
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [trainingDate, setTrainingDate] = useState(() =>
@@ -70,7 +82,9 @@ export default function CreatePlanPage() {
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
     const [currentUserName, setCurrentUserName] = useState<string | null>(null);
     const [playerPlans, setPlayerPlans] = useState<Plan[]>([]);
+    const [recentLessons, setRecentLessons] = useState<LessonRecord[]>([]);
     const [allLessons, setAllLessons] = useState<LessonRecord[]>([]);
+    const [allAnalyses, setAllAnalyses] = useState<LessonRecord[]>([]);
 
     // Journal State
     const [recentJournal, setRecentJournal] = useState<Journal | null>(null);
@@ -82,10 +96,36 @@ export default function CreatePlanPage() {
     const [recentPlan, setRecentPlan] = useState<Plan | null>(null);
     const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
 
-    // ── Lesson Integration State ─────────────────────────────────────
-    const [selectedLessons, setSelectedLessons] = useState<Record<string, LessonRecord | null>>({});
-    const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
-    const [historyModalTargetPart, setHistoryModalTargetPart] = useState<string>("");
+    // Goal, Analysis, Lesson History Modals
+    const [isGoalHistoryModalOpen, setIsGoalHistoryModalOpen] = useState(false);
+    const [isAnalysisHistoryModalOpen, setIsAnalysisHistoryModalOpen] = useState(false);
+    const [analysisHistorySelectedPart, setAnalysisHistorySelectedPart] = useState<string>("all");
+    const [analysisHistorySearchQuery, setAnalysisHistorySearchQuery] = useState("");
+    const [analysisHistoryDisplayLimit, setAnalysisHistoryDisplayLimit] = useState(10);
+
+    const [isLessonHistoryModalOpen, setIsLessonHistoryModalOpen] = useState(false);
+    const [historySelectedPart, setHistorySelectedPart] = useState<string>("all");
+    const [historySearchQuery, setHistorySearchQuery] = useState("");
+    const [historyDisplayLimit, setHistoryDisplayLimit] = useState(10);
+
+    const analysisGoals = useMemo(() => {
+        return allAnalyses
+            .map(a => ({
+                id: a.id,
+                category: a.category,
+                created_at: a.created_at,
+                coachName: a.coachName,
+                goal: extractGoalFromContent(a.content),
+            }))
+            .filter(item => item.goal.length > 0);
+    }, [allAnalyses]);
+
+    const latestGoal = analysisGoals[0] || null;
+
+    const analysisModalPartOptions = useMemo(
+        () => partOptions.filter(opt => !["pitch", "bunker", "physical", "field", "etc"].includes(opt.key)),
+        []
+    );
 
     const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -111,11 +151,11 @@ export default function CreatePlanPage() {
             isInitialMount.current = false;
             return;
         }
-        const data = { selectedPlayer, trainingDate, title, content, selectedLessons };
+        const data = { selectedPlayer, trainingDate, title, content };
         sessionStorage.setItem(PLAN_TEMP_KEY, JSON.stringify(data));
-    }, [selectedPlayer, trainingDate, title, content, selectedLessons]);
+    }, [selectedPlayer, trainingDate, title, content]);
 
-    // ── Fetch Player Plans for Ratio ──────────────────────────
+    // ── Fetch Player Plans, Lessons, Analyses, Journals ──────────────────────────
 
     useEffect(() => {
         if (selectedPlayer) {
@@ -127,23 +167,9 @@ export default function CreatePlanPage() {
                     setRecentPlan(null);
                 }
             });
-            fetchAllLessonsByPlayer(selectedPlayer).then(setAllLessons);
-            fetchLatestLessonsPerCategory(selectedPlayer).then(lessons => {
-                // Initialize selectedLessons with the top 3 latest parts
-                const initialSelected: Record<string, LessonRecord | null> = {};
-                
-                const top3Categories = Object.values(lessons)
-                    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-                    .slice(0, 3)
-                    .map(l => l.category);
-
-                partOptions.forEach(opt => {
-                    if (opt.key !== "all" && lessons[opt.key] && top3Categories.includes(opt.key as any)) {
-                        initialSelected[opt.key] = lessons[opt.key];
-                    }
-                });
-                setSelectedLessons(initialSelected);
-            });
+            fetchRecentLessonsByPlayer(selectedPlayer, undefined, "lesson").then(setRecentLessons);
+            fetchAllLessonsByPlayer(selectedPlayer, undefined, historyDisplayLimit).then(setAllLessons);
+            fetchAllLessonsByPlayer(selectedPlayer, undefined, 50, "analysis").then(setAllAnalyses);
             fetchJournalsByAthlete(selectedPlayer).then(journals => {
                 setAllJournals(journals);
                 if (journals.length > 0) {
@@ -155,12 +181,13 @@ export default function CreatePlanPage() {
         } else {
             setPlayerPlans([]);
             setRecentPlan(null);
+            setRecentLessons([]);
             setAllLessons([]);
-            setSelectedLessons({});
+            setAllAnalyses([]);
             setRecentJournal(null);
             setAllJournals([]);
         }
-    }, [selectedPlayer]);
+    }, [selectedPlayer, historyDisplayLimit]);
 
 
     useEffect(() => {
@@ -173,7 +200,7 @@ export default function CreatePlanPage() {
 
     useEffect(() => {
         if (sessionStorage.getItem('openLessonHistoryModal') === 'true') {
-            setIsHistoryModalOpen(true);
+            setIsLessonHistoryModalOpen(true);
             sessionStorage.removeItem('openLessonHistoryModal');
         }
         if (sessionStorage.getItem('openJournalHistoryModal') === 'true') {
@@ -258,10 +285,9 @@ export default function CreatePlanPage() {
 
 
             // 3. Save Plan
-            const linkedLessonIds = Object.values(selectedLessons)
-                .filter(Boolean)
-                .map(l => l!.id);
-            const parts = Object.keys(selectedLessons).filter(part => selectedLessons[part] !== null);
+            const latestLesson = recentLessons[0];
+            const linkedLessonIds = latestLesson ? [latestLesson.id] : [];
+            const parts = latestLesson?.category ? [latestLesson.category] : [];
 
             await savePlan({
                 type: "all",
@@ -275,6 +301,21 @@ export default function CreatePlanPage() {
                 linkedLessonIds,
                 parts,
             });
+
+            fetch("/api/push/trigger", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    eventType: "training_plan_created",
+                    relatedUserIds: [athleteData.id],
+                    variables: {
+                        athleteName: selectedPlayer,
+                        coachName: currentUserName || "코치",
+                        title: title || `${selectedPlayer}의 훈련 계획`,
+                    },
+                    url: "/admin/training-plan",
+                }),
+            }).catch(() => {});
 
 
             sessionStorage.removeItem(PLAN_TEMP_KEY);
@@ -351,48 +392,102 @@ export default function CreatePlanPage() {
 
 
 
-                    {/* ── 최근 훈련 계획 (Recent Plan) ── */}
-                    {selectedPlayer && (
-                        <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-4">
-                            <div className="flex items-center justify-between mb-2">
-                                <SectionTitle>
-                                    <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" /> 훈련 계획
-                                </SectionTitle>
-                            </div>
-
-                            <LinkedPlanCard
-                                plan={recentPlan}
-                                onMoreClick={() => setIsPlanModalOpen(true)}
-                                onRemove={() => setRecentPlan(null)}
-                                readOnly={false}
-                            />
-                        </section>
-                    )}
-
-                    {/* ── 최근 훈련 일지 (Recent Journal) ── */}
-                    {selectedPlayer && (
-                        <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-4">
-                            <div className="flex items-center justify-between mb-2">
-                                <SectionTitle>
-                                    <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" /> 훈련 일지
-                                </SectionTitle>
-                            </div>
-
-                            <LinkedJournalCard
-                                journal={recentJournal}
-                                onMoreClick={() => setIsJournalModalOpen(true)}
-                                onRemove={() => setRecentJournal(null)}
-                                readOnly={false}
-                            />
-                        </section>
-                    )}
-
-                    {/* ── 최근 라운드 정보 (Recent Round Summary) ── */}
+                    {/* ── 1. 목표 (Analysis Goal Box) ── */}
                     {selectedPlayer && (
                         <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
                             <div className="flex items-center justify-between mb-2">
                                 <SectionTitle>
-                                    <BookOpen size={18} className="text-brand-navy dark:text-brand-navy-light" /> 최근 라운드 정보
+                                    <Flag size={18} className="text-amber-500" /> 목표
+                                </SectionTitle>
+                            </div>
+                            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 rounded-2xl flex flex-col relative transition-all hover:border-brand-navy/30">
+                                {latestGoal ? (
+                                    <>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs font-black px-2 py-0.5 rounded-md bg-brand-navy/10 text-brand-navy dark:bg-brand-navy/20 dark:text-brand-navy-light uppercase">
+                                                    {latestGoal.category}
+                                                </span>
+                                                {latestGoal.coachName && (
+                                                    <span className="text-xs font-medium text-zinc-500">{latestGoal.coachName}</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div className="flex-1 min-h-0 flex flex-col">
+                                            <div className="text-sm text-zinc-900 dark:text-zinc-100 mt-2 mb-2 whitespace-pre-wrap break-words">
+                                                {latestGoal.goal}
+                                            </div>
+                                            <div className="text-[10px] text-zinc-400 mt-2">
+                                                {latestGoal.created_at ? new Date(latestGoal.created_at).toLocaleDateString() : ""}
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="flex-1 min-h-[60px] flex items-center justify-center text-xs text-zinc-400 italic">
+                                        등록된 목표가 없습니다.
+                                    </div>
+                                )}
+
+                                {analysisGoals.length > 0 && (
+                                    <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
+                                        <div />
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsGoalHistoryModalOpen(true)}
+                                            className="flex items-center gap-1 text-[11px] font-bold text-zinc-500 hover:text-brand-navy transition-colors"
+                                        >
+                                            <FileText size={12} />
+                                            더보기 (이전 목표 보기)
+                                            <ChevronRight size={12} />
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+                    )}
+
+                    {/* ── 2. 최근 분석 기록 (Analysis History Box) ── */}
+                    {selectedPlayer && (
+                        <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+                            <div className="flex items-center justify-between mb-2">
+                                <SectionTitle>
+                                    <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" /> 최근 분석 기록
+                                </SectionTitle>
+                            </div>
+                            <LinkedLessonCard
+                                part={allAnalyses[0]?.category || "shot"}
+                                lesson={allAnalyses[0] || null}
+                                onMoreClick={() => setIsAnalysisHistoryModalOpen(true)}
+                                moreText="더보기 (다른 분석 찾기)"
+                                emptyText="선택된 분석 기록이 없습니다."
+                                readOnly={false}
+                            />
+                        </section>
+                    )}
+
+                    {/* ── 3. 최근 레슨 기록 (Recent Lesson History Box) ── */}
+                    {selectedPlayer && (
+                        <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+                            <div className="flex items-center justify-between mb-2">
+                                <SectionTitle>
+                                    <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" /> 최근 레슨 기록
+                                </SectionTitle>
+                            </div>
+                            <LinkedLessonCard
+                                part={recentLessons[0]?.category || "shot"}
+                                lesson={recentLessons[0] || null}
+                                onMoreClick={() => setIsLessonHistoryModalOpen(true)}
+                                readOnly={false}
+                            />
+                        </section>
+                    )}
+
+                    {/* ── 4. 최근 라운드 기록 (Recent Round Summary) ── */}
+                    {selectedPlayer && (
+                        <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+                            <div className="flex items-center justify-between mb-2">
+                                <SectionTitle>
+                                    <BookOpen size={18} className="text-brand-navy dark:text-brand-navy-light" /> 최근 라운드 기록
                                 </SectionTitle>
                                 <button
                                     type="button"
@@ -497,64 +592,39 @@ export default function CreatePlanPage() {
                         </section>
                     )}
 
-                    {/* ── 레슨 연동 (Lesson Integration) ── */}
+                    {/* ── 5. 훈련계획 (Recent Plan) ── */}
                     {selectedPlayer && (
                         <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-4">
-                            <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center justify-between mb-2">
                                 <SectionTitle>
-                                    <BookOpen size={16} className="text-brand-navy" />
-                                    파트별 레슨 내용
+                                    <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" /> 훈련 계획
                                 </SectionTitle>
                             </div>
-                            <CategoryTabs options={partOptions} value={planSelectedPart} onChange={setPlanSelectedPart} />
-                            
-                            <div className="grid grid-cols-1 gap-4 mt-4">
-                                {(() => {
-                                    if (!planSelectedPart) return null;
 
-                                    if (planSelectedPart === "all") {
-                                        const allSelected = Object.values(selectedLessons).filter(Boolean) as LessonRecord[];
-                                        if (allSelected.length === 0) {
-                                            return (
-                                                <div className="flex flex-col items-center justify-center text-zinc-400 min-h-[120px] bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800/50">
-                                                    <span className="text-sm font-semibold text-zinc-500">선택된 레슨 내용이 없습니다</span>
-                                                </div>
-                                            );
-                                        }
-                                        return allSelected.map(lesson => (
-                                            <LinkedLessonCard
-                                                key={lesson.id}
-                                                part={lesson.category}
-                                                lesson={lesson}
-                                                onMoreClick={() => {
-                                                    setHistoryModalTargetPart(lesson.category);
-                                                    setIsHistoryModalOpen(true);
-                                                }}
-                                            />
-                                        ));
-                                    }
+                            <LinkedPlanCard
+                                plan={recentPlan}
+                                onMoreClick={() => setIsPlanModalOpen(true)}
+                                onRemove={() => setRecentPlan(null)}
+                                readOnly={false}
+                            />
+                        </section>
+                    )}
 
-                                    const lesson = selectedLessons[planSelectedPart];
-                                    if (!lesson) {
-                                        return (
-                                            <div className="flex flex-col items-center justify-center text-zinc-400 min-h-[120px] bg-zinc-50 dark:bg-zinc-800/50 rounded-2xl border border-zinc-100 dark:border-zinc-800/50">
-                                                <span className="text-sm font-semibold text-zinc-500">레슨 내용이 없습니다</span>
-                                            </div>
-                                        );
-                                    }
-
-                                    return (
-                                        <LinkedLessonCard
-                                            part={planSelectedPart}
-                                            lesson={lesson}
-                                            onMoreClick={() => {
-                                                setHistoryModalTargetPart(planSelectedPart);
-                                                setIsHistoryModalOpen(true);
-                                            }}
-                                        />
-                                    );
-                                })()}
+                    {/* ── 6. 훈련일지 (Recent Journal) ── */}
+                    {selectedPlayer && (
+                        <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 rounded-2xl shadow-sm space-y-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <SectionTitle>
+                                    <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" /> 훈련 일지
+                                </SectionTitle>
                             </div>
+
+                            <LinkedJournalCard
+                                journal={recentJournal}
+                                onMoreClick={() => setIsJournalModalOpen(true)}
+                                onRemove={() => setRecentJournal(null)}
+                                readOnly={false}
+                            />
                         </section>
                     )}
 
@@ -601,24 +671,95 @@ export default function CreatePlanPage() {
                 </form>
             </div>
 
+            {/* Lesson History Modal */}
             <LessonHistoryModal
-                isOpen={isHistoryModalOpen}
-                onClose={() => setIsHistoryModalOpen(false)}
+                isOpen={isLessonHistoryModalOpen}
+                onClose={() => setIsLessonHistoryModalOpen(false)}
                 allLessons={allLessons}
-                initialPart={historyModalTargetPart}
-                connectedLessonId={historyModalTargetPart ? selectedLessons[historyModalTargetPart]?.id : null}
-                readOnly={false}
-                onSelectLesson={(lessonId) => {
-                    const lesson = allLessons.find(l => l.id === lessonId);
-                    if (lesson) {
-                        setSelectedLessons(prev => ({
-                            ...prev,
-                            [lesson.category]: lesson
-                        }));
-                    }
-                    setIsHistoryModalOpen(false);
-                }}
+                historySelectedPart={historySelectedPart}
+                setHistorySelectedPart={setHistorySelectedPart}
+                historySearchQuery={historySearchQuery}
+                setHistorySearchQuery={setHistorySearchQuery}
+                historyDisplayLimit={historyDisplayLimit}
+                setHistoryDisplayLimit={setHistoryDisplayLimit}
+                connectedLessonId={null}
+                setConnectedLessonId={() => {}}
+                partOptions={partOptions}
+                readOnly={true}
             />
+
+            {/* Analysis History Modal */}
+            <LessonHistoryModal
+                isOpen={isAnalysisHistoryModalOpen}
+                onClose={() => setIsAnalysisHistoryModalOpen(false)}
+                allLessons={allAnalyses}
+                historySelectedPart={analysisHistorySelectedPart}
+                setHistorySelectedPart={setAnalysisHistorySelectedPart}
+                historySearchQuery={analysisHistorySearchQuery}
+                setHistorySearchQuery={setAnalysisHistorySearchQuery}
+                historyDisplayLimit={analysisHistoryDisplayLimit}
+                setHistoryDisplayLimit={setAnalysisHistoryDisplayLimit}
+                connectedLessonId={null}
+                setConnectedLessonId={() => {}}
+                partOptions={analysisModalPartOptions}
+                readOnly={true}
+                title="최근 분석 기록 찾아보기"
+                itemType="analysis"
+            />
+
+            {/* Analysis Goal History Modal */}
+            {isGoalHistoryModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setIsGoalHistoryModalOpen(false)}>
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl w-full max-w-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+                        <div className="p-5 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-900/50 shrink-0">
+                            <div className="flex items-center gap-3">
+                                <button type="button" onClick={() => setIsGoalHistoryModalOpen(false)} className="p-1.5 text-zinc-400 hover:text-zinc-900 bg-white dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700 transition-colors">
+                                    <ChevronLeft size={20} />
+                                </button>
+                                <SectionTitle>
+                                    <Flag size={18} className="text-amber-500" /> 목표 기록 찾아보기
+                                </SectionTitle>
+                            </div>
+                            <button type="button" onClick={() => setIsGoalHistoryModalOpen(false)} className="p-1.5 text-zinc-400 hover:text-zinc-600 rounded-lg">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="p-4 sm:p-5 space-y-3 overflow-y-auto flex-1 bg-zinc-50/50 dark:bg-zinc-900/30">
+                            {analysisGoals.map((item) => (
+                                <div
+                                    key={item.id}
+                                    onClick={() => router.push(`/analysis/${item.id}`)}
+                                    className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:border-amber-400/70 rounded-2xl p-4 sm:p-5 shadow-sm transition-all cursor-pointer space-y-2"
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase px-2 py-0.5 bg-amber-500/10 rounded-md">
+                                                {item.category}
+                                            </span>
+                                            {item.coachName && (
+                                                <span className="text-xs font-medium text-zinc-500">
+                                                    {item.coachName}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <span className="text-xs text-zinc-400 font-medium">
+                                            {item.created_at ? new Date(item.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }).slice(2).replace(/-/g, '.') : ""}
+                                        </span>
+                                    </div>
+                                    <p className="text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-line leading-relaxed">
+                                        {item.goal}
+                                    </p>
+                                </div>
+                            ))}
+                            {analysisGoals.length === 0 && (
+                                <div className="py-10 text-center text-zinc-500 text-sm">
+                                    등록된 분석 목표가 없습니다.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <JournalHistoryModal
                 isOpen={isJournalModalOpen}

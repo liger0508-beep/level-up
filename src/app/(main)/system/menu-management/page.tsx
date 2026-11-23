@@ -65,6 +65,17 @@ const initialMenus: MenuItem[] = [
         ],
     },
     {
+        id: "m4-analysis",
+        title: "분석",
+        href: "/analysis",
+        enabled: true,
+        categories: [
+            { id: "c4-a", key: "shot", label: "Shot" },
+            { id: "c17-a", key: "approach", label: "Approach" },
+            { id: "c5-a", key: "putt", label: "Putt" },
+        ],
+    },
+    {
         id: "m5",
         title: "스코어",
         href: "/scores",

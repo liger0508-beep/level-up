@@ -19,6 +19,10 @@ import { LessonTemplate, fetchLessonTemplates } from "@/lib/lesson-template-sync
 import { fetchRecentLessonsByPlayer, fetchAllLessonsByPlayer, saveLessonRecord, LessonRecord } from "@/lib/lesson-sync";
 import { LessonHistoryModal } from "@/components/lesson/LessonHistoryModal";
 import { LinkedLessonCard } from "@/components/training-plan/LinkedLessonCard";
+import { LinkedJournalCard } from "@/components/training-plan/LinkedJournalCard";
+import { JournalHistoryModal } from "@/components/training-plan/JournalHistoryModal";
+import ReferenceDataModal from "@/components/lesson/ReferenceDataModal";
+import { fetchJournalsByAthlete, Journal } from "@/lib/journal-sync";
 import { uploadFiles } from "@/lib/storage-sync";
 import { formatLocalDate } from "@/lib/utils";
 import { CustomVideoPlayer } from "@/components/ui/CustomVideoPlayer";
@@ -36,6 +40,31 @@ function slotLabel(slot: string) {
     const h = parseInt(slot.split(":")[0]);
     const m = slot.split(":")[1];
     return `${h > 12 ? h - 12 : h}:${m}`;
+}
+
+function extractGoalFromContent(content: string): string {
+    if (!content) return "";
+    const goalIndex = content.indexOf("[목표 설정]");
+    if (goalIndex === -1) return "";
+    let afterGoal = content.substring(goalIndex + "[목표 설정]".length);
+    const nextMarkerRegex = /\n\s*\[(분석 내용 - 선수|분석 내용 - 코치|메모|교정 후)\]/;
+    const match = afterGoal.match(nextMarkerRegex);
+    if (match && match.index !== undefined) {
+        afterGoal = afterGoal.substring(0, match.index);
+    }
+    return afterGoal.trim();
+}
+
+function extractCoachContentFromAnalysis(content: string): string {
+    if (!content) return "";
+    const coachIndex = content.indexOf("[분석 내용 - 코치]");
+    if (coachIndex === -1) return "";
+    let afterCoach = content.substring(coachIndex + "[분석 내용 - 코치]".length);
+    const memoIndex = afterCoach.indexOf("[메모]");
+    if (memoIndex !== -1) {
+        afterCoach = afterCoach.substring(0, memoIndex);
+    }
+    return afterCoach.trim();
 }
 
 // Mock Data for demonstration
@@ -58,6 +87,13 @@ const partOptions: { key: string; label: string }[] = [
     { key: "physical", label: "Physical" },
     { key: "field", label: "Field" },
     { key: "etc", label: "Etc" },
+];
+
+const analysisModalPartOptions: { key: string; label: string }[] = [
+    { key: "all", label: "ALL" },
+    { key: "shot", label: "Shot" },
+    { key: "approach", label: "Approach" },
+    { key: "putt", label: "Putt" },
 ];
 
 const mockRecentScore = {
@@ -299,8 +335,51 @@ function CreateLessonContent() {
 
     const [connectedLessonId, setConnectedLessonId] = useState<string | null>(null);
 
+    // Reference & Journal State
+    const [isReferenceModalOpen, setIsReferenceModalOpen] = useState(false);
+    const [allJournals, setAllJournals] = useState<Journal[]>([]);
+    const [selectedJournalId, setSelectedJournalId] = useState<string | null>(null);
+    const [isJournalHistoryModalOpen, setIsJournalHistoryModalOpen] = useState(false);
+    const selectedJournal = useMemo(() => allJournals.find(j => j.id === selectedJournalId) || null, [allJournals, selectedJournalId]);
+
     const [recentLessons, setRecentLessons] = useState<LessonRecord[]>([]);
     const [allLessons, setAllLessons] = useState<LessonRecord[]>([]);
+    const [allAnalyses, setAllAnalyses] = useState<LessonRecord[]>([]);
+    const [isGoalHistoryModalOpen, setIsGoalHistoryModalOpen] = useState(false);
+
+    const [isAnalysisHistoryModalOpen, setIsAnalysisHistoryModalOpen] = useState(false);
+    const [analysisHistorySelectedPart, setAnalysisHistorySelectedPart] = useState<string>("all");
+    const [analysisHistorySearchQuery, setAnalysisHistorySearchQuery] = useState("");
+    const [analysisHistoryDisplayLimit, setAnalysisHistoryDisplayLimit] = useState(10);
+    const [isCoachNoteHistoryModalOpen, setIsCoachNoteHistoryModalOpen] = useState(false);
+
+    const analysisGoals = useMemo(() => {
+        return allAnalyses
+            .map(a => ({
+                id: a.id,
+                category: a.category,
+                created_at: a.created_at,
+                coachName: a.coachName,
+                goal: extractGoalFromContent(a.content),
+            }))
+            .filter(item => item.goal.length > 0);
+    }, [allAnalyses]);
+
+    const latestGoal = analysisGoals[0] || null;
+
+    const analysisCoachNotes = useMemo(() => {
+        return allAnalyses
+            .map(a => ({
+                id: a.id,
+                category: a.category,
+                created_at: a.created_at,
+                coachName: a.coachName,
+                coachContent: extractCoachContentFromAnalysis(a.content),
+            }))
+            .filter(item => item.coachContent.length > 0);
+    }, [allAnalyses]);
+
+    const latestCoachNote = analysisCoachNotes[0] || null;
 
     // No Goal Editing State Needed
 
@@ -348,12 +427,21 @@ function CreateLessonContent() {
     useEffect(() => {
         if (lastSelectedPlayer) {
             Promise.all([
-                fetchRecentLessonsByPlayer(lastSelectedPlayer, selectedPart === "all" ? undefined : selectedPart)
-            ]).then(([lessons]) => {
+                fetchRecentLessonsByPlayer(lastSelectedPlayer, selectedPart === "all" ? undefined : selectedPart),
+                fetchJournalsByAthlete(lastSelectedPlayer)
+            ]).then(([lessons, journals]) => {
                 setRecentLessons(lessons);
+                setAllJournals(journals);
+                if (journals.length > 0) {
+                    setSelectedJournalId(journals[0].id);
+                } else {
+                    setSelectedJournalId(null);
+                }
             });
         } else {
             setRecentLessons([]);
+            setAllJournals([]);
+            setSelectedJournalId(null);
         }
     }, [lastSelectedPlayer, selectedPart]);
 
@@ -366,6 +454,15 @@ function CreateLessonContent() {
             setAllLessons([]);
         }
     }, [lastSelectedPlayer, historyDisplayLimit]);
+
+    // 분석 목표 설정 조회
+    useEffect(() => {
+        if (lastSelectedPlayer) {
+            fetchAllLessonsByPlayer(lastSelectedPlayer, undefined, 50, "analysis").then(setAllAnalyses);
+        } else {
+            setAllAnalyses([]);
+        }
+    }, [lastSelectedPlayer]);
 
 
 
@@ -500,7 +597,6 @@ function CreateLessonContent() {
                     date: finalDate,
                     startTime: finalStartTime,
                     endTime: finalEndTime,
-                    connectedLessonId
                 });
             }
 
@@ -593,49 +689,176 @@ function CreateLessonContent() {
                         </div>
                     </section>
 
-                    {/* ── 2. History & Analysis (Conditional) ── */}
+                    {/* ── 2. History & Reference (Conditional) ── */}
                     {selectedPlayers.length > 0 && selectedPart && (
                         <div className="space-y-6">
-
-
-
-                            {/* Swing Error / Lesson History Box */}
+                            {/* Analysis Goal Box */}
                             <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
                                 <div className="flex items-center justify-between mb-2">
                                     <SectionTitle>
-                                        <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" /> 레슨 히스토리
+                                        <Flag size={18} className="text-amber-500" /> 목표
                                     </SectionTitle>
-                                    {connectedLessonId && (
-                                        <span className="text-xs font-bold text-brand-navy dark:text-brand-navy-light bg-brand-navy/10 px-2 py-1 rounded-md">
-                                            연결됨
-                                        </span>
+                                </div>
+                                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 rounded-2xl flex flex-col relative transition-all hover:border-brand-navy/30">
+                                    {latestGoal ? (
+                                        <>
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-black px-2 py-0.5 rounded-md bg-brand-navy/10 text-brand-navy dark:bg-brand-navy/20 dark:text-brand-navy-light uppercase">
+                                                        {latestGoal.category}
+                                                    </span>
+                                                    {latestGoal.coachName && (
+                                                        <span className="text-xs font-medium text-zinc-500">{latestGoal.coachName}</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="flex-1 min-h-0 flex flex-col">
+                                                <div className="text-sm text-zinc-900 dark:text-zinc-100 mt-2 mb-2 whitespace-pre-wrap break-words">
+                                                    {latestGoal.goal}
+                                                </div>
+                                                <div className="text-[10px] text-zinc-400 mt-2">
+                                                    {latestGoal.created_at ? new Date(latestGoal.created_at).toLocaleDateString() : ""}
+                                                </div>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="flex-1 min-h-[60px] flex items-center justify-center text-xs text-zinc-400 italic">
+                                            등록된 목표가 없습니다.
+                                        </div>
+                                    )}
+
+                                    {analysisGoals.length > 0 && (
+                                        <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
+                                            <div />
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsGoalHistoryModalOpen(true)}
+                                                className="flex items-center gap-1 text-[11px] font-bold text-zinc-500 hover:text-brand-navy transition-colors"
+                                            >
+                                                <FileText size={12} />
+                                                더보기 (이전 목표 보기)
+                                                <ChevronRight size={12} />
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
-                                <LinkedLessonCard
-                                    part={connectedLessonId ? (allLessons.find(l => l.id === connectedLessonId)?.category || selectedPart) : selectedPart}
-                                    lesson={connectedLessonId ? (allLessons.find(l => l.id === connectedLessonId) || null) : (recentLessons.find(l => l.category === selectedPart) || recentLessons[0] || null)}
-                                    onMoreClick={() => setIsLessonHistoryModalOpen(true)}
-                                    onConnectClick={() => {
-                                        const lessonToConnect = connectedLessonId
-                                            ? allLessons.find(l => l.id === connectedLessonId)
-                                            : (recentLessons.find(l => l.category === selectedPart) || recentLessons[0]);
+                            </section>
 
-                                        if (lessonToConnect) {
-                                            if (connectedLessonId === lessonToConnect.id) {
-                                                setConnectedLessonId(null);
-                                            } else {
-                                                setConnectedLessonId(lessonToConnect.id);
-                                            }
-                                        }
-                                    }}
-                                    isConnected={!!connectedLessonId}
+                            {/* Analysis History Box */}
+                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+                                <div className="flex items-center justify-between mb-2">
+                                    <SectionTitle>
+                                        <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" /> 최근 분석 기록
+                                    </SectionTitle>
+                                </div>
+                                <LinkedLessonCard
+                                    part={selectedPart}
+                                    lesson={allAnalyses.find(l => l.category === selectedPart) || allAnalyses[0] || null}
+                                    onMoreClick={() => setIsAnalysisHistoryModalOpen(true)}
+                                    moreText="더보기 (다른 분석 찾기)"
+                                    emptyText="선택된 분석 기록이 없습니다."
                                     readOnly={false}
                                 />
                             </section>
 
+                            {/* Analysis Coach Note Box */}
+                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+                                <div className="flex items-center justify-between mb-2">
+                                    <SectionTitle>
+                                        <FileText size={18} className="text-blue-500" /> 분석 내용 - 코치
+                                    </SectionTitle>
+                                </div>
+                                <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 rounded-2xl flex flex-col relative transition-all hover:border-brand-navy/30">
+                                    {latestCoachNote ? (
+                                        <>
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-black px-2 py-0.5 rounded-md bg-brand-navy/10 text-brand-navy dark:bg-brand-navy/20 dark:text-brand-navy-light uppercase">
+                                                        {latestCoachNote.category}
+                                                    </span>
+                                                    {latestCoachNote.coachName && (
+                                                        <span className="text-xs font-medium text-zinc-500">{latestCoachNote.coachName}</span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="flex-1 min-h-0 flex flex-col">
+                                                <div className="text-sm text-zinc-900 dark:text-zinc-100 mt-2 mb-2 whitespace-pre-wrap break-words">
+                                                    {latestCoachNote.coachContent}
+                                                </div>
+                                                <div className="text-[10px] text-zinc-400 mt-2">
+                                                    {latestCoachNote.created_at ? new Date(latestCoachNote.created_at).toLocaleDateString() : ""}
+                                                </div>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="flex-1 min-h-[60px] flex items-center justify-center text-xs text-zinc-400 italic">
+                                            등록된 코치 공유 내용이 없습니다.
+                                        </div>
+                                    )}
+
+                                    {analysisCoachNotes.length > 0 && (
+                                        <div className="mt-3 pt-3 border-t border-zinc-100 dark:border-zinc-800 flex justify-between items-center">
+                                            <div />
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsCoachNoteHistoryModalOpen(true)}
+                                                className="flex items-center gap-1 text-[11px] font-bold text-zinc-500 hover:text-brand-navy transition-colors"
+                                            >
+                                                <FileText size={12} />
+                                                더보기 (이전 코치 내용 보기)
+                                                <ChevronRight size={12} />
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                            </section>
+
+                            {/* Lesson History Box */}
+                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+                                <div className="flex items-center justify-between mb-2">
+                                    <SectionTitle>
+                                        <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" /> 최근 레슨 기록
+                                    </SectionTitle>
+                                </div>
+                                <LinkedLessonCard
+                                    part={selectedPart}
+                                    lesson={recentLessons.find(l => l.category === selectedPart) || recentLessons[0] || null}
+                                    onMoreClick={() => setIsLessonHistoryModalOpen(true)}
+                                    readOnly={false}
+                                />
+                            </section>
+
+                            {/* Training Journal Box */}
+                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+                                <div className="flex items-center justify-between mb-2">
+                                    <SectionTitle>
+                                        <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" /> 훈련 일지
+                                    </SectionTitle>
+                                </div>
+                                <LinkedJournalCard
+                                    journal={selectedJournal}
+                                    onMoreClick={() => setIsJournalHistoryModalOpen(true)}
+                                    readOnly={false}
+                                />
+                            </section>
+
+                            {/* Lesson Reference Data Box */}
+                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+                                <div className="flex items-center justify-between">
+                                    <SectionTitle>
+                                        <BookOpen size={18} className="text-brand-navy dark:text-brand-navy-light" /> 최근 라운드 정보
+                                    </SectionTitle>
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsReferenceModalOpen(true)}
+                                        className="px-4 py-2 rounded-xl bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-sm text-sm font-semibold text-zinc-700 dark:text-zinc-300 text-center hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
+                                    >
+                                        확인하기
+                                    </button>
+                                </div>
+                            </section>
                         </div>
                     )}
-
 
                     {/* ── 3. 교정전 (Before) ── */}
                     <section id="before-correction-section" className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 rounded-2xl shadow-sm space-y-6">
@@ -897,6 +1120,18 @@ function CreateLessonContent() {
                 </form>
             </div>
 
+            {/* Journal History Modal */}
+            <JournalHistoryModal
+                isOpen={isJournalHistoryModalOpen}
+                onClose={() => setIsJournalHistoryModalOpen(false)}
+                allJournals={allJournals}
+                onSelectJournal={(journalId) => {
+                    setSelectedJournalId(journalId);
+                    setIsJournalHistoryModalOpen(false);
+                }}
+                connectedJournalId={selectedJournalId}
+            />
+
             {/* Lesson History Modal */}
             <LessonHistoryModal
                 isOpen={isLessonHistoryModalOpen}
@@ -908,13 +1143,144 @@ function CreateLessonContent() {
                 setHistorySearchQuery={setHistorySearchQuery}
                 historyDisplayLimit={historyDisplayLimit}
                 setHistoryDisplayLimit={setHistoryDisplayLimit}
-                connectedLessonId={connectedLessonId}
-                setConnectedLessonId={setConnectedLessonId}
+                connectedLessonId={null}
+                setConnectedLessonId={() => {}}
                 partOptions={partOptions}
-                readOnly={false}
+                readOnly={true}
             />
 
+            {/* Analysis Goal History Modal */}
+            {isGoalHistoryModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setIsGoalHistoryModalOpen(false)}>
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl w-full max-w-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+                        <div className="p-5 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-900/50 shrink-0">
+                            <div className="flex items-center gap-3">
+                                <button type="button" onClick={() => setIsGoalHistoryModalOpen(false)} className="p-1.5 text-zinc-400 hover:text-zinc-900 bg-white dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700 transition-colors">
+                                    <ChevronLeft size={20} />
+                                </button>
+                                <SectionTitle>
+                                    <Flag size={18} className="text-amber-500" /> 목표 기록 찾아보기
+                                </SectionTitle>
+                            </div>
+                            <button type="button" onClick={() => setIsGoalHistoryModalOpen(false)} className="p-1.5 text-zinc-400 hover:text-zinc-600 rounded-lg">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="p-4 sm:p-5 space-y-3 overflow-y-auto flex-1 bg-zinc-50/50 dark:bg-zinc-900/30">
+                            {analysisGoals.map((item) => (
+                                <div
+                                    key={item.id}
+                                    onClick={() => router.push(`/analysis/${item.id}`)}
+                                    className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:border-amber-400/70 rounded-2xl p-4 sm:p-5 shadow-sm transition-all cursor-pointer space-y-2"
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 uppercase px-2 py-0.5 bg-amber-500/10 rounded-md">
+                                                {item.category}
+                                            </span>
+                                            {item.coachName && (
+                                                <span className="text-xs font-medium text-zinc-500">
+                                                    {item.coachName}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <span className="text-xs text-zinc-400 font-medium">
+                                            {item.created_at ? new Date(item.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }).slice(2).replace(/-/g, '.') : ""}
+                                        </span>
+                                    </div>
+                                    <p className="text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-line leading-relaxed">
+                                        {item.goal}
+                                    </p>
+                                </div>
+                            ))}
+                            {analysisGoals.length === 0 && (
+                                <div className="py-10 text-center text-zinc-500 text-sm">
+                                    등록된 분석 목표가 없습니다.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
+            {/* Analysis History Modal */}
+            <LessonHistoryModal
+                isOpen={isAnalysisHistoryModalOpen}
+                onClose={() => setIsAnalysisHistoryModalOpen(false)}
+                allLessons={allAnalyses}
+                historySelectedPart={analysisHistorySelectedPart}
+                setHistorySelectedPart={setAnalysisHistorySelectedPart}
+                historySearchQuery={analysisHistorySearchQuery}
+                setHistorySearchQuery={setAnalysisHistorySearchQuery}
+                historyDisplayLimit={analysisHistoryDisplayLimit}
+                setHistoryDisplayLimit={setAnalysisHistoryDisplayLimit}
+                connectedLessonId={null}
+                setConnectedLessonId={() => {}}
+                partOptions={analysisModalPartOptions}
+                readOnly={true}
+                title="최근 분석 기록 찾아보기"
+                itemType="analysis"
+            />
+
+            {/* Analysis Coach Note History Modal */}
+            {isCoachNoteHistoryModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" onClick={() => setIsCoachNoteHistoryModalOpen(false)}>
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-xl w-full max-w-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col max-h-[85vh]" onClick={(e) => e.stopPropagation()}>
+                        <div className="p-5 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50 dark:bg-zinc-900/50 shrink-0">
+                            <div className="flex items-center gap-3">
+                                <button type="button" onClick={() => setIsCoachNoteHistoryModalOpen(false)} className="p-1.5 text-zinc-400 hover:text-zinc-900 bg-white dark:bg-zinc-800 rounded-lg border border-zinc-200 dark:border-zinc-700 transition-colors">
+                                    <ChevronLeft size={20} />
+                                </button>
+                                <SectionTitle>
+                                    <FileText size={18} className="text-blue-500" /> 분석 내용 - 코치 기록 찾아보기
+                                </SectionTitle>
+                            </div>
+                            <button type="button" onClick={() => setIsCoachNoteHistoryModalOpen(false)} className="p-1.5 text-zinc-400 hover:text-zinc-600 rounded-lg">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="p-4 sm:p-5 space-y-3 overflow-y-auto flex-1 bg-zinc-50/50 dark:bg-zinc-900/30">
+                            {analysisCoachNotes.map((item) => (
+                                <div
+                                    key={item.id}
+                                    onClick={() => router.push(`/analysis/${item.id}`)}
+                                    className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:border-blue-400/70 rounded-2xl p-4 sm:p-5 shadow-sm transition-all cursor-pointer space-y-2"
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 uppercase px-2 py-0.5 bg-blue-500/10 rounded-md">
+                                                {item.category}
+                                            </span>
+                                            {item.coachName && (
+                                                <span className="text-xs font-medium text-zinc-500">
+                                                    {item.coachName}
+                                                </span>
+                                            )}
+                                        </div>
+                                        <span className="text-xs text-zinc-400 font-medium">
+                                            {item.created_at ? new Date(item.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }).slice(2).replace(/-/g, '.') : ""}
+                                        </span>
+                                    </div>
+                                    <p className="text-sm text-zinc-800 dark:text-zinc-200 whitespace-pre-line leading-relaxed">
+                                        {item.coachContent}
+                                    </p>
+                                </div>
+                            ))}
+                            {analysisCoachNotes.length === 0 && (
+                                <div className="py-10 text-center text-zinc-500 text-sm">
+                                    등록된 코치 공유 내용이 없습니다.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <ReferenceDataModal
+                isOpen={isReferenceModalOpen}
+                onClose={() => setIsReferenceModalOpen(false)}
+                playerName={lastSelectedPlayer || ""}
+            />
         </div>
     );
 }

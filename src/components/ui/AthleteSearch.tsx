@@ -61,7 +61,7 @@ export function AthleteSearch({
         if (!query.trim()) return [];
         const normalizedQuery = query.toLowerCase();
 
-        return allAthletes.filter(a => {
+        const filtered = allAthletes.filter(a => {
             const normalizedA = a.toLowerCase();
             if (normalizedA.includes(normalizedQuery)) return true;
 
@@ -94,6 +94,16 @@ export function AthleteSearch({
             }
             return false;
         });
+
+        // 검색어와 정확히 일치하거나 앞부분부터 일치하는 순서로 정렬
+        return filtered.sort((a, b) => {
+            if (a.toLowerCase() === normalizedQuery) return -1;
+            if (b.toLowerCase() === normalizedQuery) return 1;
+            const aIndex = a.toLowerCase().indexOf(normalizedQuery);
+            const bIndex = b.toLowerCase().indexOf(normalizedQuery);
+            if (aIndex !== -1 && bIndex !== -1) return aIndex - bIndex;
+            return a.localeCompare(b);
+        });
     }, [allAthletes, query]);
 
     const handleSelect = (name: string) => {
@@ -122,18 +132,23 @@ export function AthleteSearch({
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === "Enter") {
+            if (e.nativeEvent.isComposing) return;
             e.preventDefault();
             const trimmedQuery = query.trim();
             if (!trimmedQuery) return;
 
-            // Try to find an exact match first
+            // 1. 정확히 일치하는 선수가 있으면 우선 선택
             const exactMatch = allAthletes.find(a => a.toLowerCase() === trimmedQuery.toLowerCase());
             if (exactMatch) {
                 handleSelect(exactMatch);
-            } else if (suggestions.length > 0) {
-                // If no exact match, use the first suggestion
+                return;
+            }
+
+            // 2. 검색 결과가 딱 1명만 검색되었을 때만 Enter로 자동 선택
+            if (suggestions.length === 1) {
                 handleSelect(suggestions[0]);
             }
+            // 검색 결과가 여러 명일 때는 엔터로 엉뚱한 첫 번째 선수가 자동 선택되지 않고, 사용자가 직접 목록에서 클릭하도록 유지
         }
     };
 

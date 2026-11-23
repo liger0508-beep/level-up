@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { COACH_DEFAULT_SLOTS, generateSlotsFromConfig, resolveCoachSlotConfig } from '@/lib/schedule-slots';
+import { triggerPushRules } from '@/lib/push-notification';
 
 export const dynamic = 'force-dynamic';
 
@@ -116,6 +117,7 @@ export async function POST(request: Request) {
             if (cUser) creatorId = cUser.id;
         }
 
+        const participantUserIds: string[] = [];
         const insertPromises = (participants.length > 0 ? participants : [""]).map(async (name: string) => {
             let pUserId = userId;
             if (name) {
@@ -144,6 +146,9 @@ export async function POST(request: Request) {
                 } else {
                     console.error("Player user not found in database:", name);
                 }
+            }
+            if (pUserId) {
+                participantUserIds.push(pUserId);
             }
 
             const prefixMap: Record<string, string> = {
@@ -178,6 +183,14 @@ export async function POST(request: Request) {
         if (firstError?.error) {
             return NextResponse.json({ error: firstError.error.message }, { status: 500 });
         }
+
+        const relatedIds = Array.from(new Set([...participantUserIds, creatorId].filter(Boolean))) as string[];
+        triggerPushRules({
+            eventType: "schedule_created",
+            relatedUserIds: relatedIds,
+            variables: { title: event.title || "새 일정" },
+            url: "/schedule",
+        }).catch(() => {});
 
         return NextResponse.json({ success: true });
     } catch (err: any) {
