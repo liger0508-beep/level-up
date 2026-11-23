@@ -50,6 +50,36 @@ function extractGoalFromContent(content: string): string {
     return afterGoal.trim();
 }
 
+function extractAthleteContentFromAnalysis(content: string): string {
+    if (!content) return "";
+    const marker = "[분석 내용 - 선수]";
+    const startIdx = content.indexOf(marker);
+    let after = startIdx !== -1 ? content.substring(startIdx + marker.length) : content;
+
+    if (startIdx === -1) {
+        const goalIdx = after.indexOf("[목표 설정]");
+        if (goalIdx !== -1) {
+            const coachOrMemoIdx = [
+                after.indexOf("[분석 내용 - 코치]"),
+                after.indexOf("[메모]"),
+                after.indexOf("[교정 후]"),
+            ].filter((i) => i > goalIdx);
+            const endGoalIdx = coachOrMemoIdx.length > 0 ? Math.min(...coachOrMemoIdx) : after.length;
+            after = (after.slice(0, goalIdx) + after.slice(endGoalIdx)).trim();
+        }
+    }
+
+    const stopMarkers = ["[분석 내용 - 코치]", "[메모]", "[교정 후]", "[목표 설정]"];
+    let cutIdx = after.length;
+    for (const m of stopMarkers) {
+        const idx = after.indexOf(m);
+        if (idx !== -1 && idx < cutIdx) {
+            cutIdx = idx;
+        }
+    }
+    return after.substring(0, cutIdx).trim();
+}
+
 const mockPlayers = ["이수진", "최민준", "김지윤", "박도윤", "이지원", "한상욱"];
 
 const partOptions = [
@@ -456,7 +486,14 @@ export default function CreatePlanPage() {
                             </div>
                             <LinkedLessonCard
                                 part={allAnalyses[0]?.category || "shot"}
-                                lesson={allAnalyses[0] || null}
+                                lesson={
+                                    allAnalyses[0]
+                                        ? {
+                                              ...allAnalyses[0],
+                                              content: extractAthleteContentFromAnalysis(allAnalyses[0].content),
+                                          }
+                                        : null
+                                }
                                 onMoreClick={() => setIsAnalysisHistoryModalOpen(true)}
                                 moreText="더보기 (다른 분석 찾기)"
                                 emptyText="선택된 분석 기록이 없습니다."
@@ -692,7 +729,10 @@ export default function CreatePlanPage() {
             <LessonHistoryModal
                 isOpen={isAnalysisHistoryModalOpen}
                 onClose={() => setIsAnalysisHistoryModalOpen(false)}
-                allLessons={allAnalyses}
+                allLessons={allAnalyses.map((a) => ({
+                    ...a,
+                    content: extractAthleteContentFromAnalysis(a.content),
+                }))}
                 historySelectedPart={analysisHistorySelectedPart}
                 setHistorySelectedPart={setAnalysisHistorySelectedPart}
                 historySearchQuery={analysisHistorySearchQuery}
