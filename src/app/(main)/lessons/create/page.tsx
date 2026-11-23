@@ -26,6 +26,7 @@ import { fetchJournalsByAthlete, Journal } from "@/lib/journal-sync";
 import { uploadFiles } from "@/lib/storage-sync";
 import { formatLocalDate } from "@/lib/utils";
 import { CustomVideoPlayer } from "@/components/ui/CustomVideoPlayer";
+import { VoiceInputButton } from "@/components/ui/VoiceInputButton";
 
 const ALL_SLOTS = [
     "07:00", "07:30", "08:00", "08:30", "09:00", "09:30",
@@ -1042,7 +1043,13 @@ function CreateLessonContent() {
                                 className="w-full p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all resize-y"
                             />
                             <div className="flex items-center justify-between gap-2 pt-1">
-                                <div className="shrink-0">
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                    <VoiceInputButton
+                                        disabled={aiLoadingMode !== null}
+                                        onTranscript={(spoken) =>
+                                            setLessonContent((prev) => (prev ? `${prev} ${spoken}` : spoken))
+                                        }
+                                    />
                                     {prevLessonContent !== null && (
                                         <button
                                             type="button"

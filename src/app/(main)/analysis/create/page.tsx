@@ -23,6 +23,7 @@ import ReferenceDataModal from "@/components/lesson/ReferenceDataModal";
 import { uploadFiles } from "@/lib/storage-sync";
 import { formatLocalDate } from "@/lib/utils";
 import { CustomVideoPlayer } from "@/components/ui/CustomVideoPlayer";
+import { VoiceInputButton } from "@/components/ui/VoiceInputButton";
 import { ScheduleEventDialog } from "@/components/schedule/ScheduleEventDialog";
 import { saveEvent } from "@/lib/schedule-sync";
 
@@ -1135,7 +1136,13 @@ function CreateAnalysisContent() {
                                 className="w-full p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all resize-y"
                             />
                             <div className="flex items-center justify-between gap-2 pt-1">
-                                <div className="shrink-0">
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                    <VoiceInputButton
+                                        disabled={goalAiLoadingMode !== null}
+                                        onTranscript={(spoken) =>
+                                            setGoalContent((prev) => (prev ? `${prev} ${spoken}` : spoken))
+                                        }
+                                    />
                                     {prevGoalContent !== null && (
                                         <button
                                             type="button"
@@ -1198,7 +1205,13 @@ function CreateAnalysisContent() {
                                 className="w-full p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all resize-y"
                             />
                             <div className="flex items-center justify-between gap-2 pt-1">
-                                <div className="shrink-0">
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                    <VoiceInputButton
+                                        disabled={aiLoadingMode !== null}
+                                        onTranscript={(spoken) =>
+                                            setLessonContent((prev) => (prev ? `${prev} ${spoken}` : spoken))
+                                        }
+                                    />
                                     {prevLessonContent !== null && (
                                         <button
                                             type="button"
@@ -1261,7 +1274,13 @@ function CreateAnalysisContent() {
                                 className="w-full p-4 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-transparent dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-brand-navy/40 transition-all resize-y"
                             />
                             <div className="flex items-center justify-between gap-2 pt-1">
-                                <div className="shrink-0">
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                    <VoiceInputButton
+                                        disabled={coachAiLoadingMode !== null}
+                                        onTranscript={(spoken) =>
+                                            setCoachContent((prev) => (prev ? `${prev} ${spoken}` : spoken))
+                                        }
+                                    />
                                     {prevCoachContent !== null && (
                                         <button
                                             type="button"
