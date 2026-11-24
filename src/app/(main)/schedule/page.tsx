@@ -38,12 +38,13 @@ export default function SchedulePage() {
                         const isAthlete = profile.role === "athlete" || profile.role === "parent";
                         setCurrentRole(isAthlete ? "athlete" : "coach");
                         setCurrentCoachName(!isAthlete ? (profile.name || "") : "");
-                        setCurrentUserName(profile.name || "");
 
+                        let displayUserName = profile.name || "";
                         let branch = profile.branch || "";
                         if (profile.role === "parent") {
                             const match = profile?.name?.match(/^(.*?) \(/);
-                            const athleteName = match ? match[1] : profile?.name;
+                            const athleteName = match ? match[1] : (profile?.name || "");
+                            displayUserName = athleteName;
                             const { data: athlete } = await supabase
                                 .from('users')
                                 .select('branch')
@@ -52,6 +53,7 @@ export default function SchedulePage() {
                                 .maybeSingle();
                             if (athlete?.branch) branch = athlete.branch;
                         }
+                        setCurrentUserName(displayUserName);
                         setCurrentUserBranch(branch);
                     }
                 }
@@ -100,11 +102,25 @@ export default function SchedulePage() {
     };
 
     const handleOpenEdit = (event: ScheduleEvent) => {
+        if (currentRole === "athlete") {
+            const isOwnSchedule =
+                event.ownerRole === "me" ||
+                (Boolean(currentUserName) &&
+                    Boolean(event.participantName) &&
+                    event.participantName!
+                        .split(",")
+                        .some((n) => n.trim() === currentUserName));
+            if (!isOwnSchedule) {
+                alert("본인의 일정만 변경할 수 있습니다.");
+                return;
+            }
+        }
         setEditingEvent(event);
         setIsDialogOpen(true);
     };
 
     const handleAddEvent = () => {
+        if (currentRole === "athlete") return;
         setEditingEvent(undefined);
         setIsDialogOpen(true);
     };
@@ -119,12 +135,14 @@ export default function SchedulePage() {
                     </h1>
                 </div>
 
-                <button
-                    onClick={handleAddEvent}
-                    className="bg-brand-red hover:bg-brand-red-dark text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all flex items-center gap-1"
-                >
-                    <Plus className="w-4 h-4" /> 예약
-                </button>
+                {currentRole !== "athlete" && (
+                    <button
+                        onClick={handleAddEvent}
+                        className="bg-brand-red hover:bg-brand-red-dark text-white px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all flex items-center gap-1"
+                    >
+                        <Plus className="w-4 h-4" /> 예약
+                    </button>
+                )}
             </div>
 
             {isLoading ? (

@@ -123,7 +123,7 @@ export function JournalTable({ journals, viewMode = "list" }: JournalTableProps)
                                         {journals.length - idx}
                                     </td>
                                     <td className="py-3.5 px-4 text-center">
-                                        <span className={cn("text-[12px] font-semibold", cfg.labelColor)}>
+                                        <span className="text-[12px] font-semibold text-zinc-900 dark:text-zinc-100">
                                             {label}
                                         </span>
                                     </td>

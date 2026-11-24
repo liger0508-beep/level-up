@@ -386,11 +386,12 @@ export function ScheduleEventDialog({
 
     if (!isOpen) return null;
 
+    const isAthleteEditOnly = currentRole === "athlete";
     const isSlotOccupied = Boolean(startSlot && occupiedSlots.includes(startSlot));
     const isSaveDisabled = Boolean(
+        (isAthleteEditOnly && !editEvent) ||
         !effectiveTitle ||
         !startSlot ||
-        isAthleteAnalysisLimitReached ||
         (currentRole === "athlete" && (!coachName || isSlotOccupied)) ||
         (currentRole !== "athlete" && eventType !== "other" && participants.length === 0)
     );
@@ -419,7 +420,7 @@ export function ScheduleEventDialog({
                     {/* Header */}
                     <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-zinc-100 dark:border-zinc-800">
                         <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50">
-                            {editEvent ? "예약 수정" : "예약 등록"}
+                            {editEvent ? (isAthleteEditOnly ? "일정 날짜·시간 변경" : "예약 수정") : "예약 등록"}
                         </h2>
                         <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
                             <X size={20} className="text-zinc-500" />
@@ -434,12 +435,13 @@ export function ScheduleEventDialog({
                             <label className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400 mb-2">예약 유형</label>
                             <div className="grid grid-cols-4 gap-2">
                                 {EVENT_TYPES.map((t) => (
-                                    <button key={t.value} type="button" onClick={() => setEventType(t.value)}
+                                    <button key={t.value} type="button" disabled={isAthleteEditOnly} onClick={() => !isAthleteEditOnly && setEventType(t.value)}
                                         className={cn(
                                             "h-[42px] flex items-center justify-center gap-1.5 px-2 rounded-xl border-2 transition-all text-xs font-semibold",
                                             eventType === t.value
                                                 ? "border-brand-navy dark:border-brand-navy-light bg-brand-navy/5 dark:bg-brand-navy/20 text-brand-navy dark:text-brand-navy-light font-bold"
-                                                : "border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 text-zinc-600 dark:text-zinc-400"
+                                                : "border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400",
+                                            isAthleteEditOnly ? "opacity-75 cursor-not-allowed" : "hover:border-zinc-300"
                                         )}>
                                         <span className={cn("w-2.5 h-2.5 rounded-full shrink-0", t.color)} />
                                         <span>{t.label}</span>
@@ -467,10 +469,11 @@ export function ScheduleEventDialog({
                                     </label>
                                     <input
                                         type="text"
+                                        disabled={isAthleteEditOnly}
                                         value={otherNote}
                                         onChange={(e) => setOtherNote(e.target.value)}
                                         placeholder="내용을 입력하세요 (예: 외부 미팅, 장비 점검)"
-                                        className={inputCls}
+                                        className={cn(inputCls, isAthleteEditOnly && "opacity-75 cursor-not-allowed bg-zinc-50 dark:bg-zinc-800")}
                                     />
                                 </div>
                             )}
@@ -489,34 +492,41 @@ export function ScheduleEventDialog({
                                 ) : null}
                             </div>
 
-                            <div
-                                className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-hide scroll-smooth [&::-webkit-scrollbar]:hidden"
-                                style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-                                onWheel={(e) => {
-                                    if (e.deltaY !== 0) {
-                                        e.currentTarget.scrollLeft += e.deltaY;
-                                    }
-                                }}
-                            >
-                                {availableCoaches.map((c) => {
-                                    const isSelected = coachName === c.name || coachName === c.originalName;
-                                    return (
-                                        <button
-                                            key={c.id}
-                                            type="button"
-                                            onClick={() => setCoachName(c.originalName || c.name)}
-                                            className={cn(
-                                                "h-[42px] shrink-0 px-4 rounded-xl text-sm font-semibold transition-all border shadow-sm whitespace-nowrap flex items-center justify-center",
-                                                isSelected
-                                                    ? "bg-brand-navy border-brand-navy text-white font-bold scale-[1.02] shadow"
-                                                    : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:border-zinc-400 text-zinc-700 dark:text-zinc-200"
-                                            )}
-                                        >
-                                            {c.name}
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                            {isAthleteEditOnly ? (
+                                <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 text-sm font-bold text-zinc-800 dark:text-zinc-200">
+                                    <span>{coachName || "미지정"}</span>
+                                    <span className="text-xs font-normal text-zinc-400">(변경 불가)</span>
+                                </div>
+                            ) : (
+                                <div
+                                    className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-hide scroll-smooth [&::-webkit-scrollbar]:hidden"
+                                    style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+                                    onWheel={(e) => {
+                                        if (e.deltaY !== 0) {
+                                            e.currentTarget.scrollLeft += e.deltaY;
+                                        }
+                                    }}
+                                >
+                                    {availableCoaches.map((c) => {
+                                        const isSelected = coachName === c.name || coachName === c.originalName;
+                                        return (
+                                            <button
+                                                key={c.id}
+                                                type="button"
+                                                onClick={() => setCoachName(c.originalName || c.name)}
+                                                className={cn(
+                                                    "h-[42px] shrink-0 px-4 rounded-xl text-sm font-semibold transition-all border shadow-sm whitespace-nowrap flex items-center justify-center",
+                                                    isSelected
+                                                        ? "bg-brand-navy border-brand-navy text-white font-bold scale-[1.02] shadow"
+                                                        : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:border-zinc-400 text-zinc-700 dark:text-zinc-200"
+                                                )}
+                                            >
+                                                {c.name}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
 
                         {/* 3. Participants */}
@@ -667,7 +677,7 @@ export function ScheduleEventDialog({
                     {/* Footer (Bottom-right action buttons) */}
                     <div className="flex-shrink-0 flex items-center justify-between px-6 py-3.5 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 sm:rounded-b-2xl">
                         <div>
-                            {editEvent && onDelete && (
+                            {!isAthleteEditOnly && editEvent && onDelete && (
                                 <button
                                     type="button"
                                     onClick={() => {

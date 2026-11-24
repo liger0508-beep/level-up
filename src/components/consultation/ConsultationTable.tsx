@@ -96,7 +96,7 @@ export function ConsultationTable({ consultations, totalCount }: ConsultationTab
                                         </td>
                                         <td className="py-3.5 px-4 text-center">
                                             <div className="flex items-center justify-center gap-1.5">
-                                                <span className={cn("text-[12px] font-semibold whitespace-nowrap", cfg.text)}>
+                                                <span className="text-[12px] font-semibold whitespace-nowrap text-zinc-900 dark:text-zinc-100">
                                                     {label}
                                                 </span>
                                                 {item.targetMonth && (

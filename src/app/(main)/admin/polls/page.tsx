@@ -572,10 +572,7 @@ export default function VoteListPage() {
                                                                 {v.type.split(',').map(t => {
                                                                     const styles = VOTE_TYPE_COLORS[t as VoteType] || VOTE_TYPE_COLORS['all'];
                                                                     return (
-                                                                        <span key={t} className={cn(
-                                                                            "text-[12px] font-semibold whitespace-nowrap",
-                                                                            isOngoing ? styles.text : "text-zinc-400"
-                                                                        )}>
+                                                                        <span key={t} className="text-[12px] font-semibold whitespace-nowrap text-zinc-900 dark:text-zinc-100">
                                                                             {VOTE_TYPE_LABELS[t as VoteType]}
                                                                         </span>
                                                                     );

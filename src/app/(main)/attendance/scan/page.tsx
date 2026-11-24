@@ -13,6 +13,8 @@ function AttendanceScanContent() {
     const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
     const [message, setMessage] = useState("");
     const branch = searchParams.get("branch");
+    const date = searchParams.get("date");
+    const token = searchParams.get("token");
 
     useEffect(() => {
         const processCheckIn = async () => {
@@ -25,20 +27,25 @@ function AttendanceScanContent() {
                 return;
             }
 
-            if (!branch) {
+            if (!branch || !date || !token) {
                 setStatus("error");
-                setMessage("잘못된 접근입니다. 지점 정보가 없습니다.");
+                setMessage("만료되었거나 잘못된 QR 코드입니다. 오늘 날짜의 QR을 스캔해주세요.");
                 return;
             }
 
             try {
-                const res = await checkInAthlete(user.id, branch);
-                if (res.success) {
+                const res = await fetch("/api/kiosk/qr", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ branch, date, token }),
+                });
+                const data = await res.json();
+                if (data.success) {
                     setStatus("success");
                     setMessage(`${branch} 출석 체크가 완료되었습니다!`);
                 } else {
                     setStatus("error");
-                    setMessage(res.message || "이미 출석되었거나 오류가 발생했습니다.");
+                    setMessage(data.message || "이미 출석되었거나 오류가 발생했습니다.");
                 }
             } catch (err) {
                 console.error(err);
@@ -48,7 +55,7 @@ function AttendanceScanContent() {
         };
 
         processCheckIn();
-    }, [branch]);
+    }, [branch, date, token]);
 
     return (
         <div className="max-w-sm w-full bg-white dark:bg-zinc-900 rounded-[2.5rem] p-10 shadow-xl border border-zinc-100 dark:border-zinc-800 space-y-6">

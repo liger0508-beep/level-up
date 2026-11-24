@@ -97,10 +97,7 @@ export function TestTable({ tests, totalCount = 0, basePath = "/training/tests" 
                                     </td>
                                     <td className="py-3.5 px-4">
                                         <div className="flex justify-center">
-                                            <span className={cn(
-                                                "text-[12px] font-semibold whitespace-nowrap",
-                                                colors.text
-                                            )}>
+                                            <span className="text-[12px] font-semibold whitespace-nowrap text-zinc-900 dark:text-zinc-100">
                                                 {typeLabelShort[test.type]}
                                             </span>
                                         </div>

@@ -300,7 +300,7 @@ export function TrainingTable({ trainings, totalCount, onUpdate, basePath }: Tra
                                     <td className="py-3.5 px-4 text-center">
                                         <div className="flex flex-col items-center leading-tight">
 
-                                            <span className={cn("text-[11px] font-bold uppercase", cfg.labelColor)}>
+                                            <span className="text-[11px] font-bold uppercase text-zinc-900 dark:text-zinc-100">
                                                 {cfg.label}
                                             </span>
                                         </div>

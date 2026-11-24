@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { createClient as createServerClient } from '@/lib/supabase/server';
 import { COACH_DEFAULT_SLOTS, generateSlotsFromConfig, resolveCoachSlotConfig } from '@/lib/schedule-slots';
-import { triggerPushRules } from '@/lib/push-notification';
+import { sendPushNotification, triggerPushRules } from '@/lib/push-notification';
 
 export const dynamic = 'force-dynamic';
 
@@ -69,8 +70,25 @@ async function getAthleteMonthlyAnalysisCount(
 
 export async function POST(request: Request) {
     try {
-        const { event, userId } = await request.json();
+        const serverSupabase = await createServerClient();
+        const { data: { user: authUser } } = await serverSupabase.auth.getUser();
         const supabase = getSupabaseAdmin();
+
+        if (authUser) {
+            const { data: authProfile } = await supabase
+                .from("users")
+                .select("role")
+                .eq("id", authUser.id)
+                .maybeSingle();
+            if (authProfile?.role === "athlete" || authProfile?.role === "parent") {
+                return NextResponse.json(
+                    { error: "선수 및 학부모는 신규 예약을 등록할 수 없습니다." },
+                    { status: 403 }
+                );
+            }
+        }
+
+        const { event, userId } = await request.json();
 
         // Enforce monthly 2-time limit on 'analysis' reservations for athletes only (coaches/admins have no limit)
         if (userId && event?.type === "analysis") {
@@ -203,6 +221,27 @@ export async function PUT(request: Request) {
         const { event, userId } = await request.json();
         const supabase = getSupabaseAdmin();
 
+        const serverSupabase = await createServerClient();
+        const { data: { user: authUser } } = await serverSupabase.auth.getUser();
+        let actorProfile: { id: string; role: string | null; name: string | null } | null = null;
+        if (authUser) {
+            const { data: p } = await supabase
+                .from("users")
+                .select("id, role, name")
+                .eq("id", authUser.id)
+                .maybeSingle();
+            actorProfile = p;
+        }
+
+        const { data: existingSchedule } = await supabase
+            .from("schedules")
+            .select("id, creator_id, user_id, title, start_time, end_time")
+            .eq("id", event.id)
+            .maybeSingle();
+
+        const isAthleteOrParent =
+            actorProfile?.role === "athlete" || actorProfile?.role === "parent";
+
         const prefixMap: Record<string, string> = {
             analysis: "[분석]",
             consultation: "[상담]",
@@ -274,6 +313,31 @@ export async function PUT(request: Request) {
         const { error } = await supabase.from("schedules").update(updateData).eq("id", event.id);
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+        // 선수가 일정을 변경한 경우 담당 코치에게 푸시 알림 발송
+        if (isAthleteOrParent) {
+            const targetCoachId = updateData.creator_id || existingSchedule?.creator_id;
+            if (targetCoachId) {
+                const startDate = new Date(updateData.start_time);
+                const kstStr = `${startDate.toLocaleDateString("ko-KR", {
+                    timeZone: "Asia/Seoul",
+                    month: "numeric",
+                    day: "numeric",
+                })} ${startDate.toLocaleTimeString("ko-KR", {
+                    timeZone: "Asia/Seoul",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
+                })}`;
+                const actorName = actorProfile?.name || "선수";
+                sendPushNotification({
+                    userIds: [targetCoachId],
+                    title: "[일정 변경] 선수가 일정을 변경했습니다.",
+                    body: `${actorName}님이 '${title}' 일정을 ${kstStr}로 변경했습니다.`,
+                    url: "/schedule",
+                }).catch(() => {});
+            }
+        }
+
         return NextResponse.json({ success: true });
     } catch (err: any) {
         return NextResponse.json({ error: err.message }, { status: 500 });
@@ -282,8 +346,25 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
     try {
-        const { id } = await request.json();
+        const serverSupabase = await createServerClient();
+        const { data: { user: authUser } } = await serverSupabase.auth.getUser();
         const supabase = getSupabaseAdmin();
+
+        if (authUser) {
+            const { data: authProfile } = await supabase
+                .from("users")
+                .select("role")
+                .eq("id", authUser.id)
+                .maybeSingle();
+            if (authProfile?.role === "athlete" || authProfile?.role === "parent") {
+                return NextResponse.json(
+                    { error: "선수 및 학부모는 예약을 삭제할 수 없습니다." },
+                    { status: 403 }
+                );
+            }
+        }
+
+        const { id } = await request.json();
         const { error } = await supabase.from("schedules").delete().eq("id", id);
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

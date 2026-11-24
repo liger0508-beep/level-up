@@ -94,7 +94,7 @@ export function NoticeTable({ notices, totalCount }: NoticeTableProps) {
                                             {(totalCount ?? notices.length) - idx}
                                         </td>
                                         <td className="py-3.5 px-4 text-center">
-                                            <span className={cn("text-[12px] font-semibold whitespace-nowrap", styles.text)}>
+                                            <span className="text-[12px] font-semibold whitespace-nowrap text-zinc-900 dark:text-zinc-100">
                                                 {NOTICE_TYPE_LABELS[notice.type]}
                                             </span>
                                         </td>

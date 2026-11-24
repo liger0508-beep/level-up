@@ -121,10 +121,10 @@ export function LessonTable({ lessons, totalCount, viewMode = "list", userRole, 
                                     <td className="py-3.5 px-4 text-center">
                                         <div className="flex items-center justify-center gap-2">
                                             <div className="flex flex-col items-center leading-tight">
-                                                {lesson.title?.includes("[기본기]") && <span className="text-[12px] font-black text-brand-red">기본기</span>}
-                                                {lesson.title?.includes("[예습]") && <span className="text-[12px] font-black text-brand-navy">예습</span>}
-                                                {lesson.title?.includes("[복습]") && <span className="text-[12px] font-black text-zinc-500">복습</span>}
-                                                <span className={cn("text-[12px] font-semibold flex items-center gap-1 whitespace-nowrap", cfg.labelColor)}>
+                                                {lesson.title?.includes("[기본기]") && <span className="text-[12px] font-black text-zinc-900 dark:text-zinc-100">기본기</span>}
+                                                {lesson.title?.includes("[예습]") && <span className="text-[12px] font-black text-zinc-900 dark:text-zinc-100">예습</span>}
+                                                {lesson.title?.includes("[복습]") && <span className="text-[12px] font-black text-zinc-900 dark:text-zinc-100">복습</span>}
+                                                <span className="text-[12px] font-semibold flex items-center gap-1 whitespace-nowrap text-zinc-900 dark:text-zinc-100">
                                                     {cfg.label}
 
                                                     {lesson.is_core_lesson && (

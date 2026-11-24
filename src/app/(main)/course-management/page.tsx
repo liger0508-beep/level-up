@@ -299,7 +299,7 @@ export default function CourseManagementPage() {
                                             {filteredRecords.length - idx}
                                         </td>
                                         <td className="py-3.5 px-4 text-center">
-                                            <span className={cn("inline-flex items-center justify-center w-16 px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide", COURSE_CAT_COLORS[item.category].bg, COURSE_CAT_COLORS[item.category].text)}>
+                                            <span className="text-[12px] font-semibold whitespace-nowrap text-zinc-900 dark:text-zinc-100">
                                                 {COURSE_CAT_LABELS[item.category]}
                                             </span>
                                         </td>
