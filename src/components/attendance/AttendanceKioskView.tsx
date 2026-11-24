@@ -74,15 +74,11 @@ export function AttendanceKioskView({ showBackButton = true }: AttendanceKioskVi
     return () => clearInterval(timer);
   }, []);
 
-  const handleNumberClick = (num: string) => {
-    if (phoneNumber.length < 4) {
-      setPhoneNumber((prev) => prev + num);
-    }
-  };
-
-  const handleDelete = () => {
-    setPhoneNumber((prev) => prev.slice(0, -1));
-    if (status === "select") setStatus("idle");
+  const resetAfterDelay = () => {
+    setTimeout(() => {
+      setPhoneNumber("");
+      setStatus("idle");
+    }, 3000);
   };
 
   const processCheckIn = async (id: string, name: string) => {
@@ -97,28 +93,25 @@ export function AttendanceKioskView({ showBackButton = true }: AttendanceKioskVi
       if (data.success) {
         setStatus("success");
         setMessage(`${name} 선수님, 출석 완료되었습니다!`);
-        setTimeout(() => {
-          setPhoneNumber("");
-          setStatus("idle");
-        }, 3000);
+        resetAfterDelay();
       } else {
         setStatus("error");
         setMessage(data.message || "출석 처리에 실패했습니다.");
-        setTimeout(() => setStatus("idle"), 3000);
+        resetAfterDelay();
       }
     } catch {
       setStatus("error");
       setMessage("출석 처리 중 오류가 발생했습니다.");
-      setTimeout(() => setStatus("idle"), 3000);
+      resetAfterDelay();
     }
   };
 
-  const handleSubmit = async () => {
-    if (phoneNumber.length < 4) return;
+  const submitPhone = async (targetPhone: string) => {
+    if (targetPhone.length < 4) return;
 
     setStatus("loading");
     try {
-      const res = await fetch(`/api/kiosk/checkin?last4=${encodeURIComponent(phoneNumber)}`, {
+      const res = await fetch(`/api/kiosk/checkin?last4=${encodeURIComponent(targetPhone)}`, {
         cache: "no-store",
       });
       const data = await res.json();
@@ -127,7 +120,7 @@ export function AttendanceKioskView({ showBackButton = true }: AttendanceKioskVi
       if (athletes.length === 0) {
         setStatus("error");
         setMessage("선수를 찾을 수 없습니다.");
-        setTimeout(() => setStatus("idle"), 3000);
+        resetAfterDelay();
       } else if (athletes.length === 1) {
         await processCheckIn(athletes[0].id, athletes[0].name);
       } else {
@@ -137,9 +130,25 @@ export function AttendanceKioskView({ showBackButton = true }: AttendanceKioskVi
     } catch {
       setStatus("error");
       setMessage("서버 오류가 발생했습니다.");
-      setTimeout(() => setStatus("idle"), 3000);
+      resetAfterDelay();
     }
   };
+
+  const handleNumberClick = (num: string) => {
+    if (status !== "idle" || phoneNumber.length >= 4) return;
+    const nextPhone = phoneNumber + num;
+    setPhoneNumber(nextPhone);
+    if (nextPhone.length === 4) {
+      submitPhone(nextPhone);
+    }
+  };
+
+  const handleDelete = () => {
+    setPhoneNumber((prev) => prev.slice(0, -1));
+    if (status === "select") setStatus("idle");
+  };
+
+  const handleSubmit = () => submitPhone(phoneNumber);
 
   return (
     <div className="min-h-screen bg-white text-zinc-900 flex flex-col overflow-hidden">
