@@ -18,7 +18,33 @@ const getSupabaseAdmin = () => {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
+    const branch = (searchParams.get("branch") || "").trim();
     const last4 = (searchParams.get("last4") || "").trim();
+
+    const supabaseAdmin = getSupabaseAdmin();
+
+    // Return today's checked-in attendees (name + check_in_at only) for a branch
+    if (branch && !last4) {
+      const today = getKstDateStr();
+      const { data, error } = await supabaseAdmin
+        .from("attendance")
+        .select("id, check_in_at, users(name)")
+        .eq("date", today)
+        .eq("branch", branch)
+        .order("check_in_at", { ascending: false });
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+      }
+
+      const attendees = (data || []).map((row: any) => ({
+        id: row.id,
+        name: row.users?.name || "선수",
+        check_in_at: row.check_in_at,
+      }));
+
+      return NextResponse.json({ attendees });
+    }
 
     if (!/^\d{4}$/.test(last4)) {
       return NextResponse.json(
@@ -27,7 +53,6 @@ export async function GET(request: Request) {
       );
     }
 
-    const supabaseAdmin = getSupabaseAdmin();
     const { data, error } = await supabaseAdmin
       .from("users")
       .select("id, name, status")

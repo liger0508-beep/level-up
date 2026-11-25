@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   Delete,
@@ -10,11 +10,11 @@ import {
   Building2,
   Check,
   User,
+  Users,
 } from "lucide-react";
 import { cn, getKstDateStr } from "@/lib/utils";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
-import { QRCodeSVG } from "qrcode.react";
 
 const BRANCHES = ["조이마루점", "구미점"];
 
@@ -35,39 +35,35 @@ export function AttendanceKioskView({ showBackButton = true }: AttendanceKioskVi
   const [message, setMessage] = useState("");
   const [currentTime, setCurrentTime] = useState(new Date());
   const [matches, setMatches] = useState<{ id: string; name: string }[]>([]);
-  const [origin, setOrigin] = useState("");
-  const [dailyQr, setDailyQr] = useState<{ date: string; token: string } | null>(null);
+  const [attendees, setAttendees] = useState<{ id: string; name: string; check_in_at: string }[]>([]);
 
   const todayKst = getKstDateStr(currentTime);
 
-  useEffect(() => {
-    setOrigin(window.location.origin);
+  const loadAttendees = useCallback(async (branch: string) => {
+    try {
+      const res = await fetch(`/api/kiosk/checkin?branch=${encodeURIComponent(branch)}`, {
+        cache: "no-store",
+      });
+      const data = await res.json();
+      if (Array.isArray(data?.attendees)) {
+        setAttendees(data.attendees);
+      }
+    } catch {
+      // ignore transient network errors
+    }
   }, []);
+
+  useEffect(() => {
+    loadAttendees(selectedBranch);
+    const interval = setInterval(() => loadAttendees(selectedBranch), 15000);
+    return () => clearInterval(interval);
+  }, [selectedBranch, todayKst, loadAttendees]);
 
   useEffect(() => {
     if (initialBranch && BRANCHES.includes(initialBranch)) {
       setSelectedBranch(initialBranch);
     }
   }, [initialBranch]);
-
-  useEffect(() => {
-    let active = true;
-    fetch(`/api/kiosk/qr?branch=${encodeURIComponent(selectedBranch)}`, { cache: "no-store" })
-      .then((res) => res.json())
-      .then((data) => {
-        if (active && data?.token && data?.date) {
-          setDailyQr({ date: data.date, token: data.token });
-        }
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [selectedBranch, todayKst]);
-
-  const qrValue = dailyQr
-    ? `${origin}/attendance/scan?branch=${encodeURIComponent(selectedBranch)}&date=${encodeURIComponent(dailyQr.date)}&token=${encodeURIComponent(dailyQr.token)}`
-    : `${origin}/attendance/scan?branch=${encodeURIComponent(selectedBranch)}`;
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -93,6 +89,7 @@ export function AttendanceKioskView({ showBackButton = true }: AttendanceKioskVi
       if (data.success) {
         setStatus("success");
         setMessage(`${name} 선수님, 출석 완료되었습니다!`);
+        loadAttendees(selectedBranch);
         resetAfterDelay();
       } else {
         setStatus("error");
@@ -151,10 +148,10 @@ export function AttendanceKioskView({ showBackButton = true }: AttendanceKioskVi
   const handleSubmit = () => submitPhone(phoneNumber);
 
   return (
-    <div className="min-h-screen bg-white text-zinc-900 flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="p-6 sm:p-8 flex items-start justify-between border-b border-zinc-200 bg-white/95 backdrop-blur-md sticky top-0 z-10">
-        <div className="flex flex-col gap-5">
+    <div className="min-h-screen bg-white text-zinc-900 flex flex-col overflow-x-hidden">
+      {/* Header: Left (ATTENDANCE), Right (Time & Date) */}
+      <div className="p-6 sm:p-8 flex items-end justify-between border-b border-zinc-200 bg-white/95 backdrop-blur-md sticky top-0 z-10">
+        <div className="flex flex-col gap-4">
           {showBackButton && (
             <button
               onClick={() => router.back()}
@@ -172,151 +169,189 @@ export function AttendanceKioskView({ showBackButton = true }: AttendanceKioskVi
           </div>
         </div>
 
-        <div className="flex items-start gap-8">
-          <div className="flex flex-col items-end gap-4">
-            <div className="text-right">
-              <p className="text-3xl sm:text-4xl font-black tracking-tighter leading-none text-zinc-900">
-                {format(currentTime, "HH:mm:ss")}
-              </p>
-              <p className="text-xs text-zinc-500 font-bold mt-1 uppercase">
-                {format(currentTime, "yyyy. MM. dd (EEEE)", { locale: ko })}
-              </p>
-            </div>
-
-            <div className="bg-white p-2.5 rounded-2xl border border-zinc-200 shadow-lg shadow-zinc-200/60 group transition-transform hover:scale-105 active:scale-95 cursor-pointer">
-              <QRCodeSVG value={qrValue} size={100} level="H" includeMargin={false} />
-              <div className="mt-1.5 text-center">
-                <p className="text-[9px] font-black text-brand-navy leading-none">SCAN QR</p>
-              </div>
-            </div>
-          </div>
+        <div className="text-right">
+          <p
+            suppressHydrationWarning
+            className="text-3xl sm:text-4xl font-black tracking-tighter leading-none text-zinc-900"
+          >
+            {format(currentTime, "HH:mm:ss")}
+          </p>
+          <p
+            suppressHydrationWarning
+            className="text-xs sm:text-sm text-zinc-500 font-bold mt-1.5 uppercase"
+          >
+            {format(currentTime, "yyyy. MM. dd (EEEE)", { locale: ko })}
+          </p>
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center max-w-lg mx-auto w-full px-8 py-10">
-        <div className="text-center mb-8 space-y-2">
-          <p className="text-zinc-500 font-medium text-sm">
-            전화번호 뒷자리 4자리 입력 또는 QR 스캔으로 출석해 주세요.
+      <div className="flex-1 flex flex-col justify-center max-w-4xl mx-auto w-full px-6 sm:px-8 py-8">
+        {/* Centered Instruction + Full-Width Branch Selection */}
+        <div className="w-full mb-8 space-y-5">
+          <p className="text-center text-zinc-800 font-bold text-lg sm:text-xl leading-snug break-keep">
+            전화번호 뒷자리 4자리를 입력해 주세요.
           </p>
-        </div>
 
-        {/* Branch Selection */}
-        <div className="w-full flex p-1.5 bg-zinc-100 rounded-2xl border border-zinc-200 mb-8">
-          {BRANCHES.map((b) => (
-            <button
-              key={b}
-              onClick={() => setSelectedBranch(b)}
-              className={cn(
-                "flex-1 py-4 rounded-xl text-sm font-black transition-all flex items-center justify-center gap-2",
-                selectedBranch === b
-                  ? "bg-brand-navy text-white shadow-lg shadow-brand-navy/20 scale-[1.02]"
-                  : "text-zinc-500 hover:text-zinc-900"
-              )}
-            >
-              <Building2 size={18} />
-              {b}
-            </button>
-          ))}
-        </div>
-
-        <div className="w-full space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          {/* Phone Display */}
-          <div
-            className={cn(
-              "w-full min-h-[6rem] bg-zinc-50 rounded-3xl border-2 flex items-center justify-center mb-8 transition-all duration-300 overflow-hidden",
-              status === "success"
-                ? "border-emerald-500 bg-emerald-50"
-                : status === "error"
-                ? "border-red-500 bg-red-50"
-                : status === "select"
-                ? "border-brand-navy bg-brand-navy/5"
-                : "border-zinc-200"
-            )}
-          >
-            {status === "select" ? (
-              <div className="w-full p-4 space-y-3 animate-in fade-in zoom-in-95 duration-300">
-                <p className="text-xs font-bold text-center text-zinc-500 uppercase tracking-widest mb-2">
-                  본인 이름을 선택해 주세요
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  {matches.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => processCheckIn(m.id, m.name)}
-                      className="flex items-center justify-between px-4 py-3 bg-white border border-zinc-200 hover:bg-brand-navy hover:text-white hover:border-brand-navy rounded-xl transition-all text-zinc-900"
-                    >
-                      <span className="font-bold">{m.name}</span>
-                      <User size={14} className="opacity-50" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : status === "idle" || status === "loading" ? (
-              <span
+          <div className="w-full flex p-1.5 bg-zinc-100 rounded-2xl border border-zinc-200">
+            {BRANCHES.map((b) => (
+              <button
+                key={b}
+                onClick={() => setSelectedBranch(b)}
                 className={cn(
-                  "text-5xl font-black tracking-[0.5em] ml-[0.5em]",
-                  phoneNumber ? "text-zinc-900" : "text-zinc-300"
+                  "flex-1 py-4 rounded-xl text-base font-black transition-all flex items-center justify-center gap-2",
+                  selectedBranch === b
+                    ? "bg-brand-navy text-white shadow-lg shadow-brand-navy/20 scale-[1.01]"
+                    : "text-zinc-500 hover:text-zinc-900"
                 )}
               >
-                {phoneNumber.padEnd(4, "*")}
-              </span>
-            ) : (
-              <div className="flex flex-col items-center animate-in zoom-in-95 duration-300 px-6 text-center">
-                {status === "success" ? (
-                  <CheckCircle2 size={32} className="text-emerald-500 mb-1" />
-                ) : (
-                  <XCircle size={32} className="text-red-500 mb-1" />
-                )}
-                <p
+                <Building2 size={18} />
+                {b}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Left: Keypad | Right: Today's Attendees */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 sm:gap-8 items-stretch">
+          {/* Left Column: Phone Display + Keypad */}
+          <div className="w-full space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            {/* Phone Display */}
+            <div
+              className={cn(
+                "w-full min-h-[6rem] bg-zinc-50 rounded-3xl border-2 flex items-center justify-center transition-all duration-300 overflow-hidden",
+                status === "success"
+                  ? "border-emerald-500 bg-emerald-50"
+                  : status === "error"
+                  ? "border-red-500 bg-red-50"
+                  : status === "select"
+                  ? "border-brand-navy bg-brand-navy/5"
+                  : "border-zinc-200"
+              )}
+            >
+              {status === "select" ? (
+                <div className="w-full p-4 space-y-3 animate-in fade-in zoom-in-95 duration-300">
+                  <p className="text-xs font-bold text-center text-zinc-500 uppercase tracking-widest mb-2">
+                    본인 이름을 선택해 주세요
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {matches.map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={() => processCheckIn(m.id, m.name)}
+                        className="flex items-center justify-between px-4 py-3 bg-white border border-zinc-200 hover:bg-brand-navy hover:text-white hover:border-brand-navy rounded-xl transition-all text-zinc-900"
+                      >
+                        <span className="font-bold">{m.name}</span>
+                        <User size={14} className="opacity-50" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : status === "idle" || status === "loading" ? (
+                <span
                   className={cn(
-                    "text-sm font-bold",
-                    status === "success" ? "text-emerald-600" : "text-red-600"
+                    "text-5xl font-black tracking-[0.5em] ml-[0.5em]",
+                    phoneNumber ? "text-zinc-900" : "text-zinc-300"
                   )}
                 >
-                  {message}
-                </p>
-              </div>
-            )}
-          </div>
+                  {phoneNumber.padEnd(4, "*")}
+                </span>
+              ) : (
+                <div className="flex flex-col items-center animate-in zoom-in-95 duration-300 px-6 text-center">
+                  {status === "success" ? (
+                    <CheckCircle2 size={32} className="text-emerald-500 mb-1" />
+                  ) : (
+                    <XCircle size={32} className="text-red-500 mb-1" />
+                  )}
+                  <p
+                    className={cn(
+                      "text-sm font-bold",
+                      status === "success" ? "text-emerald-600" : "text-red-600"
+                    )}
+                  >
+                    {message}
+                  </p>
+                </div>
+              )}
+            </div>
 
-          {/* Keypad */}
-          <div className="w-full grid grid-cols-3 gap-4">
-            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
+            {/* Keypad */}
+            <div className="w-full grid grid-cols-3 gap-3.5">
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
+                <button
+                  key={num}
+                  onClick={() => handleNumberClick(num.toString())}
+                  disabled={status !== "idle" && status !== "select"}
+                  className="h-20 bg-zinc-50 hover:bg-zinc-100 active:scale-95 transition-all rounded-2xl text-2xl font-black flex items-center justify-center border border-zinc-200 text-zinc-900 shadow-sm"
+                >
+                  {num}
+                </button>
+              ))}
               <button
-                key={num}
-                onClick={() => handleNumberClick(num.toString())}
+                onClick={handleDelete}
+                disabled={status !== "idle" && status !== "select" && status !== "error"}
+                className="h-20 bg-zinc-50 hover:bg-zinc-100 active:scale-95 transition-all rounded-2xl flex items-center justify-center border border-zinc-200 shadow-sm"
+              >
+                <Delete size={28} className="text-zinc-500" />
+              </button>
+              <button
+                onClick={() => handleNumberClick("0")}
                 disabled={status !== "idle" && status !== "select"}
                 className="h-20 bg-zinc-50 hover:bg-zinc-100 active:scale-95 transition-all rounded-2xl text-2xl font-black flex items-center justify-center border border-zinc-200 text-zinc-900 shadow-sm"
               >
-                {num}
+                0
               </button>
-            ))}
-            <button
-              onClick={handleDelete}
-              disabled={status !== "idle" && status !== "select" && status !== "error"}
-              className="h-20 bg-zinc-50 hover:bg-zinc-100 active:scale-95 transition-all rounded-2xl flex items-center justify-center border border-zinc-200 shadow-sm"
-            >
-              <Delete size={28} className="text-zinc-500" />
-            </button>
-            <button
-              onClick={() => handleNumberClick("0")}
-              disabled={status !== "idle" && status !== "select"}
-              className="h-20 bg-zinc-50 hover:bg-zinc-100 active:scale-95 transition-all rounded-2xl text-2xl font-black flex items-center justify-center border border-zinc-200 text-zinc-900 shadow-sm"
-            >
-              0
-            </button>
-            <button
-              onClick={handleSubmit}
-              disabled={(status !== "idle" && status !== "select") || phoneNumber.length < 4}
-              className={cn(
-                "h-20 rounded-2xl flex items-center justify-center transition-all active:scale-95 shadow-lg",
-                phoneNumber.length >= 4
-                  ? "bg-brand-navy hover:bg-brand-navy-dark text-white shadow-brand-navy/20"
-                  : "bg-zinc-100 text-zinc-300 border border-zinc-200 cursor-not-allowed shadow-none"
+              <button
+                onClick={handleSubmit}
+                disabled={(status !== "idle" && status !== "select") || phoneNumber.length < 4}
+                className={cn(
+                  "h-20 rounded-2xl flex items-center justify-center transition-all active:scale-95 shadow-lg",
+                  phoneNumber.length >= 4
+                    ? "bg-brand-navy hover:bg-brand-navy-dark text-white shadow-brand-navy/20"
+                    : "bg-zinc-100 text-zinc-300 border border-zinc-200 cursor-not-allowed shadow-none"
+                )}
+              >
+                <Check size={32} strokeWidth={3} />
+              </button>
+            </div>
+          </div>
+
+          {/* Right Column: Today's Attendees (matches keypad column height + internal scroll) */}
+          <div className="relative min-h-[280px] sm:min-h-0">
+            <div className="sm:absolute sm:inset-0 w-full h-full rounded-3xl border border-zinc-200 bg-zinc-50/70 p-5 flex flex-col">
+              <div className="flex items-center justify-between pb-3.5 border-b border-zinc-200 shrink-0">
+                <div className="flex items-center gap-2">
+                  <Users size={18} className="text-brand-navy" />
+                  <h2 className="text-base font-black text-zinc-900">오늘 출석 명단</h2>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full bg-brand-navy text-white text-xs font-bold">
+                  {attendees.length}명
+                </span>
+              </div>
+
+              {attendees.length === 0 ? (
+                <div className="flex-1 flex items-center justify-center text-sm font-medium text-zinc-400">
+                  아직 출석한 선수가 없습니다.
+                </div>
+              ) : (
+                <div className="mt-3 flex-1 min-h-0 overflow-y-auto divide-y divide-zinc-200/70 pr-1">
+                  {attendees.map((att) => (
+                    <div
+                      key={att.id}
+                      className="py-3 px-1 flex items-center justify-between text-base"
+                    >
+                      <span className="font-bold text-zinc-900">{att.name}</span>
+                      <span className="font-semibold text-zinc-500 tabular-nums">
+                        {new Date(att.check_in_at).toLocaleTimeString("en-GB", {
+                          timeZone: "Asia/Seoul",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               )}
-            >
-              <Check size={32} strokeWidth={3} />
-            </button>
+            </div>
           </div>
         </div>
       </div>

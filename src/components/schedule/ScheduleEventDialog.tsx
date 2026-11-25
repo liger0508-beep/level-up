@@ -95,7 +95,10 @@ export function ScheduleEventDialog({
     const [customSlots, setCustomSlots] = useState<typeof COACH_TIME_SLOTS | null>(null);
     const [isLoadingSlots, setIsLoadingSlots] = useState(false);
     const [isSelectingRangeEnd, setIsSelectingRangeEnd] = useState(false);
+    const [useCustomTime, setUseCustomTime] = useState(false);
     const [athleteAnalysisCount, setAthleteAnalysisCount] = useState<number>(0);
+
+    const canUseCustomTime = currentRole !== "athlete" && currentRole !== "parent";
 
     useEffect(() => {
         const fetchCoaches = async () => {
@@ -236,13 +239,13 @@ export function ScheduleEventDialog({
         };
     }, [isOpen, coachName, date, editEvent?.id, currentRole, currentUserName]);
 
-    // If currently selected slot is occupied, reset it
+    // If currently selected slot is occupied (athlete only), reset it
     useEffect(() => {
-        if (startSlot && occupiedSlots.includes(startSlot)) {
+        if (!canUseCustomTime && startSlot && occupiedSlots.includes(startSlot)) {
             setStartSlot(null);
             setEndSlot(null);
         }
-    }, [occupiedSlots, startSlot]);
+    }, [canUseCustomTime, occupiedSlots, startSlot]);
 
     // Effect to populate form when editEvent changes
     useEffect(() => {
@@ -262,6 +265,9 @@ export function ScheduleEventDialog({
             setStartSlot(s);
             setEndSlot(e === s ? null : e);
             setIsSelectingRangeEnd(false);
+            const slotsToCheck = customSlots || (currentRole === "athlete" ? ATHLETE_TIME_SLOTS : COACH_TIME_SLOTS);
+            const matchesPreset = slotsToCheck.some((sl) => sl.start === s) && (!e || e === s || slotsToCheck.some((sl) => sl.end === e));
+            setUseCustomTime(canUseCustomTime && !matchesPreset);
             setParticipants(editEvent.participantName ? editEvent.participantName.split(", ") : []);
             const cName = editEvent.coachName === "성시우" ? "성시우 감독" : (editEvent.coachName || "");
             setCoachName(cName);
@@ -358,6 +364,10 @@ export function ScheduleEventDialog({
             alert("시간을 선택해주세요.");
             return;
         }
+        if (useCustomTime && (!endSlot || endSlot <= startSlot)) {
+            alert("종료 시간은 시작 시간보다 뒤여야 합니다.");
+            return;
+        }
         if (currentRole === "athlete" && !coachName) {
             alert("담당 코치를 선택해주세요.");
             return;
@@ -388,10 +398,12 @@ export function ScheduleEventDialog({
 
     const isAthleteEditOnly = currentRole === "athlete";
     const isSlotOccupied = Boolean(startSlot && occupiedSlots.includes(startSlot));
+    const isInvalidCustomRange = Boolean(useCustomTime && startSlot && (!endSlot || endSlot <= startSlot));
     const isSaveDisabled = Boolean(
         (isAthleteEditOnly && !editEvent) ||
         !effectiveTitle ||
         !startSlot ||
+        isInvalidCustomRange ||
         (currentRole === "athlete" && (!coachName || isSlotOccupied)) ||
         (currentRole !== "athlete" && eventType !== "other" && participants.length === 0)
     );
@@ -593,79 +605,139 @@ export function ScheduleEventDialog({
                                 <label className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
                                     시간 <span className="text-red-500">*</span>
                                 </label>
-                                {currentRole !== "athlete" && (
-                                    <span className="text-[11px] text-zinc-400">
-                                        {isSelectingRangeEnd
-                                            ? "종료 타임을 클릭하세요 (같은 타임 재클릭 시 해제)"
-                                            : "시작·종료 타임 클릭 시 연속 선택"}
-                                    </span>
+                                {canUseCustomTime && (
+                                    <div className="flex items-center gap-2">
+                                        {!useCustomTime && (
+                                            <span className="text-[11px] text-zinc-400 hidden sm:inline">
+                                                {isSelectingRangeEnd
+                                                    ? "종료 타임 클릭 시 연속 선택"
+                                                    : "시작·종료 타임 클릭 시 연속 선택"}
+                                            </span>
+                                        )}
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setUseCustomTime((prev) => {
+                                                    const next = !prev;
+                                                    if (next) {
+                                                        if (!startSlot) setStartSlot("09:00");
+                                                        if (!endSlot) setEndSlot(startSlot ? endSlot || "09:50" : "09:50");
+                                                        setIsSelectingRangeEnd(false);
+                                                    }
+                                                    return next;
+                                                });
+                                            }}
+                                            className={cn(
+                                                "px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer",
+                                                useCustomTime
+                                                    ? "bg-brand-navy text-white border-brand-navy shadow-xs"
+                                                    : "bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                                            )}
+                                        >
+                                            {useCustomTime ? "버튼 선택으로" : "직접 입력"}
+                                        </button>
+                                    </div>
                                 )}
                             </div>
 
-                            <div className={cn(
-                                "grid gap-2 mb-2",
-                                activeTimeSlots.length <= 7 ? "grid-cols-4 sm:grid-cols-7" : "grid-cols-4 sm:grid-cols-6"
-                            )}>
-                                {activeTimeSlots.map((slot) => {
-                                    const selected = Boolean(
-                                        startSlot &&
-                                        (endSlot
-                                            ? slot.start >= startSlot && slot.end <= endSlot
-                                            : slot.start === startSlot)
-                                    );
-                                    const isOccupied = occupiedSlots.includes(slot.start);
-                                    const isAthleteBlocked = currentRole === "athlete" && isOccupied;
+                            {canUseCustomTime && useCustomTime ? (
+                                <div className="space-y-2 mb-2">
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-zinc-400 mb-1">
+                                                시작 시간
+                                            </label>
+                                            <input
+                                                type="time"
+                                                value={startSlot || ""}
+                                                onChange={(e) => setStartSlot(e.target.value || null)}
+                                                className="w-full py-2 px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-semibold text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-navy/40"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-semibold text-zinc-400 mb-1">
+                                                종료 시간
+                                            </label>
+                                            <input
+                                                type="time"
+                                                value={endSlot || ""}
+                                                onChange={(e) => setEndSlot(e.target.value || null)}
+                                                className="w-full py-2 px-3 rounded-xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-semibold text-zinc-800 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-brand-navy/40"
+                                            />
+                                        </div>
+                                    </div>
+                                    {isInvalidCustomRange && (
+                                        <p className="text-xs font-medium text-red-500">
+                                            종료 시간은 시작 시간보다 뒤여야 합니다.
+                                        </p>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className={cn(
+                                    "grid gap-2 mb-2",
+                                    activeTimeSlots.length <= 7 ? "grid-cols-4 sm:grid-cols-7" : "grid-cols-4 sm:grid-cols-6"
+                                )}>
+                                    {activeTimeSlots.map((slot) => {
+                                        const selected = Boolean(
+                                            startSlot &&
+                                            (endSlot
+                                                ? slot.start >= startSlot && slot.end <= endSlot
+                                                : slot.start === startSlot)
+                                        );
+                                        const isOccupied = occupiedSlots.includes(slot.start);
+                                        const isAthleteBlocked = currentRole === "athlete" && isOccupied;
 
-                                    return (
-                                        <button
-                                            key={slot.key}
-                                            type="button"
-                                            disabled={isAthleteBlocked}
-                                            onClick={() => !isAthleteBlocked && handleSlotClick(slot)}
-                                            title={isOccupied ? "해당 시간에 코치의 일정이 이미 등록되어 있습니다." : ""}
-                                            className={cn(
-                                                "h-[42px] rounded-xl text-sm font-semibold transition-all text-center border shadow-sm relative flex flex-col items-center justify-center overflow-hidden",
-                                                isOccupied
-                                                    ? "bg-zinc-100 dark:bg-zinc-800/60 border-zinc-200 dark:border-zinc-800 text-zinc-400 dark:text-zinc-500" +
-                                                      (isAthleteBlocked ? " cursor-not-allowed opacity-75" : " hover:border-zinc-300 dark:hover:border-zinc-700")
-                                                    : selected
-                                                    ? "bg-brand-navy border-brand-navy text-white font-bold scale-[1.02] shadow"
-                                                    : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:border-zinc-400 text-zinc-700 dark:text-zinc-200"
-                                            )}
-                                        >
-                                            {/* Diagonal Slash Line when occupied */}
-                                            {isOccupied && (
-                                                <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                                                    <svg
-                                                        className="w-full h-full text-zinc-300 dark:text-zinc-600"
-                                                        preserveAspectRatio="none"
-                                                        viewBox="0 0 100 100"
-                                                    >
-                                                        <line
-                                                            x1="10"
-                                                            y1="90"
-                                                            x2="90"
-                                                            y2="10"
-                                                            stroke="currentColor"
-                                                            strokeWidth="2"
-                                                            strokeLinecap="round"
-                                                        />
-                                                    </svg>
-                                                </div>
-                                            )}
+                                        return (
+                                            <button
+                                                key={slot.key}
+                                                type="button"
+                                                disabled={isAthleteBlocked}
+                                                onClick={() => !isAthleteBlocked && handleSlotClick(slot)}
+                                                title={isOccupied ? "해당 시간에 코치의 일정이 이미 등록되어 있습니다." : ""}
+                                                className={cn(
+                                                    "h-[42px] rounded-xl text-sm font-semibold transition-all text-center border shadow-sm relative flex flex-col items-center justify-center overflow-hidden",
+                                                    isOccupied
+                                                        ? "bg-zinc-100 dark:bg-zinc-800/60 border-zinc-200 dark:border-zinc-800 text-zinc-400 dark:text-zinc-500" +
+                                                          (isAthleteBlocked ? " cursor-not-allowed opacity-75" : " hover:border-zinc-300 dark:hover:border-zinc-700")
+                                                        : selected
+                                                        ? "bg-brand-navy border-brand-navy text-white font-bold scale-[1.02] shadow"
+                                                        : "border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 hover:border-zinc-400 text-zinc-700 dark:text-zinc-200"
+                                                )}
+                                            >
+                                                {/* Diagonal Slash Line when occupied */}
+                                                {isOccupied && (
+                                                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                                                        <svg
+                                                            className="w-full h-full text-zinc-300 dark:text-zinc-600"
+                                                            preserveAspectRatio="none"
+                                                            viewBox="0 0 100 100"
+                                                        >
+                                                            <line
+                                                                x1="10"
+                                                                y1="90"
+                                                                x2="90"
+                                                                y2="10"
+                                                                stroke="currentColor"
+                                                                strokeWidth="2"
+                                                                strokeLinecap="round"
+                                                            />
+                                                        </svg>
+                                                    </div>
+                                                )}
 
-                                            <span className={cn("relative z-10 leading-none", isOccupied && "text-zinc-400 dark:text-zinc-500 text-xs")}>
-                                                {slot.label}
-                                            </span>
-                                            {isOccupied && (
-                                                <span className="relative z-10 text-[9px] font-medium text-zinc-400 dark:text-zinc-500 leading-none mt-0.5">
-                                                    (예약됨)
+                                                <span className={cn("relative z-10 leading-none", isOccupied && "text-zinc-400 dark:text-zinc-500 text-xs")}>
+                                                    {slot.label}
                                                 </span>
-                                            )}
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                                                {isOccupied && (
+                                                    <span className="relative z-10 text-[9px] font-medium text-zinc-400 dark:text-zinc-500 leading-none mt-0.5">
+                                                        (예약됨)
+                                                    </span>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
 
                             <div className="flex items-center justify-between text-xs text-zinc-400 pt-1 border-t border-zinc-100 dark:border-zinc-800">
                                 <span>선택: <strong className="text-zinc-700 dark:text-zinc-200">{timeLabel}</strong></span>
