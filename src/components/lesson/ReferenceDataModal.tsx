@@ -177,13 +177,185 @@ function createWorstShotInfo(s: any, h: any) {
     };
 }
 
+const CATEGORY_TO_FIELD: Record<string, string> = {
+    "티샷 비거리": "distSG_DriverDist",
+    "티샷 정확도": "distSG_DriverAcc",
+    "180M이상": "distSG_180Plus",
+    "150-179M": "distSG_150_179",
+    "120-149M": "distSG_120_149",
+    "90-119M": "distSG_90_119",
+    "피치샷": "distSG_Pitch31_89",
+    "벙커": "distSG_Bunker",
+    "어프로치": "distSG_Approach",
+    "9M이상": "distSG_Putt9Plus",
+    "4-8M": "distSG_Putt4_8",
+    "2-3M": "distSG_Putt2_3",
+    "1M": "distSG_Putt1",
+};
+
+function buildScoreDataFromRounds(rounds: { sc: any; result: HoleAnalysis[] }[]) {
+    if (rounds.length === 0) return null;
+    const count = rounds.length;
+    const isMultiRound = count > 1;
+    const primary = rounds[0];
+
+    const sumCats = (key: keyof HoleAnalysis["summary"]) =>
+        rounds.reduce(
+            (acc, r) => acc + r.result.reduce((s, h) => s + ((h.summary as any)[key] || 0), 0),
+            0
+        ) / count;
+
+    const cats = [
+        { name: "티샷 비거리", sg: sumCats("distSG_DriverDist") },
+        { name: "티샷 정확도", sg: sumCats("distSG_DriverAcc") },
+        { name: "180M이상", sg: sumCats("distSG_180Plus") },
+        { name: "150-179M", sg: sumCats("distSG_150_179") },
+        { name: "120-149M", sg: sumCats("distSG_120_149") },
+        { name: "90-119M", sg: sumCats("distSG_90_119") },
+        { name: "피치샷", sg: sumCats("distSG_Pitch31_89") },
+        { name: "벙커", sg: sumCats("distSG_Bunker") },
+        { name: "어프로치", sg: sumCats("distSG_Approach") },
+        { name: "9M이상", sg: sumCats("distSG_Putt9Plus") },
+        { name: "4-8M", sg: sumCats("distSG_Putt4_8") },
+        { name: "2-3M", sg: sumCats("distSG_Putt2_3") },
+        { name: "1M", sg: sumCats("distSG_Putt1") },
+    ];
+
+    const teeSG = cats.filter(c => c.name === "티샷 비거리" || c.name === "티샷 정확도").reduce((s, c) => s + c.sg, 0);
+    const secondSG = cats.filter(c => ["180M이상", "150-179M", "120-149M", "90-119M"].includes(c.name)).reduce((s, c) => s + c.sg, 0);
+    const greenSG = cats.filter(c => ["피치샷", "벙커", "어프로치"].includes(c.name)).reduce((s, c) => s + c.sg, 0);
+    const puttingSG = cats.filter(c => ["9M이상", "4-8M", "2-3M", "1M"].includes(c.name)).reduce((s, c) => s + c.sg, 0);
+
+    const longSG = teeSG + secondSG;
+    const shortSG = greenSG + puttingSG;
+    const longVsShort = shortSG - longSG;
+    const avgTotalScore = rounds.reduce((acc, r) => acc + (r.sc.total_score || 0), 0) / count;
+    const avgTotalPar = rounds.reduce((acc, r) => acc + r.result.reduce((s, h) => s + h.par, 0), 0) / count;
+    const playContent = avgTotalScore + ((longVsShort * -1) / 2);
+    const scoreVsContent = avgTotalScore - playContent;
+
+    const totalAbsSG = cats.reduce((s, c) => s + Math.abs(c.sg), 0);
+    const categoriesWithPercent = cats.map(c => ({
+        ...c,
+        percent: totalAbsSG > 0 ? (Math.abs(c.sg) / totalAbsSG) * 100 : 0
+    })).sort((a, b) => a.sg - b.sg);
+
+    const negativeCats = [...cats].filter(c => c.sg < 0).sort((a, b) => a.sg - b.sg);
+    const positiveCats = categoriesWithPercent.filter(c => c.sg > 0).sort((a, b) => b.percent - a.percent);
+
+    const strongPlan = negativeCats.slice(0, 1).map((c) => {
+        const fieldName = CATEGORY_TO_FIELD[c.name];
+        const holeNumbers = isMultiRound
+            ? []
+            : primary.result
+                .filter(h => (h.summary as any)[fieldName] < 0)
+                .sort((a, b) => (a.summary as any)[fieldName] - (b.summary as any)[fieldName])
+                .slice(0, 5)
+                .sort((a, b) => a.holeNumber - b.holeNumber)
+                .map(h => h.holeNumber);
+        return { label: c.name, holeNumbers };
+    });
+
+    const challengePlan = positiveCats.slice(0, 2).map((c) => {
+        const fieldName = CATEGORY_TO_FIELD[c.name];
+        const holeNumbers = isMultiRound
+            ? []
+            : primary.result
+                .filter(h => (h.summary as any)[fieldName] > 0)
+                .sort((a, b) => (b.summary as any)[fieldName] - (a.summary as any)[fieldName])
+                .slice(0, 5)
+                .sort((a, b) => a.holeNumber - b.holeNumber)
+                .map(h => h.holeNumber);
+        return { label: c.name, holeNumbers };
+    });
+
+    const allHoles = rounds.flatMap(r => r.result);
+    const fwHoles = allHoles.filter(h => h.summary.fairwayHit !== '-' && h.score > 0 && h.par >= 4);
+    const fwHits = fwHoles.filter(h => h.summary.fairwayHit === 'O').length;
+    const fairwayHitRate = fwHoles.length > 0 ? (fwHits / fwHoles.length) * 100 : 0;
+
+    const validGirHoles = allHoles.filter(h => h.score > 0 && h.par > 0);
+    const girHits = validGirHoles.filter(h => h.summary.gir === 'O').length;
+    const girRate = validGirHoles.length > 0 ? (girHits / validGirHoles.length) * 100 : 0;
+
+    const missedGirHoles = allHoles.filter(h => h.summary && h.summary.gir === 'X' && h.par > 0 && h.score > 0);
+    const parSaves = missedGirHoles.filter(h => h.score <= h.par);
+    const parSaveRate = missedGirHoles.length > 0 ? (parSaves.length / missedGirHoles.length) * 100 : 0;
+
+    const avgPutts = allHoles.reduce((s, h) => s + h.summary.putts, 0) / count;
+    const avgThreePutts = allHoles.filter(h => h.summary.putts >= 3).length / count;
+    const avgPenalties = (allHoles.reduce((s, h) => s + h.summary.paCount, 0) + allHoles.reduce((s, h) => s + h.summary.obCount, 0)) / count;
+
+    const formatScore = (val: number) => (val === 0 ? "0" : (val > 0 ? "+" : "") + val.toFixed(2));
+    const roundToOne = (num: number) => Number(Math.round(Number(num + "e1")) + "e-1").toFixed(1);
+
+    const shotNotes: any[] = [];
+    if (!isMultiRound) {
+        primary.result.forEach((h: any) => {
+            h.shots.forEach((shot: any) => {
+                if (shot.memo && shot.memo.trim() !== '') {
+                    shotNotes.push({
+                        hole: h.holeNumber,
+                        shotNumber: shot.shotNumber,
+                        attemptPos: shot.shotLabel ? shot.shotLabel.split('/')[0].trim() : "",
+                        attemptDist: shot.attemptDistance,
+                        landingPos: shot.landingLabel || "",
+                        memo: shot.memo
+                    });
+                }
+            });
+        });
+    }
+
+    const displayScore = isMultiRound ? Number(roundToOne(avgTotalScore)) : primary.sc.total_score;
+    const displayPar = isMultiRound ? Number(roundToOne(avgTotalPar)) : avgTotalPar;
+
+    return {
+        isMultiRound,
+        roundCountUsed: count,
+        date: isMultiRound
+            ? `${rounds[count - 1].sc.round_date} ~ ${primary.sc.round_date}`
+            : primary.sc.round_date,
+        course: isMultiRound ? `최근 ${count}건 평균` : primary.sc.course_name,
+        totalScore: displayScore,
+        totalPar: displayPar,
+        memo: isMultiRound ? null : primary.sc.memo,
+        notes: shotNotes,
+        playContent: roundToOne(playContent),
+        scoreVsContent: (scoreVsContent > 0 ? "+" : "") + roundToOne(scoreVsContent),
+        longVsShort: (longVsShort > 0 ? "+" : "") + roundToOne(longVsShort),
+        avgMetrics: [
+            { label: <>페어웨이<br />안착률</>, value: (fairwayHitRate > 0 ? fairwayHitRate.toFixed(1) : "-"), unit: fairwayHitRate > 0 ? "%" : "" },
+            { label: "그린 적중률", value: (girRate > 0 ? girRate.toFixed(1) : "-"), unit: girRate > 0 ? "%" : "" },
+            { label: "파세이브율", value: (parSaveRate > 0 ? parSaveRate.toFixed(1) : "-"), unit: parSaveRate > 0 ? "%" : "" },
+            { label: "퍼트수", value: isMultiRound ? roundToOne(avgPutts) : avgPutts, unit: "개" },
+            { label: "3퍼트 이상", value: isMultiRound ? roundToOne(avgThreePutts) : avgThreePutts, unit: "회" },
+            { label: "패널티/OB", value: isMultiRound ? roundToOne(avgPenalties) : avgPenalties, unit: "개" },
+        ],
+        sectorChanges: [
+            { type: "티샷", value: formatScore(teeSG), items: cats.slice(0, 2) },
+            { type: "세컨샷", value: formatScore(secondSG), items: cats.slice(2, 6) },
+            { type: "숏게임", value: formatScore(greenSG), items: cats.slice(6, 9) },
+            { type: "퍼팅", value: formatScore(puttingSG), items: cats.slice(9, 13) }
+        ],
+        strongPlan,
+        challengePlan,
+        result: isMultiRound ? [] : primary.result
+    };
+}
+
 export default function ReferenceDataModal({ isOpen, onClose, playerName }: { isOpen: boolean; onClose: () => void; playerName: string }) {
     const [loading, setLoading] = useState(true);
+    const [scoreLoading, setScoreLoading] = useState(false);
+    const [roundCount, setRoundCount] = useState<1 | 3 | 5>(1);
+    const [finalScorecards, setFinalScorecards] = useState<any[]>([]);
     const [scoreData, setScoreData] = useState<any>(null);
     const [trainingData, setTrainingData] = useState<any>(null);
     const [selectedPlanLabel, setSelectedPlanLabel] = useState<string | null>(null);
     const [selectedHoleDetails, setSelectedHoleDetails] = useState<{ holeNumber: number, label: string } | null>(null);
 
+    const scoreCacheRef = useRef<Record<number, any>>({});
+    const roundAnalysisCacheRef = useRef<Record<string, HoleAnalysis[]>>({});
     const touchStartX = useRef<number>(0);
     const touchEndX = useRef<number>(0);
 
@@ -253,6 +425,11 @@ export default function ReferenceDataModal({ isOpen, onClose, playerName }: { is
     useEffect(() => {
         if (!isOpen || !playerName) return;
         let isMounted = true;
+        setRoundCount(1);
+        setSelectedPlanLabel(null);
+        setSelectedHoleDetails(null);
+        scoreCacheRef.current = {};
+        roundAnalysisCacheRef.current = {};
 
         const fetchData = async () => {
             setLoading(true);
@@ -262,156 +439,27 @@ export default function ReferenceDataModal({ isOpen, onClose, playerName }: { is
                 if (!userRes) return;
                 const userId = userRes.id;
 
-                // 1. Fetch Recent Scorecard (must match fetchLatestScoreByPlayer criteria)
+                // 1. Fetch Recent Scorecard metadata (only analyze the latest 1 initially)
                 const { data: scorecards } = await supabase
                     .from("scorecards")
-                    .select("id, round_date, course_name, total_score, athlete_id, memo, is_final, holes:scorecard_holes(hole_number, par, score, shots:scorecard_shots(*))")
+                    .select("id, round_date, course_name, total_score, athlete_id, memo, is_final")
                     .eq("athlete_id", userId)
                     .order("round_date", { ascending: false })
                     .order("created_at", { ascending: false })
                     .limit(10);
 
-                const sc = scorecards?.find((s: any) => s.is_final !== false);
+                const finals = (scorecards || []).filter((s: any) => s.is_final !== false);
+                if (isMounted) setFinalScorecards(finals);
 
+                const sc = finals[0];
                 if (sc) {
                     const result = await calculateScorecardAnalysis(sc.id);
-                    const cats = [
-                        { name: "티샷 비거리", sg: result.reduce((s, h) => s + h.summary.distSG_DriverDist, 0) },
-                        { name: "티샷 정확도", sg: result.reduce((s, h) => s + h.summary.distSG_DriverAcc, 0) },
-                        { name: "180M이상", sg: result.reduce((s, h) => s + h.summary.distSG_180Plus, 0) },
-                        { name: "150-179M", sg: result.reduce((s, h) => s + h.summary.distSG_150_179, 0) },
-                        { name: "120-149M", sg: result.reduce((s, h) => s + h.summary.distSG_120_149, 0) },
-                        { name: "90-119M", sg: result.reduce((s, h) => s + h.summary.distSG_90_119, 0) },
-                        { name: "피치샷", sg: result.reduce((s, h) => s + h.summary.distSG_Pitch31_89, 0) },
-                        { name: "벙커", sg: result.reduce((s, h) => s + h.summary.distSG_Bunker, 0) },
-                        { name: "어프로치", sg: result.reduce((s, h) => s + h.summary.distSG_Approach, 0) },
-                        { name: "9M이상", sg: result.reduce((s, h) => s + h.summary.distSG_Putt9Plus, 0) },
-                        { name: "4-8M", sg: result.reduce((s, h) => s + h.summary.distSG_Putt4_8, 0) },
-                        { name: "2-3M", sg: result.reduce((s, h) => s + h.summary.distSG_Putt2_3, 0) },
-                        { name: "1M", sg: result.reduce((s, h) => s + h.summary.distSG_Putt1, 0) },
-                    ];
-                    const teeSG = cats.filter(c => c.name === "티샷 비거리" || c.name === "티샷 정확도").reduce((s, c) => s + c.sg, 0);
-                    const secondSG = cats.filter(c => ["180M이상", "150-179M", "120-149M", "90-119M"].includes(c.name)).reduce((s, c) => s + c.sg, 0);
-                    const greenSG = cats.filter(c => ["피치샷", "벙커", "어프로치"].includes(c.name)).reduce((s, c) => s + c.sg, 0);
-                    const puttingSG = cats.filter(c => ["9M이상", "4-8M", "2-3M", "1M"].includes(c.name)).reduce((s, c) => s + c.sg, 0);
-
-                    const longSG = teeSG + secondSG;
-                    const shortSG = greenSG + puttingSG;
-                    const longVsShort = shortSG - longSG;
-                    const playContent = sc.total_score + ((longVsShort * -1) / 2);
-                    const scoreVsContent = sc.total_score - playContent;
-
-                    const CATEGORY_TO_FIELD: Record<string, string> = {
-                        "티샷 비거리": "distSG_DriverDist",
-                        "티샷 정확도": "distSG_DriverAcc",
-                        "180M이상": "distSG_180Plus",
-                        "150-179M": "distSG_150_179",
-                        "120-149M": "distSG_120_149",
-                        "90-119M": "distSG_90_119",
-                        "피치샷": "distSG_Pitch31_89",
-                        "벙커": "distSG_Bunker",
-                        "어프로치": "distSG_Approach",
-                        "9M이상": "distSG_Putt9Plus",
-                        "4-8M": "distSG_Putt4_8",
-                        "2-3M": "distSG_Putt2_3",
-                        "1M": "distSG_Putt1",
-                    };
-
-                    const totalAbsSG = cats.reduce((s, c) => s + Math.abs(c.sg), 0);
-                    const categoriesWithPercent = cats.map(c => ({
-                        ...c,
-                        percent: totalAbsSG > 0 ? (Math.abs(c.sg) / totalAbsSG) * 100 : 0
-                    })).sort((a, b) => a.sg - b.sg);
-
-                    const negativeCats = [...cats].filter(c => c.sg < 0).sort((a, b) => a.sg - b.sg);
-                    const positiveCats = categoriesWithPercent.filter(c => c.sg > 0).sort((a, b) => b.percent - a.percent);
-
-                    const strongPlan = negativeCats.slice(0, 1).map((c, i) => {
-                        const fieldName = CATEGORY_TO_FIELD[c.name];
-                        const holeNumbers = result
-                            .filter(h => (h.summary as any)[fieldName] < 0)
-                            .sort((a, b) => (a.summary as any)[fieldName] - (b.summary as any)[fieldName])
-                            .slice(0, 5)
-                            .sort((a, b) => a.holeNumber - b.holeNumber)
-                            .map(h => h.holeNumber);
-                        return { label: c.name, holeNumbers };
-                    });
-
-                    const challengePlan = positiveCats.slice(0, 2).map((c, i) => {
-                        const fieldName = CATEGORY_TO_FIELD[c.name];
-                        const holeNumbers = result
-                            .filter(h => (h.summary as any)[fieldName] > 0)
-                            .sort((a, b) => (b.summary as any)[fieldName] - (a.summary as any)[fieldName])
-                            .slice(0, 5)
-                            .sort((a, b) => a.holeNumber - b.holeNumber)
-                            .map(h => h.holeNumber);
-                        return { label: c.name, holeNumbers };
-                    });
-
-                    const fwHoles = result.filter(h => h.summary.fairwayHit !== '-' && h.score > 0 && h.par >= 4);
-                    const fwHits = fwHoles.filter(h => h.summary.fairwayHit === 'O').length;
-                    const fairwayHitRate = fwHoles.length > 0 ? (fwHits / fwHoles.length) * 100 : 0;
-
-                    const validGirHoles = result.filter(h => h.score > 0 && h.par > 0);
-                    const girHits = validGirHoles.filter(h => h.summary.gir === 'O').length;
-                    const girRate = validGirHoles.length > 0 ? (girHits / validGirHoles.length) * 100 : 0;
-
-                    const missedGirHoles = result.filter(h => h.summary && h.summary.gir === 'X' && h.par > 0 && h.score > 0);
-                    const parSaves = missedGirHoles.filter(h => h.score <= h.par);
-                    const parSaveRate = missedGirHoles.length > 0 ? (parSaves.length / missedGirHoles.length) * 100 : 0;
-
-                    const totalPutts = result.reduce((s, h) => s + h.summary.putts, 0);
-                    const threePuttCount = result.filter(h => h.summary.putts >= 3).length;
-                    const penaltyCount = result.reduce((s, h) => s + h.summary.paCount, 0) + result.reduce((s, h) => s + h.summary.obCount, 0);
-
-                    const formatScore = (val: number) => (val === 0 ? "0" : (val > 0 ? "+" : "") + val.toFixed(2));
-                    const roundToOne = (num: number) => Number(Math.round(Number(num + "e1")) + "e-1").toFixed(1);
-
-                    // Extract Shot Notes
-                    const shotNotes: any[] = [];
-                    result.forEach((h: any) => {
-                        h.shots.forEach((shot: any) => {
-                            if (shot.memo && shot.memo.trim() !== '') {
-                                shotNotes.push({
-                                    hole: h.holeNumber,
-                                    shotNumber: shot.shotNumber,
-                                    attemptPos: shot.shotLabel ? shot.shotLabel.split('/')[0].trim() : "",
-                                    attemptDist: shot.attemptDistance,
-                                    landingPos: shot.landingLabel || "",
-                                    memo: shot.memo
-                                });
-                            }
-                        });
-                    });
-
-                    setScoreData({
-                        date: sc.round_date,
-                        course: sc.course_name,
-                        totalScore: sc.total_score,
-                        memo: sc.memo,
-                        notes: shotNotes,
-                        totalPar: result.reduce((s, h) => s + h.par, 0),
-                        playContent: roundToOne(playContent),
-                        scoreVsContent: (scoreVsContent > 0 ? "+" : "") + roundToOne(scoreVsContent),
-                        longVsShort: (longVsShort > 0 ? "+" : "") + roundToOne(longVsShort),
-                        avgMetrics: [
-                            { label: <>페어웨이<br />안착률</>, value: (fairwayHitRate > 0 ? fairwayHitRate.toFixed(1) : "-"), unit: fairwayHitRate > 0 ? "%" : "" },
-                            { label: "그린 적중률", value: (girRate > 0 ? girRate.toFixed(1) : "-"), unit: girRate > 0 ? "%" : "" },
-                            { label: "파세이브율", value: (parSaveRate > 0 ? parSaveRate.toFixed(1) : "-"), unit: parSaveRate > 0 ? "%" : "" },
-                            { label: "퍼트수", value: totalPutts, unit: "개" },
-                            { label: "3퍼트 이상", value: threePuttCount, unit: "회" },
-                            { label: "패널티/OB", value: penaltyCount, unit: "개" },
-                        ],
-                        sectorChanges: [
-                            { type: "티샷", value: formatScore(teeSG), items: cats.slice(0, 2) },
-                            { type: "세컨샷", value: formatScore(secondSG), items: cats.slice(2, 6) },
-                            { type: "숏게임", value: formatScore(greenSG), items: cats.slice(6, 9) },
-                            { type: "퍼팅", value: formatScore(puttingSG), items: cats.slice(9, 13) }
-                        ],
-                        strongPlan,
-                        challengePlan,
-                        result
-                    });
+                    roundAnalysisCacheRef.current[sc.id] = result;
+                    const built = buildScoreDataFromRounds([{ sc, result }]);
+                    scoreCacheRef.current[1] = built;
+                    if (isMounted) setScoreData(built);
+                } else if (isMounted) {
+                    setScoreData(null);
                 }
 
                 // 2. Fetch Recent Training
@@ -489,19 +537,79 @@ export default function ReferenceDataModal({ isOpen, onClose, playerName }: { is
         return () => { isMounted = false; };
     }, [isOpen, playerName]);
 
+    const handleRoundCountChange = async (nextCount: 1 | 3 | 5) => {
+        if (nextCount === roundCount) return;
+        setRoundCount(nextCount);
+        setSelectedPlanLabel(null);
+        setSelectedHoleDetails(null);
+
+        if (scoreCacheRef.current[nextCount]) {
+            setScoreData(scoreCacheRef.current[nextCount]);
+            return;
+        }
+        if (finalScorecards.length === 0) return;
+
+        setScoreLoading(true);
+        try {
+            const targetCards = finalScorecards.slice(0, nextCount);
+            const rounds = await Promise.all(
+                targetCards.map(async (sc: any) => {
+                    let result = roundAnalysisCacheRef.current[sc.id];
+                    if (!result) {
+                        result = await calculateScorecardAnalysis(sc.id);
+                        roundAnalysisCacheRef.current[sc.id] = result;
+                    }
+                    return { sc, result };
+                })
+            );
+            const built = buildScoreDataFromRounds(rounds);
+            scoreCacheRef.current[nextCount] = built;
+            setScoreData(built);
+        } catch (err) {
+            console.error("Failed to load multi-round averages", err);
+        } finally {
+            setScoreLoading(false);
+        }
+    };
+
     if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 sm:p-6 lg:p-8 animate-in fade-in duration-200">
             <div className="bg-[#F8F9FC] dark:bg-zinc-950 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] md:max-h-[85vh] h-full flex flex-col overflow-hidden border border-zinc-200/50 dark:border-zinc-800/50 relative">
-                <div className="flex items-center justify-start p-4 px-6 border-b border-zinc-200/60 dark:border-zinc-800/60 bg-white dark:bg-zinc-900 shrink-0 gap-3">
-                    <button onClick={onClose} className="p-1.5 text-zinc-400 hover:text-zinc-900 bg-zinc-50 rounded-lg border border-zinc-200 transition-colors">
-                        <ChevronLeft size={20} />
-                    </button>
-                    <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
-                        <BookOpen size={20} className="text-brand-navy dark:text-brand-navy-light" />
-                        최근 라운드 정보 ({playerName})
-                    </h2>
+                <div className="px-4 sm:px-6 py-3.5 border-b border-zinc-200/60 dark:border-zinc-800/60 bg-white dark:bg-zinc-900 shrink-0 space-y-2.5">
+                    <div className="flex items-center justify-start gap-3">
+                        <button onClick={onClose} className="p-1.5 text-zinc-400 hover:text-zinc-900 bg-zinc-50 rounded-lg border border-zinc-200 transition-colors">
+                            <ChevronLeft size={20} />
+                        </button>
+                        <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-50 flex items-center gap-2">
+                            <BookOpen size={20} className="text-brand-navy dark:text-brand-navy-light" />
+                            최근 라운드 정보 ({playerName})
+                        </h2>
+                    </div>
+                    <div className="flex items-center justify-end gap-2">
+                        <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                            최근 라운드 평균
+                        </span>
+                        <div className="inline-flex rounded-lg bg-zinc-100 dark:bg-zinc-800 p-0.5 border border-zinc-200/70 dark:border-zinc-700 text-xs font-semibold">
+                            {([1, 3, 5] as const).map((cnt) => (
+                                <button
+                                    key={cnt}
+                                    type="button"
+                                    disabled={scoreLoading}
+                                    onClick={() => handleRoundCountChange(cnt)}
+                                    className={cn(
+                                        "px-2.5 py-1 rounded-md transition-all cursor-pointer",
+                                        roundCount === cnt
+                                            ? "bg-brand-navy text-white shadow-sm"
+                                            : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200"
+                                    )}
+                                >
+                                    {cnt}건
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                 </div>
                 <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-8 custom-scrollbar">
                     {loading ? (
@@ -511,7 +619,12 @@ export default function ReferenceDataModal({ isOpen, onClose, playerName }: { is
                     ) : (
                         <div className="max-w-4xl mx-auto space-y-8 pb-8">
                             {/* 1. 최근 라운드 요약 */}
-                            {scoreData && (
+                            {scoreLoading ? (
+                                <div className="py-12 flex flex-col items-center justify-center gap-2 text-xs text-zinc-400">
+                                    <div className="w-7 h-7 border-3 border-brand-navy/20 border-t-brand-navy rounded-full animate-spin" />
+                                    <span>최근 {roundCount}건 평균 계산 중...</span>
+                                </div>
+                            ) : scoreData && (
                                 <div className="space-y-6">
                                     {/* 날짜, 골프장명 */}
                                     <div className="flex items-center justify-between mb-4">
@@ -524,7 +637,7 @@ export default function ReferenceDataModal({ isOpen, onClose, playerName }: { is
                                     </div>
                                     {/* SCORE Banner */}
                                     {(() => {
-                                        const scoreDiff = scoreData.totalScore - scoreData.totalPar;
+                                        const scoreDiff = Number((scoreData.totalScore - scoreData.totalPar).toFixed(1));
                                         const scoreDiffStr = scoreDiff > 0 ? `+${scoreDiff}` : scoreDiff === 0 ? "E" : `${scoreDiff}`;
                                         const isUnderPar = scoreDiff < 0;
                                         const isOverPar = scoreDiff > 0;

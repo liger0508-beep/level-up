@@ -55,13 +55,42 @@ function extractGoalFromContent(content: string): string {
     return afterGoal.trim();
 }
 
+function stripMemoFromContent(content: string): string {
+    if (!content) return "";
+    const memoIndex = content.indexOf("[메모]");
+    return (memoIndex !== -1 ? content.substring(0, memoIndex) : content).trim();
+}
+
+function extractPlayerAnalysisFromContent(content: string): string {
+    let text = stripMemoFromContent(content);
+    if (!text) return "";
+    const coachIdx = text.indexOf("[분석 내용 - 코치]");
+    if (coachIdx !== -1) {
+        text = text.substring(0, coachIdx).trim();
+    }
+    const goalIndex = text.indexOf("[목표 설정]");
+    const playerIdx = text.indexOf("[분석 내용 - 선수]");
+    if (goalIndex !== -1) {
+        return playerIdx !== -1
+            ? text.substring(playerIdx + "[분석 내용 - 선수]".length).trim()
+            : "";
+    }
+    return playerIdx !== -1
+        ? text.substring(playerIdx + "[분석 내용 - 선수]".length).trim()
+        : text.trim();
+}
+
+function extractCoachAnalysisFromContent(content: string): string {
+    const text = stripMemoFromContent(content);
+    if (!text) return "";
+    const coachIdx = text.indexOf("[분석 내용 - 코치]");
+    if (coachIdx === -1) return "";
+    return text.substring(coachIdx + "[분석 내용 - 코치]".length).trim();
+}
+
 function extractAnalysisBodyFromContent(content: string): string {
     if (!content) return "";
-    let text = content;
-    const memoIndex = text.indexOf("[메모]");
-    if (memoIndex !== -1) {
-        text = text.substring(0, memoIndex).trim();
-    }
+    let text = stripMemoFromContent(content);
     const goalIndex = text.indexOf("[목표 설정]");
     if (goalIndex !== -1) {
         const playerIdx = text.indexOf("[분석 내용 - 선수]");
@@ -466,6 +495,24 @@ function CreateAnalysisContent() {
             .filter(item => item.content.length > 0);
     }, [allAnalyses]);
 
+    const playerAnalysisBodies = useMemo(() => {
+        return allAnalyses
+            .map(a => ({
+                ...a,
+                content: extractPlayerAnalysisFromContent(a.content),
+            }))
+            .filter(item => item.content.length > 0);
+    }, [allAnalyses]);
+
+    const coachAnalysisBodies = useMemo(() => {
+        return allAnalyses
+            .map(a => ({
+                ...a,
+                content: extractCoachAnalysisFromContent(a.content),
+            }))
+            .filter(item => item.content.length > 0);
+    }, [allAnalyses]);
+
     const analysisMemos = useMemo(() => {
         return allAnalyses
             .filter(a => currentCoachId && (a.coachId === currentCoachId || currentUserRole === "super_admin"))
@@ -854,19 +901,36 @@ function CreateAnalysisContent() {
                                 </div>
                             </section>
 
-                            {/* 2. 최근 분석 내용 */}
+                            {/* 2-1. 최근 분석 내용 - 선수 */}
                             <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
                                 <div className="flex items-center justify-between mb-2">
                                     <SectionTitle>
-                                        <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" /> 최근 분석 내용
+                                        <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" /> 최근 분석 내용 - 선수
                                     </SectionTitle>
                                 </div>
                                 <LinkedLessonCard
                                     part={selectedPart}
-                                    lesson={analysisBodies.find(l => l.category === selectedPart) || analysisBodies[0] || null}
+                                    lesson={playerAnalysisBodies.find(l => l.category === selectedPart) || playerAnalysisBodies[0] || null}
                                     onMoreClick={() => setIsAnalysisHistoryModalOpen(true)}
                                     moreText="더보기 (다른 분석 찾기)"
-                                    emptyText="선택된 분석 내용이 없습니다."
+                                    emptyText="선택된 선수 분석 내용이 없습니다."
+                                    readOnly={false}
+                                />
+                            </section>
+
+                            {/* 2-2. 최근 분석 내용 - 코치 */}
+                            <section className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-4 sm:p-5 rounded-2xl shadow-sm">
+                                <div className="flex items-center justify-between mb-2">
+                                    <SectionTitle>
+                                        <FileText size={18} className="text-brand-navy dark:text-brand-navy-light" /> 최근 분석 내용 - 코치
+                                    </SectionTitle>
+                                </div>
+                                <LinkedLessonCard
+                                    part={selectedPart}
+                                    lesson={coachAnalysisBodies.find(l => l.category === selectedPart) || coachAnalysisBodies[0] || null}
+                                    onMoreClick={() => setIsAnalysisHistoryModalOpen(true)}
+                                    moreText="더보기 (다른 분석 찾기)"
+                                    emptyText="선택된 코치 분석 내용이 없습니다."
                                     readOnly={false}
                                 />
                             </section>
