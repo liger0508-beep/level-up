@@ -110,10 +110,6 @@ const defaultPermissions: MenuPermission[] = [
         permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
     },
     {
-        menuKey: "attendance", label: "출석 체크", section: "라운지",
-        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
-    },
-    {
         menuKey: "todo-list", label: "To-Do 리스트", section: "라운지",
         permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: false, write: false } }
     },
@@ -139,6 +135,10 @@ const defaultPermissions: MenuPermission[] = [
     },
 
     // 운영/관리
+    {
+        menuKey: "attendance", label: "출석 체크", section: "운영/관리",
+        permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: true, write: true }, parent: { read: true, write: false } }
+    },
     {
         menuKey: "statistics", label: "운영 통계", section: "운영/관리",
         permissions: { headquarter: { read: true, write: true }, office: { read: true, write: true }, admin: { read: true, write: true }, coach: { read: true, write: true }, athlete: { read: false, write: false }, parent: { read: false, write: false } }

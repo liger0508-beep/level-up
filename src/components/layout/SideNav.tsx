@@ -99,7 +99,6 @@ const menuItems = [
             { key: "consultations", title: "상담", href: "/consultations" },
             { key: "training-plan", title: "훈련계획", href: "/admin/training-plan" },
             { key: "training-journal", title: "훈련일지", href: "/admin/training-journal" },
-            { key: "attendance", title: "출석 체크", href: "/operations/attendance" },
             { key: "todo-list", title: "할일", href: "/operations/todos" },
             { key: "course-management", title: "골프IQ", href: "/course-management" },
             { key: "course-info", title: "코스 정보", href: "/course-info" },
@@ -112,6 +111,7 @@ const menuItems = [
         title: "운영/관리",
         icon: Settings,
         subItems: [
+            { key: "attendance", title: "출석 체크", href: "/operations/attendance" },
             { key: "statistics", title: "운영 통계", href: "/admin/statistics" },
             { key: "player-reports", title: "선수 레포트 작성", href: "/admin/player-reports" },
             { key: "assigned-athletes", title: "담임 선수 배정", href: "/admin/assigned-athletes" },
