@@ -1,16 +1,18 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import Link from "next/link";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   CheckCircle2,
   XCircle,
   Clock,
   Trash2,
-  Monitor,
+  BarChart3,
+  ArrowLeft,
   Plus,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  Check,
   ClipboardCheck,
   Search,
   Calendar as CalendarIcon,
@@ -39,7 +41,7 @@ import { ko } from "date-fns/locale";
 const BRANCHES = ["조이마루점", "구미점"];
 
 type BranchFilter = "all" | "조이마루점" | "구미점";
-type CoachScope = "assigned" | "all";
+type CoachScope = "all" | "assigned" | "by_coach";
 
 export default function AttendancePage() {
   const supabase = createClient();
@@ -47,9 +49,15 @@ export default function AttendancePage() {
   // Auth & Role
   const [authLoaded, setAuthLoaded] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [userName, setUserName] = useState<string>("");
   const [targetAthleteId, setTargetAthleteId] = useState<string | null>(null);
   const [targetAthleteName, setTargetAthleteName] = useState<string>("");
   const [assignedAthleteIds, setAssignedAthleteIds] = useState<string[]>([]);
+  const [coachesList, setCoachesList] = useState<{ id: string; name: string; branch?: string }[]>([]);
+  const [allAssignments, setAllAssignments] = useState<{ coach_id: string; athlete_id: string }[]>([]);
+  const [selectedCoachIds, setSelectedCoachIds] = useState<string[]>([]);
+  const [coachDropdownOpen, setCoachDropdownOpen] = useState(false);
+  const coachDropdownRef = useRef<HTMLDivElement | null>(null);
 
   // Shared Navigation & Filters
   const [activeTab, setActiveTab] = useState<"daily" | "stats">("daily");
@@ -75,6 +83,12 @@ export default function AttendancePage() {
   } | null>(null);
 
   const isAthleteOrParent = userRole === "athlete" || userRole === "parent";
+  const isSuperAdmin =
+    userRole === "admin" ||
+    userRole === "super_admin" ||
+    userRole === "superadmin" ||
+    userName === "슈퍼관리자";
+  const canUseCoachScope = userRole === "coach" || isSuperAdmin;
 
   useEffect(() => {
     async function initUser() {
@@ -96,6 +110,7 @@ export default function AttendancePage() {
 
         const role = profile?.role || "athlete";
         setUserRole(role);
+        setUserName(profile?.name || "");
 
         if (role === "athlete") {
           setTargetAthleteId(user.id);
@@ -115,23 +130,45 @@ export default function AttendancePage() {
           }
         } else {
           // Coach or admin/office/headquarter
+          const [{ data: assignmentsData }, { data: coachesData }, { data: athletesData }] =
+            await Promise.all([
+              supabase.from("coach_athlete_assignments").select("coach_id, athlete_id"),
+              supabase
+                .from("users")
+                .select("id, name, branch")
+                .eq("role", "coach")
+                .order("name"),
+              supabase
+                .from("users")
+                .select("id, name, branch, phone")
+                .eq("role", "athlete")
+                .eq("status", "등록")
+                .order("name"),
+            ]);
+
+          const safeAssignments = (assignmentsData || []).filter(
+            (a: any) => a.coach_id && a.athlete_id
+          );
+          setAllAssignments(safeAssignments);
+
+          if (coachesData) {
+            setCoachesList(
+              coachesData.filter(
+                (c: any) => c.name !== "슈퍼관리자" && c.name !== "전체 관리자"
+              )
+            );
+          }
+
           if (role === "coach") {
-            const { data: assigned } = await supabase
-              .from("coach_athlete_assignments")
-              .select("athlete_id")
-              .eq("coach_id", user.id);
-            const ids = (assigned || []).map((a: any) => a.athlete_id).filter(Boolean);
-            setAssignedAthleteIds(ids);
+            const myIds = safeAssignments
+              .filter((a: any) => a.coach_id === user.id)
+              .map((a: any) => a.athlete_id);
+            setAssignedAthleteIds(myIds);
             setCoachScope("assigned");
           } else {
             setCoachScope("all");
           }
 
-          const { data: athletesData } = await supabase
-            .from("users")
-            .select("id, name, branch, phone")
-            .eq("role", "athlete")
-            .order("name");
           if (athletesData) setAllAthletes(athletesData);
         }
       } catch (err) {
@@ -237,18 +274,53 @@ export default function AttendancePage() {
     setSelectedDate(getKstDateStr(next));
   };
 
+  // Close coach multi-select dropdown on outside click
+  useEffect(() => {
+    function handleOutsideClick(e: MouseEvent) {
+      if (
+        coachDropdownRef.current &&
+        !coachDropdownRef.current.contains(e.target as Node)
+      ) {
+        setCoachDropdownOpen(false);
+      }
+    }
+    if (coachDropdownOpen) {
+      document.addEventListener("mousedown", handleOutsideClick);
+      return () => document.removeEventListener("mousedown", handleOutsideClick);
+    }
+  }, [coachDropdownOpen]);
+
+  const byCoachAthleteIdSet = useMemo(() => {
+    if (selectedCoachIds.length === 0) return new Set<string>();
+    const selectedSet = new Set(selectedCoachIds);
+    return new Set(
+      allAssignments
+        .filter((a) => selectedSet.has(a.coach_id))
+        .map((a) => a.athlete_id)
+    );
+  }, [allAssignments, selectedCoachIds]);
+
   // Athletes visible under current coachScope + branchFilter (for coach/admin)
   const scopedAthletes = useMemo(() => {
     return allAthletes.filter((a) => {
-      if (userRole === "coach" && coachScope === "assigned") {
+      if (canUseCoachScope && coachScope === "assigned") {
         if (!assignedAthleteIds.includes(a.id)) return false;
+      } else if (coachScope === "by_coach") {
+        if (!byCoachAthleteIdSet.has(a.id)) return false;
       }
       if (branchFilter !== "all" && a.branch !== branchFilter) {
         return false;
       }
       return true;
     });
-  }, [allAthletes, userRole, coachScope, branchFilter, assignedAthleteIds]);
+  }, [
+    allAthletes,
+    canUseCoachScope,
+    coachScope,
+    branchFilter,
+    assignedAthleteIds,
+    byCoachAthleteIdSet,
+  ]);
 
   const scopedAthleteIdSet = useMemo(
     () => new Set(scopedAthletes.map((a) => a.id)),
@@ -259,13 +331,13 @@ export default function AttendancePage() {
   const filteredAttendanceList = useMemo(() => {
     const q = searchQuery.trim();
     return attendanceList.filter((att) => {
-      if (userRole === "coach" && coachScope === "assigned" && !scopedAthleteIdSet.has(att.athlete_id)) {
+      if (!scopedAthleteIdSet.has(att.athlete_id)) {
         return false;
       }
       if (q && !att.athlete_name.includes(q)) return false;
       return true;
     });
-  }, [attendanceList, userRole, coachScope, scopedAthleteIdSet, searchQuery]);
+  }, [attendanceList, scopedAthleteIdSet, searchQuery]);
 
   const uncheckedAthletes = useMemo(() => {
     const q = searchQuery.trim();
@@ -375,6 +447,15 @@ export default function AttendancePage() {
     const d = new Date(`${selectedDate}T12:00:00+09:00`);
     return format(d, "yyyy. MM. dd (EEE)", { locale: ko });
   }, [selectedDate]);
+
+  const selectedCoachesLabel = useMemo(() => {
+    if (selectedCoachIds.length === 0) return "코치 선택";
+    const names = coachesList
+      .filter((c) => selectedCoachIds.includes(c.id))
+      .map((c) => c.name);
+    if (names.length === 1) return `${names[0]} 코치`;
+    return `${names[0]} 외 ${names.length - 1}명`;
+  }, [coachesList, selectedCoachIds]);
 
   if (!authLoaded) {
     return (
@@ -532,6 +613,14 @@ export default function AttendancePage() {
     { key: "구미점", label: "구미점" },
   ];
 
+  const toggleCoachSelection = (coachId: string) => {
+    setSelectedCoachIds((prev) =>
+      prev.includes(coachId)
+        ? prev.filter((id) => id !== coachId)
+        : [...prev, coachId]
+    );
+  };
+
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 pb-24">
       <main className="max-w-5xl mx-auto px-4 sm:px-8 py-10 space-y-6">
@@ -540,97 +629,187 @@ export default function AttendancePage() {
           <div className="flex items-center gap-2">
             <ClipboardCheck size={24} className="text-brand-navy dark:text-brand-navy-light shrink-0" />
             <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50 tracking-tight">
-              출석 체크
+              {activeTab === "daily" ? "출석 체크" : "월별 통계"}
             </h1>
           </div>
 
-          <Link
-            href="/kiosk"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-100 text-xs sm:text-sm font-semibold px-3.5 py-2 shadow-sm transition-colors"
+          <button
+            type="button"
+            onClick={() => setActiveTab((prev) => (prev === "daily" ? "stats" : "daily"))}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-800 dark:text-zinc-100 text-xs sm:text-sm font-semibold px-3.5 py-2 shadow-sm transition-colors cursor-pointer"
           >
-            <Monitor size={15} />
-            키오스크
-          </Link>
+            {activeTab === "daily" ? (
+              <>
+                <BarChart3 size={15} />
+                월별 통계
+              </>
+            ) : (
+              <>
+                <ArrowLeft size={15} />
+                일일 출석
+              </>
+            )}
+          </button>
         </div>
 
-        {/* Row 1: Toggles (Left: Daily/Monthly, Right: Assigned/All for Coach) */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <div className="inline-flex rounded-xl bg-zinc-200/80 dark:bg-zinc-800 p-1 text-xs sm:text-sm font-semibold">
-              <button
-                type="button"
-                onClick={() => setActiveTab("daily")}
-                className={cn(
-                  "whitespace-nowrap px-3.5 sm:px-4 py-1.5 rounded-lg transition-all",
-                  activeTab === "daily"
-                    ? "bg-white dark:bg-zinc-700 text-brand-navy dark:text-white shadow-sm"
-                    : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200"
-                )}
-              >
-                일일 출석
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveTab("stats")}
-                className={cn(
-                  "whitespace-nowrap px-3.5 sm:px-4 py-1.5 rounded-lg transition-all",
-                  activeTab === "stats"
-                    ? "bg-white dark:bg-zinc-700 text-brand-navy dark:text-white shadow-sm"
-                    : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200"
-                )}
-              >
-                월별 통계
-              </button>
+        {/* Row 1 (Top): Branch Pills | Row 2 (Below): Aligned Scope Toggle + Coach Multi-Select */}
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="inline-flex flex-col gap-2.5 w-fit">
+            {/* Row 1: Branch Pills (same component style as Schedule) */}
+            <div className="flex flex-nowrap justify-start items-center gap-1.5 overflow-x-auto scrollbar-hide">
+              {branchTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  onClick={() => setBranchFilter(tab.key)}
+                  className={cn(
+                    "flex items-center gap-1 px-4 py-2 rounded-full text-sm font-semibold border transition-all duration-200 shrink-0 cursor-pointer",
+                    branchFilter === tab.key
+                      ? "bg-brand-navy text-white border-brand-navy shadow-md"
+                      : "bg-white text-zinc-600 border-zinc-200 hover:bg-brand-navy-light hover:text-brand-navy dark:bg-zinc-800 dark:text-zinc-400 dark:border-zinc-700 dark:hover:bg-brand-navy-dark dark:hover:text-white"
+                  )}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
 
-            {userRole === "coach" && (
-              <div className="inline-flex rounded-xl bg-zinc-200/80 dark:bg-zinc-800 p-1 text-xs sm:text-sm font-semibold">
+            {/* Row 2: All / Assigned / By Coach (exact left & right alignment with Row 1) */}
+            <div
+              className={cn(
+                "w-full grid rounded-xl bg-zinc-200/80 dark:bg-zinc-800 p-1 text-xs sm:text-sm font-semibold",
+                canUseCoachScope ? "grid-cols-3" : "grid-cols-2"
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setCoachScope("all");
+                  setCoachDropdownOpen(false);
+                }}
+                className={cn(
+                  "whitespace-nowrap py-1.5 rounded-lg transition-all cursor-pointer text-center",
+                  coachScope === "all"
+                    ? "bg-brand-navy text-white shadow-sm"
+                    : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200"
+                )}
+              >
+                전체
+              </button>
+              {canUseCoachScope && (
                 <button
                   type="button"
-                  onClick={() => setCoachScope("assigned")}
+                  onClick={() => {
+                    setCoachScope("assigned");
+                    setCoachDropdownOpen(false);
+                  }}
                   className={cn(
-                    "whitespace-nowrap px-3 sm:px-3.5 py-1.5 rounded-lg transition-all",
+                    "whitespace-nowrap py-1.5 rounded-lg transition-all cursor-pointer text-center",
                     coachScope === "assigned"
                       ? "bg-brand-navy text-white shadow-sm"
                       : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200"
                   )}
                 >
-                  담당 선수
+                  담당
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setCoachScope("all")}
-                  className={cn(
-                    "whitespace-nowrap px-3 sm:px-3.5 py-1.5 rounded-lg transition-all",
-                    coachScope === "all"
-                      ? "bg-brand-navy text-white shadow-sm"
-                      : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200"
-                  )}
-                >
-                  전체
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Row 2: Branch Pills */}
-          <div className="flex gap-2 overflow-x-auto scrollbar-hide">
-            {branchTabs.map((tab) => (
+              )}
               <button
-                key={tab.key}
                 type="button"
-                onClick={() => setBranchFilter(tab.key)}
+                onClick={() => {
+                  setCoachScope("by_coach");
+                  if (selectedCoachIds.length === 0) {
+                    setCoachDropdownOpen(true);
+                  }
+                }}
                 className={cn(
-                  "whitespace-nowrap shrink-0 px-4 py-1.5 rounded-full text-xs sm:text-sm font-semibold border transition-all",
-                  branchFilter === tab.key
-                    ? "bg-brand-navy text-white border-brand-navy shadow-sm"
-                    : "bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-100"
+                  "whitespace-nowrap py-1.5 rounded-lg transition-all cursor-pointer text-center",
+                  coachScope === "by_coach"
+                    ? "bg-brand-navy text-white shadow-sm"
+                    : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200"
                 )}
               >
-                {tab.label}
+                코치별
               </button>
-            ))}
+            </div>
           </div>
+
+          {coachScope === "by_coach" && (
+            <div className="relative" ref={coachDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setCoachDropdownOpen((prev) => !prev)}
+                className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 text-xs sm:text-sm font-semibold text-zinc-800 dark:text-zinc-100 shadow-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+              >
+                <span>{selectedCoachesLabel}</span>
+                <ChevronDown
+                  size={14}
+                  className={cn(
+                    "text-zinc-400 transition-transform",
+                    coachDropdownOpen && "rotate-180"
+                  )}
+                />
+              </button>
+
+              {coachDropdownOpen && (
+                <div className="absolute left-0 mt-1.5 w-56 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 shadow-lg z-30 py-1.5">
+                  <div className="px-3 py-1.5 flex items-center justify-between border-b border-zinc-100 dark:border-zinc-800">
+                    <span className="text-[11px] font-semibold text-zinc-400">
+                      코치 중복 선택
+                    </span>
+                    {selectedCoachIds.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCoachIds([])}
+                        className="text-[11px] font-semibold text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200 cursor-pointer"
+                      >
+                        선택 해제
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-60 overflow-y-auto py-1">
+                    {coachesList.length === 0 ? (
+                      <p className="px-3 py-2 text-xs text-zinc-400">
+                        등록된 코치가 없습니다.
+                      </p>
+                    ) : (
+                      coachesList.map((coach) => {
+                        const checked = selectedCoachIds.includes(coach.id);
+                        return (
+                          <button
+                            key={coach.id}
+                            type="button"
+                            onClick={() => toggleCoachSelection(coach.id)}
+                            className="w-full px-3 py-2 flex items-center justify-between gap-2 text-left text-xs sm:text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/70 transition-colors cursor-pointer"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span
+                                className={cn(
+                                  "w-4 h-4 rounded flex items-center justify-center border shrink-0 transition-colors",
+                                  checked
+                                    ? "bg-brand-navy border-brand-navy text-white"
+                                    : "border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-800"
+                                )}
+                              >
+                                {checked && <Check size={11} strokeWidth={3} />}
+                              </span>
+                              <span className="font-medium text-zinc-800 dark:text-zinc-100 truncate">
+                                {coach.name}
+                              </span>
+                            </div>
+                            {coach.branch && (
+                              <span className="text-[11px] text-zinc-400 shrink-0">
+                                {coach.branch}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Date / Month Navigation */}
